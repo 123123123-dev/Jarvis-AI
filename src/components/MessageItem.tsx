@@ -41,138 +41,37 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     onSpeak(message.id, message.content);
   };
 
-  // Simple Markdown renderer
-  const renderFormattedContent = (content: string) => {
-    const lines = content.split('\n');
-
-    return (
-      <div className="space-y-2 text-xs md:text-sm leading-relaxed text-slate-200">
-        {lines.map((line, index) => {
-          const trimmed = line.trim();
-
-          // Markdown image
-          const imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
-          if (imgMatch) {
-            const alt = imgMatch[1];
-            const src = imgMatch[2];
-            return (
-              <div
-                key={index}
-                className="my-3 rounded-xl overflow-hidden border border-cyan-500/30 group relative"
-              >
-                <img
-                  src={src}
-                  alt={alt}
-                  className="w-full max-h-96 object-contain bg-slate-950 cursor-pointer"
-                  onClick={() => setImageModalOpen(true)}
-                />
-                <div className="p-2 bg-slate-900 flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-medium truncate">
-                    {alt || 'Generated Artwork'}
-                  </span>
-                  <a
-                    href={src}
-                    download={`jarvis-artwork-${Date.now()}.png`}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-950 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900 text-xs"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Download</span>
-                  </a>
-                </div>
-              </div>
-            );
-          }
-
-          // Headers
-          if (trimmed.startsWith('#### ')) {
-            return (
-              <h5 key={index} className="text-xs font-bold text-cyan-400 mt-2 mb-1">
-                {trimmed.replace('#### ', '')}
-              </h5>
-            );
-          }
-          if (trimmed.startsWith('### ')) {
-            return (
-              <h4 key={index} className="text-sm font-bold text-cyan-300 mt-3 mb-1">
-                {trimmed.replace('### ', '')}
-              </h4>
-            );
-          }
-          if (trimmed.startsWith('## ')) {
-            return (
-              <h3 key={index} className="text-base font-bold text-cyan-200 mt-4 mb-1">
-                {trimmed.replace('## ', '')}
-              </h3>
-            );
-          }
-          if (trimmed.startsWith('# ')) {
-            return (
-              <h2
-                key={index}
-                className="text-lg font-extrabold text-white mt-4 mb-1 border-b border-slate-800 pb-1"
-              >
-                {trimmed.replace('# ', '')}
-              </h2>
-            );
-          }
-
-          // Unordered Lists
-          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-            return (
-              <div key={index} className="flex items-start gap-2 pl-2">
-                <span className="text-cyan-400 mt-1">•</span>
-                <span className="flex-1">{parseInlineStyles(trimmed.substring(2))}</span>
-              </div>
-            );
-          }
-
-          // Numbered Lists
-          const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
-          if (numMatch) {
-            return (
-              <div key={index} className="flex items-start gap-2 pl-2">
-                <span className="text-cyan-400 font-mono font-bold">{numMatch[1]}.</span>
-                <span className="flex-1">{parseInlineStyles(numMatch[2])}</span>
-              </div>
-            );
-          }
-
-          // Code blocks
-          if (trimmed.startsWith('```')) {
-            return (
-              <div
-                key={index}
-                className="px-2 py-0.5 font-mono text-[11px] text-cyan-400 bg-slate-950/70 rounded border border-slate-800"
-              >
-                {trimmed}
-              </div>
-            );
-          }
-
-          if (!trimmed) {
-            return <div key={index} className="h-1" />;
-          }
-
-          return <p key={index}>{parseInlineStyles(line)}</p>;
-        })}
-      </div>
-    );
+  // Helper to convert sub/superscripts and clean chemical/math symbols
+  const formatChemicalAndMath = (text: string): string => {
+    return text
+      .replace(/\$([A-Za-z0-9_{}\s\+\-\*\/\^\\=]+)\$/g, '$1')
+      .replace(/_\{(\d+)\}/g, (_, n) => {
+        const subs: Record<string, string> = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉' };
+        return n.split('').map((c: string) => subs[c] || c).join('');
+      })
+      .replace(/\^\{?(\d+)\}?/g, (_, n) => {
+        const sups: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+        return n.split('').map((c: string) => sups[c] || c).join('');
+      })
+      .replace(/\\mathbf\{([^}]+)\}/g, '$1')
+      .replace(/\\text\{([^}]+)\}/g, '$1');
   };
 
   // Helper to parse bold, italic, and inline code
   const parseInlineStyles = (text: string) => {
-    const parts = text.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
+    const formatted = formatChemicalAndMath(text);
+    const parts = formatted.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
     return parts.map((part, i) => {
       if (part.startsWith('**') && part.endsWith('**')) {
         return (
-          <strong key={i} className="text-slate-100 font-semibold">
+          <strong key={i} className="text-white font-bold">
             {part.slice(2, -2)}
           </strong>
         );
       }
       if (part.startsWith('*') && part.endsWith('*')) {
         return (
-          <em key={i} className="text-slate-300 italic">
+          <em key={i} className="text-cyan-200/90 italic">
             {part.slice(1, -1)}
           </em>
         );
@@ -189,6 +88,200 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       }
       return part;
     });
+  };
+
+  // Comprehensive Markdown block & inline renderer
+  const renderFormattedContent = (content: string) => {
+    const rawLines = content.split('\n');
+    const elements: React.ReactNode[] = [];
+    let inCodeBlock = false;
+    let codeBlockLang = '';
+    let codeBlockLines: string[] = [];
+
+    const flushCodeBlock = (key: number) => {
+      if (codeBlockLines.length === 0) return;
+      const codeText = codeBlockLines.join('\n');
+      elements.push(
+        <div
+          key={`code-${key}`}
+          className="my-3 rounded-xl overflow-hidden border border-cyan-500/30 bg-[#070d17] shadow-xl"
+        >
+          <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/90 border-b border-cyan-950/60 text-[11px] font-mono text-slate-400">
+            <span className="uppercase tracking-wider text-cyan-400 font-semibold">
+              {codeBlockLang || 'Code'}
+            </span>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(codeText);
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-slate-800 text-slate-300 hover:text-cyan-300 transition cursor-pointer"
+            >
+              <Copy className="w-3 h-3" />
+              <span>Copy</span>
+            </button>
+          </div>
+          <pre className="p-3 overflow-x-auto font-mono text-xs text-cyan-100 leading-relaxed">
+            <code>{codeText}</code>
+          </pre>
+        </div>
+      );
+      codeBlockLines = [];
+    };
+
+    for (let index = 0; index < rawLines.length; index++) {
+      const line = rawLines[index];
+      const trimmed = line.trim();
+
+      // Multi-line code block start/end
+      if (trimmed.startsWith('```')) {
+        if (inCodeBlock) {
+          flushCodeBlock(index);
+          inCodeBlock = false;
+          codeBlockLang = '';
+        } else {
+          inCodeBlock = true;
+          codeBlockLang = trimmed.replace('```', '').trim();
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeBlockLines.push(line);
+        continue;
+      }
+
+      // Markdown image
+      const imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
+      if (imgMatch) {
+        const alt = imgMatch[1];
+        const src = imgMatch[2];
+        elements.push(
+          <div
+            key={index}
+            className="my-3 rounded-xl overflow-hidden border border-cyan-500/30 group relative"
+          >
+            <img
+              src={src}
+              alt={alt}
+              className="w-full max-h-96 object-contain bg-slate-950 cursor-pointer"
+              onClick={() => setImageModalOpen(true)}
+            />
+            <div className="p-2 bg-slate-900 flex items-center justify-between text-xs">
+              <span className="text-slate-300 font-medium truncate">
+                {alt || 'Generated Artwork'}
+              </span>
+              <a
+                href={src}
+                download={`jarvis-artwork-${Date.now()}.png`}
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-950 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900 text-xs"
+              >
+                <Download className="w-3 h-3" />
+                <span>Download</span>
+              </a>
+            </div>
+          </div>
+        );
+        continue;
+      }
+
+      // Horizontal rules
+      if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
+        elements.push(
+          <hr key={index} className="border-t border-cyan-950/70 my-3" />
+        );
+        continue;
+      }
+
+      // Blockquotes
+      if (trimmed.startsWith('> ')) {
+        elements.push(
+          <blockquote
+            key={index}
+            className="border-l-2 border-cyan-400/60 bg-cyan-950/20 pl-3 pr-2 py-1.5 my-2 rounded-r text-slate-300 italic text-xs md:text-sm"
+          >
+            {parseInlineStyles(trimmed.substring(2))}
+          </blockquote>
+        );
+        continue;
+      }
+
+      // Headers with inline markdown parsed
+      if (trimmed.startsWith('#### ')) {
+        elements.push(
+          <h5 key={index} className="text-xs font-bold text-cyan-400 mt-2.5 mb-1 tracking-wide">
+            {parseInlineStyles(trimmed.replace('#### ', ''))}
+          </h5>
+        );
+        continue;
+      }
+      if (trimmed.startsWith('### ')) {
+        elements.push(
+          <h4 key={index} className="text-sm font-bold text-cyan-300 mt-3 mb-1 tracking-wide">
+            {parseInlineStyles(trimmed.replace('### ', ''))}
+          </h4>
+        );
+        continue;
+      }
+      if (trimmed.startsWith('## ')) {
+        elements.push(
+          <h3 key={index} className="text-base font-bold text-cyan-200 mt-3.5 mb-1">
+            {parseInlineStyles(trimmed.replace('## ', ''))}
+          </h3>
+        );
+        continue;
+      }
+      if (trimmed.startsWith('# ')) {
+        elements.push(
+          <h2
+            key={index}
+            className="text-lg font-extrabold text-white mt-4 mb-1 border-b border-cyan-950/80 pb-1"
+          >
+            {parseInlineStyles(trimmed.replace('# ', ''))}
+          </h2>
+        );
+        continue;
+      }
+
+      // Unordered Lists
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        elements.push(
+          <div key={index} className="flex items-start gap-2 pl-2 my-0.5">
+            <span className="text-cyan-400 mt-1 shrink-0">•</span>
+            <span className="flex-1">{parseInlineStyles(trimmed.substring(2))}</span>
+          </div>
+        );
+        continue;
+      }
+
+      // Numbered Lists
+      const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+      if (numMatch) {
+        elements.push(
+          <div key={index} className="flex items-start gap-2 pl-2 my-0.5">
+            <span className="text-cyan-400 font-mono font-bold shrink-0">{numMatch[1]}.</span>
+            <span className="flex-1">{parseInlineStyles(numMatch[2])}</span>
+          </div>
+        );
+        continue;
+      }
+
+      if (!trimmed) {
+        elements.push(<div key={index} className="h-1.5" />);
+        continue;
+      }
+
+      elements.push(<p key={index} className="my-1">{parseInlineStyles(line)}</p>);
+    }
+
+    if (inCodeBlock) {
+      flushCodeBlock(rawLines.length);
+    }
+
+    return (
+      <div className="space-y-1 text-xs md:text-sm leading-relaxed text-slate-200">
+        {elements}
+      </div>
+    );
   };
 
   return (
