@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>JARVIS AI</title>
+    <meta name="description" content="JARVIS AI Assistant developed by Abdullah Waheed (LGS Paragon, Lahore) featuring real-time Google search grounding, artwork generation, voice synthesis, multi-file vision analysis, real-time synchronization, and offline PWA support." />
+    <meta property="og:title" content="JARVIS AI" />
+    <meta property="og:description" content="JARVIS AI Assistant developed by Abdullah Waheed (LGS Paragon, Lahore) featuring real-time Google search grounding, artwork generation, voice synthesis, multi-file vision analysis, real-time synchronization, and offline PWA support." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#060b13" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="JARVIS AI" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <script>
+      // Gracefully absorb harmless Vite HMR WebSocket closed errors in preview/iframe environment
+      (function() {
+        var origConsoleError = console.error;
+        console.error = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var msg = args.map(function(a) {
+            return typeof a === 'object' && a !== null ? (a.message || a.stack || JSON.stringify(a)) : String(a);
+          }).join(' ');
+          if (
+            msg.indexOf('WebSocket closed without opened') !== -1 ||
+            (msg.indexOf('WebSocket') !== -1 && msg.indexOf('vite') !== -1) ||
+            msg.indexOf('[vite] failed to connect to websocket') !== -1
+          ) {
+            return;
+          }
+          origConsoleError.apply(console, args);
+        };
+        window.addEventListener('error', function (e) {
+          if (
+            e.message &&
+            (e.message.includes('WebSocket') || e.message.includes('ws') || e.message.includes('vite'))
+          ) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          if (
+            e.reason &&
+            (String(e.reason).includes('WebSocket') || String(e.reason).includes('vite'))
+          ) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        });
+      })();
+    </script>
+  </head>
+  <body class="bg-[#070b12] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
