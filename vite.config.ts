@@ -1,11 +1,12 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
-import {VitePWA} from 'vite-plugin-pwa';
+import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
+    base: '/Jarvis-AI/',
     plugins: [
       react(),
       tailwindcss(),
@@ -13,24 +14,24 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg'],
         manifest: {
-          id: '/',
+          id: '/Jarvis-AI/',
           name: 'JARVIS AI',
           short_name: 'JARVIS',
           description: 'JARVIS AI Assistant developed by Abdullah Waheed (LGS Paragon, Lahore) with real-time Google search grounding, artwork generation, voice synthesis, multi-file analysis, and offline support.',
           theme_color: '#060b13',
           background_color: '#060b13',
           display: 'standalone',
-          start_url: '/',
-          scope: '/',
+          start_url: '/Jarvis-AI/',
+          scope: '/Jarvis-AI/',
           icons: [
             {
-              src: '/icon.svg',
+              src: 'icon.svg',
               sizes: '192x192 512x512',
               type: 'image/svg+xml',
               purpose: 'any',
             },
             {
-              src: '/icon.svg',
+              src: 'icon.svg',
               sizes: '512x512',
               type: 'image/svg+xml',
               purpose: 'maskable',
