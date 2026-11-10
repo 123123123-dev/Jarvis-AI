@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { generateComprehensiveJarvisResponse } from './src/services/intelligence.ts';
+import { generateComprehensiveJarvisResponse } from './src/services/intelligence';
 
 dotenv.config();
 
@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Body parsers with increased limits for multi-file attachments (up to 10 files)
 app.use(express.json({ limit: '60mb' }));
@@ -21,11 +21,6 @@ app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 const apiKey = process.env.GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({
   apiKey: apiKey || 'AIzaSyPlaceholderKeyForBuild',
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
 });
 
 // In-memory sync store for multi-session and cloud synchronization
@@ -49,7 +44,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Real-time synchronization endpoint
+// Real-time synchronization endpoints
 app.post('/api/sync', (req, res) => {
   try {
     const { userId = 'guest_user', chats = [] } = req.body;
@@ -137,42 +132,31 @@ app.post('/api/generate-image', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite-image',
-        contents: {
-          parts: [
-            {
-              text: `High quality, ultra-detailed digital artwork: ${prompt}. Cinematic lighting, vibrant color palette, masterpiece composition.`,
-            },
-          ],
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: aspectRatio as '1:1' | '3:4' | '4:3' | '9:16' | '16:9',
+    if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('Placeholder')) {
+      try {
+        const response = await ai.models.generateImages({
+          model: 'imagen-3.0-generate-002',
+          prompt: prompt,
+          config: {
+            numberOfImages: 1,
+            outputMimeType: 'image/jpeg',
+            aspectRatio: (aspectRatio as '1:1' | '3:4' | '4:3' | '9:16' | '16:9') || '1:1',
           },
-        },
-      });
-
-      let imageUrl: string | null = null;
-      for (const part of response.candidates?.[0]?.content?.parts ?? []) {
-        if (part.inlineData?.data) {
-          const mime = part.inlineData.mimeType || 'image/png';
-          imageUrl = `data:${mime};base64,${part.inlineData.data}`;
-          break;
-        }
-      }
-
-      if (imageUrl) {
-        return res.json({
-          success: true,
-          imageUrl,
-          prompt,
-          engine: 'JARVIS Neural Art Engine (DALL-E 3 Style)',
         });
+
+        const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
+        if (imageBytes) {
+          const imageUrl = `data:image/jpeg;base64,${imageBytes}`;
+          return res.json({
+            success: true,
+            imageUrl,
+            prompt,
+            engine: 'JARVIS Neural Art Engine (Imagen 3)',
+          });
+        }
+      } catch (modelErr) {
+        console.log('Imagen model generation quota/timeout, utilizing neural canvas generator.');
       }
-    } catch (modelErr) {
-      console.log('Image model generation quota/timeout, utilizing neural canvas generator.');
     }
 
     const fallbackImageUrl = createProceduralArtwork(prompt);
@@ -207,7 +191,7 @@ app.post('/api/chat', async (req, res) => {
     const {
       messages = [],
       webSearch = true,
-      model = 'gemini-3.8-flash',
+      model = 'gemini-2.5-flash',
       attachments = [],
     } = req.body;
 
@@ -224,42 +208,41 @@ app.post('/api/chat', async (req, res) => {
 
     // If latest message is a pure image generation request, auto-route to image synthesis
     if (isImagePrompt(latestText)) {
-      // Clean up prompt text
       const promptClean = latestText
         .replace(/^(generate image of|create image of|generate artwork of|draw|paint|\/image|make an image of)\s*/i, '')
         .trim();
 
-      try {
-        const imageRes = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite-image',
-          contents: {
-            parts: [{ text: promptClean || latestText }],
-          },
-          config: {
-            imageConfig: { aspectRatio: '1:1' },
-          },
-        });
+      if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('Placeholder')) {
+        try {
+          const imageRes = await ai.models.generateImages({
+            model: 'imagen-3.0-generate-002',
+            prompt: promptClean || latestText,
+            config: {
+              numberOfImages: 1,
+              outputMimeType: 'image/jpeg',
+              aspectRatio: '1:1',
+            },
+          });
 
-        for (const part of imageRes.candidates?.[0]?.content?.parts ?? []) {
-          if (part.inlineData?.data) {
-            const mime = part.inlineData.mimeType || 'image/png';
-            const imageUrl = `data:${mime};base64,${part.inlineData.data}`;
+          const imageBytes = imageRes.generatedImages?.[0]?.image?.imageBytes;
+          if (imageBytes) {
+            const imageUrl = `data:image/jpeg;base64,${imageBytes}`;
             return res.json({
               role: 'assistant',
-              content: `Here is the artwork generated for **"${promptClean || latestText}"**:\n\n![${promptClean || 'Generated Artwork'}](${imageUrl})\n\n*Artwork synthesized using JARVIS AI Creative Studio (DALL-E 3 Style).*`,
+              content: `Here is the artwork generated for **"${promptClean || latestText}"**:\n\n![${promptClean || 'Generated Artwork'}](${imageUrl})\n\n*Artwork synthesized using JARVIS AI Creative Studio (Imagen 3).*`,
               imageUrl,
               grounding: [],
             });
           }
+        } catch (imgError) {
+          console.log('Direct image routing model fallback activated.');
         }
-      } catch (imgError) {
-        console.log('Direct image routing model fallback activated.');
       }
 
       const generatedArt = createProceduralArtwork(promptClean || latestText);
       return res.json({
         role: 'assistant',
-        content: `Here is the artwork generated for **"${promptClean || latestText}"**:\n\n![${promptClean || 'Generated Artwork'}](${generatedArt})\n\n*Artwork synthesized using JARVIS AI Creative Studio (DALL-E 3 Style).*`,
+        content: `Here is the artwork generated for **"${promptClean || latestText}"**:\n\n![${promptClean || 'Generated Artwork'}](${generatedArt})\n\n*Artwork synthesized using JARVIS AI Creative Studio (Neural Canvas).*`,
         imageUrl: generatedArt,
         grounding: [],
       });
@@ -271,12 +254,11 @@ You have full real-time access to the knowledge of the world powered by Google S
 Your characteristics:
 1. Highly articulate, intelligent, polite, and technically adept (like Marvel's J.A.R.V.I.S.).
 2. You provide comprehensive, structured, well-formatted answers with clear Markdown (headings, bullet points, code blocks with syntax highlighting, mathematical equations, tables when helpful).
-3. If asked about Pakistan, Lahore, DHA (Defence Housing Authority / Docosahexaenoic Acid), LGS (Lahore Grammar School Paragon), Elon Musk, world news, current events, technology, science, or academics, provide accurate, rich, authoritative details.
+3. If asked about Pakistan, Lahore, DHA (Defence Housing Authority), LGS (Lahore Grammar School Paragon), Elon Musk, world news, current events, technology, science, or academics, provide accurate, rich, authoritative details.
 4. You support multi-file analysis (up to 10 files/images). When files or images are provided, analyze each one thoroughly, highlighting key insights, text extraction, visual layout, code debugging, or document summaries.
 5. Synthesize web search sources smoothly. Be proactive, insightful, and helpful at all times.`;
 
     // Map conversation history
-    // Notice: we format the contents array for generateContent
     const contents: Array<{ role: string; parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> }> = [];
 
     // Prior turns (excluding latest)
@@ -295,11 +277,10 @@ Your characteristics:
     if (attachments && Array.isArray(attachments)) {
       for (const file of attachments.slice(0, 10)) {
         if (file.data && file.type) {
-          // base64 data without prefix if present
           const base64Data = file.data.includes(',')
             ? file.data.split(',')[1]
             : file.data;
-          
+
           if (file.type.startsWith('image/')) {
             latestParts.push({
               inlineData: {
@@ -308,7 +289,6 @@ Your characteristics:
               },
             });
           } else {
-            // For text/documents, include file name and decoded text or inlineData
             try {
               const textContent = Buffer.from(base64Data, 'base64').toString('utf-8');
               latestParts.push({
@@ -337,17 +317,16 @@ Your characteristics:
       parts: latestParts,
     });
 
-    // Model configuration
-    // Tools: enable Google Search grounding if webSearch is enabled
+    // Enable Google Search grounding if webSearch is enabled
     const tools = webSearch ? [{ googleSearch: {} }] : [];
 
-    // Select valid model
-    const selectedModel = model === 'gemini-4-argon' ? 'gemini-4-argon' : 'gemini-3.8-flash';
+    // Model selection mapping to official Gemini API models
+    const selectedModel = (model === 'gemini-4-argon' || model === 'gemini-2.5-pro') ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
     let responseText = '';
     let sources: Array<{ uri: string; title: string }> = [];
     let webSearchQueries: string[] = [];
 
-    if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('MY_GEMINI')) {
+    if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('Placeholder')) {
       const primaryTimeout = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Primary request timeout (7s)')), 7000)
       );
@@ -393,7 +372,6 @@ Your characteristics:
           })
           .filter(Boolean) as Array<{ uri: string; title: string }>;
       } catch (firstErr) {
-        // If search grounding or model hit quota limits (429 RESOURCE_EXHAUSTED) or timed out, retry with core flash model without tools
         const firstErrStr = `${(firstErr as Error)?.message || ''}`;
         const isQuotaOrTimeout =
           firstErrStr.includes('429') ||
@@ -401,15 +379,15 @@ Your characteristics:
           firstErrStr.includes('quota') ||
           firstErrStr.includes('timeout');
 
-        if (isQuotaOrTimeout && (tools.length > 0 || selectedModel !== 'gemini-3.8-flash')) {
-          console.log('Search tool or paid model quota limit/timeout. Retrying with gemini-3.8-flash without search tools...');
+        if (isQuotaOrTimeout && (tools.length > 0 || selectedModel !== 'gemini-2.5-flash')) {
+          console.log('Search tool or model timeout/quota limit. Retrying with gemini-2.5-flash without search tools...');
           try {
             const retryTimeout = new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('Retry timeout (5s)')), 5000)
             );
             const retryResponse = await Promise.race([
               ai.models.generateContent({
-                model: 'gemini-3.8-flash',
+                model: 'gemini-2.5-flash',
                 contents,
                 config: {
                   systemInstruction,
@@ -429,7 +407,7 @@ Your characteristics:
       throw new Error('429 RESOURCE_EXHAUSTED: Utilizing offline knowledge core.');
     }
 
-    res.json({
+    return res.json({
       role: 'assistant',
       content: responseText,
       sources,
@@ -453,8 +431,7 @@ Your characteristics:
     } else {
       console.log('API fallback active:', errStr.slice(0, 100));
     }
-    
-    // Provide comprehensive JARVIS intelligence synthesis with real-time web search
+
     const result = await generateComprehensiveJarvisResponse(
       latestText,
       reqMessages,
