@@ -33,13 +33,37 @@ import {
 } from './services/storage';
 import { WifiOff, Sparkles, Link } from 'lucide-react';
 
+async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    if (!response.ok) throw new Error(fallbackMessage);
+    return {} as T;
+  }
+
+  const trimmed = rawText.trim();
+  const contentType = response.headers.get('content-type') || '';
+  const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+
+  if (!contentType.includes('application/json') && !looksLikeJson) {
+    const preview = trimmed.replace(/\s+/g, ' ').slice(0, 220);
+    throw new Error(preview || fallbackMessage);
+  }
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch (error) {
+    const preview = trimmed.replace(/\s+/g, ' ').slice(0, 220);
+    throw new Error(preview || fallbackMessage);
+  }
+}
+
 async function createDirectSignInUrl(): Promise<string> {
   const response = await fetch('/api/auth/direct-link', {
     method: 'POST',
     headers: getAccountAuthHeaders(),
   });
   if (!response.ok) throw new Error('Could not create a direct sign-in link.');
-  const data = await response.json() as { token?: string };
+  const data = await readJsonResponse<{ token?: string }>(response, 'The server returned an invalid sign-in link.');
   if (!data.token) throw new Error('The server returned an invalid sign-in link.');
   return getDirectSignInUrl(data.token);
 }
@@ -107,17 +131,17 @@ export default function App() {
           body: JSON.stringify({ token: linkToken }),
         });
         if (!redemption.ok) throw new Error('This sign-in link is invalid, expired, or already used.');
-        const { user: account, token } = await redemption.json() as {
-          user: UserProfile;
-          token: string;
-        };
+        const { user: account, token } = await readJsonResponse<{ user: UserProfile; token: string }>(
+          redemption,
+          'The sign-in link response was incomplete.'
+        );
         sessionStorage.setItem(ACCOUNT_SESSION_TOKEN_KEY, token);
 
         const response = await fetch('/api/conversations', {
           headers: getAccountAuthHeaders(),
         });
         if (!response.ok) throw new Error('Could not load the account conversations.');
-        const data = await response.json() as { conversations: Conversation[] };
+        const data = await readJsonResponse<{ conversations: Conversation[] }>(response, 'The server returned an invalid conversation list.');
         if (!active) return;
 
         setConversations(data.conversations);
@@ -143,7 +167,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     fetch('/api/health')
-      .then((response) => response.json())
+      .then((response) => readJsonResponse<{ aiConfigured?: boolean }>(response, 'The health check response was invalid.'))
       .then((health) => {
         if (active) setAiConfigured(Boolean(health.aiConfigured));
       })
@@ -183,7 +207,10 @@ export default function App() {
         headers: getAccountAuthHeaders(),
       });
       if (!response.ok) throw new Error('Signed in, but account conversations could not be loaded.');
-      const { conversations: accountConversations } = await response.json();
+      const { conversations: accountConversations } = await readJsonResponse<{ conversations: Conversation[] }>(
+        response,
+        'The account conversations response was invalid.'
+      );
       const nextDirectSignInUrl = await createDirectSignInUrl();
       setConversations(accountConversations);
       setActiveChatId(null);
@@ -456,7 +483,10 @@ export default function App() {
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const data = await readJsonResponse<{ error?: string; content?: string; prompt?: string; imageUrl?: string; sources?: Array<{ uri: string; title: string }> }>(
+        res,
+        `JARVIS API error (${res.status}): ${res.statusText}`
+      );
       if (!res.ok) {
         throw new Error(data.error || `JARVIS API error (${res.status}): ${res.statusText}`);
       }
