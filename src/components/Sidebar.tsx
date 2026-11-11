@@ -104,29 +104,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Guest Mode / Cloud Sync Card */}
+        {/* Account Status */}
         <div className="px-3 py-1">
           <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-800 text-xs">
             <div className="flex items-center gap-2">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  user.isGuest ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-                }`}
-              />
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
               <span className="text-slate-200 font-medium text-[11px]">
-                {user.isGuest ? 'Guest Mode' : 'Cloud Sync Active'}
+                {user.isGuest ? 'Guest Mode' : 'Account'}
               </span>
             </div>
-            {user.isGuest ? (
-              <button
-                onClick={onOpenAuth}
-                className="text-cyan-400 hover:text-cyan-300 font-semibold text-[11px] hover:underline cursor-pointer"
-              >
-                Sign In
-              </button>
-            ) : (
-              <span className="text-[10px] text-emerald-400 font-mono">Live</span>
-            )}
+            <button
+              onClick={onOpenAuth}
+              className="text-cyan-400 hover:text-cyan-300 font-semibold text-[11px] hover:underline cursor-pointer"
+            >
+              {user.isGuest ? 'Sign In' : 'Account'}
+            </button>
           </div>
         </div>
 
@@ -168,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ) : (
                 <div className="py-6 flex flex-col items-center justify-center space-y-2">
                   <MessageSquare className="w-6 h-6 text-slate-600 stroke-[1.5]" />
-                  <p className="text-slate-400 font-medium">Guest session (Memory only)</p>
+                  <p className="text-slate-400 font-medium">Guest session (not saved)</p>
                   <p className="text-[11px] text-slate-400">
                     Chats reset on tab refresh
                   </p>
@@ -259,8 +251,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <div className="text-[10px] text-slate-500 truncate">
                 {user.isGuest
-                  ? 'Chats reset on tab refresh'
-                  : 'LGS Paragon · Lahore'}
+                  ? 'Guest chats are not saved'
+                  : 'Account conversations'}
               </div>
             </div>
             <Sparkles className="w-3.5 h-3.5 text-cyan-500/70 shrink-0" />

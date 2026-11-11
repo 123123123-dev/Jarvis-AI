@@ -1,6 +1,6 @@
 {
   "name": "JARVIS AI",
-  "description": "JARVIS AI Assistant developed by Abdullah Waheed (LGS Paragon, Lahore) featuring real-time Google search grounding, artwork generation, voice synthesis, multi-file vision analysis, real-time synchronization, and offline PWA support.",
+  "description": "JARVIS AI is a general-purpose assistant with web search, AI artwork, voice features, file analysis, and locally saved conversations.",
   "requestFramePermissions": ["clipboard-read", "clipboard-write"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

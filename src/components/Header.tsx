@@ -27,7 +27,7 @@ interface HeaderProps {
   user: UserProfile;
   onOpenAuth: () => void;
   isOnline: boolean;
-  syncStatus: 'synced' | 'syncing' | 'offline' | 'guest';
+  aiConfigured: boolean;
   onOpenTools: () => void;
   onExport?: () => void;
   hasMessages?: boolean;
@@ -42,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   onOpenAuth,
   isOnline,
-  syncStatus,
+  aiConfigured,
   onOpenTools,
   onExport,
   hasMessages = false,
@@ -70,25 +70,25 @@ export const Header: React.FC<HeaderProps> = ({
     desc: string;
   }> = [
     {
-      id: 'gemini-3.8-flash',
-      title: 'JARVIS Turbo (Vision & Speed)',
-      badge: 'Fastest',
+      id: 'jarvis-turbo',
+      title: 'JARVIS Turbo',
+      badge: 'Fast',
       icon: <Zap className="w-4 h-4 text-amber-400" />,
-      desc: 'Multimodal vision, high speed, and real-time Google search grounding.',
+      desc: 'Fast everyday chat, web search, image understanding, and file analysis.',
     },
     {
-      id: 'gemini-4-argon',
-      title: 'JARVIS Ultra (Deep Reasoning & STEM)',
+      id: 'jarvis-pro',
+      title: 'JARVIS Pro',
       badge: 'Reasoning',
       icon: <Sparkles className="w-4 h-4 text-cyan-400" />,
-      desc: 'Deep analytical thinking for complex math, coding, and scientific logic.',
+      desc: 'Advanced reasoning for difficult questions, coding, and detailed analysis.',
     },
     {
-      id: 'art-studio',
-      title: 'JARVIS Art Studio (DALL-E 3 Style)',
+      id: 'jarvis-art',
+      title: 'JARVIS Art',
       badge: 'Image Gen',
       icon: <Palette className="w-4 h-4 text-fuchsia-400" />,
-      desc: 'High-fidelity visual art and digital paintings from text descriptions.',
+      desc: 'Generate images from text prompts.',
     },
   ];
 
@@ -118,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <span className="text-[10px] text-slate-400 hidden sm:inline-block leading-tight font-medium">
-              Developed by Abdullah Waheed (LGS Paragon, Lahore)
+              AI workspace
             </span>
           </div>
         </div>
@@ -241,12 +241,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div
           title={
             !isOnline
-              ? 'Offline mode: changes are cached locally'
-              : syncStatus === 'syncing'
-              ? 'Syncing with cloud...'
-              : user.isGuest
-              ? 'Guest Mode: Local memory store'
-              : 'Cloud Sync: Active & synchronized'
+              ? 'Offline: AI replies require an internet connection'
+              : !aiConfigured
+                ? 'AI is not configured. Add GEMINI_API_KEY to the server environment and restart.'
+                : 'AI is ready. Signed-in chats are saved to your account; guest chats are temporary.'
           }
           className="hidden lg:flex items-center gap-1 px-2 py-1 rounded bg-slate-900/60 border border-slate-800 text-[11px]"
         >
@@ -255,11 +253,16 @@ export const Header: React.FC<HeaderProps> = ({
               <WifiOff className="w-3 h-3 text-amber-400" />
               <span className="text-amber-400">Offline</span>
             </>
+          ) : !aiConfigured ? (
+            <>
+              <WifiOff className="w-3 h-3 text-amber-400" />
+              <span className="text-amber-400">Setup</span>
+            </>
           ) : (
             <>
               <Wifi className="w-3 h-3 text-emerald-400" />
               <span className="text-emerald-400 font-mono text-[10px]">
-                {user.isGuest ? 'Guest' : 'Synced'}
+                Online
               </span>
             </>
           )}

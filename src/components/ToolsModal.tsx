@@ -94,7 +94,7 @@ export const ToolsModal: React.FC<ToolsModalProps> = ({
           <div>
             <h3 className="text-base font-bold text-white">JARVIS AI Multi-Tool Studio</h3>
             <p className="text-xs text-slate-400">
-              Computational & Cognitive Tools · Abdullah Waheed (LGS Paragon)
+              Calculators, converters, and writing tools
             </p>
           </div>
         </div>
@@ -303,7 +303,7 @@ export const ToolsModal: React.FC<ToolsModalProps> = ({
               <div className="text-lg font-bold text-white font-mono mt-1">
                 {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </div>
-              <span className="text-[10px] text-slate-400">LGS Paragon Headquarters</span>
+              <span className="text-[10px] text-slate-400">World Clock</span>
             </div>
 
             <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">

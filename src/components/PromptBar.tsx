@@ -40,6 +40,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<unknown>(null);
+  const dictationBaseRef = useRef('');
+  const finalTranscriptRef = useRef('');
 
   // Auto-resize textarea
   useEffect(() => {
@@ -69,13 +71,22 @@ export const PromptBar: React.FC<PromptBarProps> = ({
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onresult = (event: any) => {
-        let transcript = '';
+        let interimTranscript = '';
+        let finalTranscript = finalTranscriptRef.current;
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+          const transcript = event.results[i][0].transcript.trim();
+          if (event.results[i].isFinal) {
+            finalTranscript = [finalTranscript, transcript].filter(Boolean).join(' ');
+          } else {
+            interimTranscript = [interimTranscript, transcript].filter(Boolean).join(' ');
+          }
         }
-        if (transcript) {
-          setInputText((prev) => (prev ? `${prev} ${transcript}` : transcript));
-        }
+        finalTranscriptRef.current = finalTranscript;
+        setInputText(
+          [dictationBaseRef.current, finalTranscript, interimTranscript]
+            .filter(Boolean)
+            .join(' ')
+        );
       };
 
       recognition.onerror = () => {
@@ -103,9 +114,12 @@ export const PromptBar: React.FC<PromptBarProps> = ({
       setIsListening(false);
     } else {
       try {
+        dictationBaseRef.current = inputText.trim();
+        finalTranscriptRef.current = '';
         recognition.start();
         setIsListening(true);
       } catch (err) {
+        setIsListening(false);
         console.warn('Speech recognition start failed:', err);
       }
     }
@@ -338,7 +352,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
 
       {/* Footer Subtext */}
       <div className="text-center text-[10px] text-slate-400 mt-2 select-none">
-        JARVIS AI Assistant · Developed by Abdullah Waheed (LGS Paragon, Lahore)
+        JARVIS AI Assistant
       </div>
     </div>
   );

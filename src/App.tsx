@@ -23,29 +23,50 @@ import {
   AppSettings,
 } from './types';
 import {
-  loadConversations,
-  saveConversations,
-  loadActiveChatId,
-  saveActiveChatId,
-  loadUserProfile,
-  saveUserProfile,
+  defaultUser,
   loadSettings,
   saveSettings,
-  syncToServer,
-  flushOfflineQueue,
+  ACCOUNT_SESSION_TOKEN_KEY,
+  getAccountAuthHeaders,
+  getDirectSignInTokenFromUrl,
+  getDirectSignInUrl,
 } from './services/storage';
-import { WifiOff, Sparkles } from 'lucide-react';
+import { WifiOff, Sparkles, Link } from 'lucide-react';
+
+async function createDirectSignInUrl(): Promise<string> {
+  const response = await fetch('/api/auth/direct-link', {
+    method: 'POST',
+    headers: getAccountAuthHeaders(),
+  });
+  if (!response.ok) throw new Error('Could not create a direct sign-in link.');
+  const data = await response.json() as { token?: string };
+  if (!data.token) throw new Error('The server returned an invalid sign-in link.');
+  return getDirectSignInUrl(data.token);
+}
+
+async function revokeAccountSession(): Promise<void> {
+  if (!sessionStorage.getItem(ACCOUNT_SESSION_TOKEN_KEY)) return;
+  try {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: getAccountAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Could not revoke the temporary account session.');
+  } catch (error) {
+    console.error('Unable to revoke account session:', error);
+  } finally {
+    sessionStorage.removeItem(ACCOUNT_SESSION_TOKEN_KEY);
+  }
+}
 
 export default function App() {
   // Persistence state
-  const [conversations, setConversations] = useState<Conversation[]>(() =>
-    loadConversations()
-  );
-  const [activeChatId, setActiveChatId] = useState<string | null>(() =>
-    loadActiveChatId()
-  );
-  const [user, setUser] = useState<UserProfile>(() => loadUserProfile());
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [user, setUser] = useState<UserProfile>(defaultUser);
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [directSignInUrl, setDirectSignInUrl] = useState<string | null>(null);
+  const [accountNotice, setAccountNotice] = useState('');
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -55,10 +76,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
-  const [syncStatus, setSyncStatus] = useState<
-    'synced' | 'syncing' | 'offline' | 'guest'
-  >(user.isGuest ? 'guest' : 'synced');
-
+  const [aiConfigured, setAiConfigured] = useState(false);
   // Modals state
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -69,51 +87,149 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatScrollContainerRef = useRef<HTMLDivElement>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const accountSaveQueue = useRef(Promise.resolve());
 
   // Active conversation object
   const activeConversation =
     conversations.find((c) => c.id === activeChatId) || null;
 
-  // Save conversations whenever they change
+  // Redeem a reusable account link; ordinary tabs still start as guests.
   useEffect(() => {
-    saveConversations(conversations);
-    if (!user.isGuest && isOnline) {
-      setSyncStatus('syncing');
-      syncToServer(user.id, conversations).then((res) => {
-        setSyncStatus(res.success ? 'synced' : 'offline');
-      });
-    }
-  }, [conversations, user, isOnline]);
+    const linkToken = getDirectSignInTokenFromUrl();
+    if (!linkToken) return;
 
-  // Save active chat ID
+    let active = true;
+    const redeemLink = async () => {
+      try {
+        const redemption = await fetch('/api/auth/redeem-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: linkToken }),
+        });
+        if (!redemption.ok) throw new Error('This sign-in link is invalid, expired, or already used.');
+        const { user: account, token } = await redemption.json() as {
+          user: UserProfile;
+          token: string;
+        };
+        sessionStorage.setItem(ACCOUNT_SESSION_TOKEN_KEY, token);
+
+        const response = await fetch('/api/conversations', {
+          headers: getAccountAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Could not load the account conversations.');
+        const data = await response.json() as { conversations: Conversation[] };
+        if (!active) return;
+
+        setConversations(data.conversations);
+        setActiveChatId(null);
+        setUser(account);
+        setDirectSignInUrl(getDirectSignInUrl(linkToken));
+        window.history.replaceState({}, '', '/');
+      } catch (error) {
+        await revokeAccountSession();
+        if (!active) return;
+        console.error('Unable to redeem direct sign-in link:', error);
+        setAccountNotice(error instanceof Error ? error.message : 'Unable to open this sign-in link.');
+        window.history.replaceState({}, '', '/');
+      }
+    };
+
+    void redeemLink();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
-    saveActiveChatId(activeChatId);
-  }, [activeChatId]);
+    let active = true;
+    fetch('/api/health')
+      .then((response) => response.json())
+      .then((health) => {
+        if (active) setAiConfigured(Boolean(health.aiConfigured));
+      })
+      .catch(() => {
+        if (active) setAiConfigured(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Only authenticated conversations are persisted.
+  useEffect(() => {
+    if (user.isGuest) return;
+
+    accountSaveQueue.current = accountSaveQueue.current
+      .then(async () => {
+        const response = await fetch('/api/conversations', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAccountAuthHeaders() },
+          body: JSON.stringify({ conversations }),
+        });
+        if (!response.ok) throw new Error('Account conversation save failed.');
+      })
+      .catch((error) => console.error('Unable to save account conversations:', error));
+  }, [conversations, user]);
 
   // Save settings
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
 
-  // Save user profile
-  useEffect(() => {
-    saveUserProfile(user);
-    setSyncStatus(user.isGuest ? 'guest' : 'synced');
-  }, [user]);
+  const handleAuthenticated = async (account: UserProfile, token: string) => {
+    sessionStorage.setItem(ACCOUNT_SESSION_TOKEN_KEY, token);
+    try {
+      const response = await fetch('/api/conversations', {
+        headers: getAccountAuthHeaders(),
+      });
+      if (!response.ok) throw new Error('Signed in, but account conversations could not be loaded.');
+      const { conversations: accountConversations } = await response.json();
+      const nextDirectSignInUrl = await createDirectSignInUrl();
+      setConversations(accountConversations);
+      setActiveChatId(null);
+      setUser(account);
+      setDirectSignInUrl(nextDirectSignInUrl);
+      setAccountNotice('');
+      window.history.replaceState({}, '', '/');
+    } catch (error) {
+      await revokeAccountSession();
+      throw error;
+    }
+  };
+
+  const handleSignOut = async () => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: getAccountAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Sign out failed. Please try again.');
+    sessionStorage.removeItem(ACCOUNT_SESSION_TOKEN_KEY);
+    setConversations([]);
+    setActiveChatId(null);
+    setUser(defaultUser);
+    setDirectSignInUrl(null);
+    window.history.replaceState({}, '', '/');
+  };
+
+  const handleCopyDirectSignInUrl = async () => {
+    if (!directSignInUrl) return;
+    try {
+      await navigator.clipboard.writeText(directSignInUrl);
+      setAccountNotice('Reusable account link copied. It stays active until sign-out or your next sign-in.');
+    } catch (error) {
+      console.error('Unable to copy direct sign-in link:', error);
+      setAccountNotice('Could not copy the sign-in link. Check clipboard permissions and try again.');
+    }
+  };
 
   // Online / Offline listener & auto-flush sync queue
   useEffect(() => {
-    const handleOnline = async () => {
+    const handleOnline = () => {
       setIsOnline(true);
-      const flushed = await flushOfflineQueue();
-      if (flushed && !user.isGuest) {
-        setSyncStatus('synced');
-      }
     };
 
     const handleOffline = () => {
       setIsOnline(false);
-      setSyncStatus('offline');
     };
 
     window.addEventListener('online', handleOnline);
@@ -123,7 +239,7 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [user.isGuest]);
+  }, []);
 
   // Keyboard shortcut Ctrl+K / Cmd+K for new chat
   useEffect(() => {
@@ -258,13 +374,12 @@ export default function App() {
 
     // Check if prompt is an image generation request
     const isImageReq =
-      settings.selectedModel === 'art-studio' ||
+      settings.selectedModel === 'jarvis-art' ||
       text.toLowerCase().startsWith('generate image') ||
       text.toLowerCase().startsWith('create image') ||
       text.toLowerCase().startsWith('generate artwork') ||
       text.toLowerCase().startsWith('draw ') ||
-      text.toLowerCase().startsWith('paint ') ||
-      text.toLowerCase().includes('dall-e');
+      text.toLowerCase().startsWith('paint ');
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
@@ -322,7 +437,7 @@ export default function App() {
           content: m.content,
         })),
         webSearch: settings.webSearchEnabled,
-        model: settings.dualEngineEnabled ? 'gemini-4-argon' : settings.selectedModel,
+        model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
         attachments: attachments.map((a) => ({
           name: a.name,
           type: a.type,
@@ -330,7 +445,7 @@ export default function App() {
         })),
       };
 
-      if (isImageReq && settings.selectedModel === 'art-studio') {
+      if (isImageReq && settings.selectedModel === 'jarvis-art') {
         endpoint = '/api/generate-image';
         body = { prompt: text, aspectRatio: '1:1' };
       }
@@ -341,11 +456,10 @@ export default function App() {
         body: JSON.stringify(body),
       });
 
-      if (!res.ok) {
-        throw new Error(`JARVIS API error (${res.status}): ${res.statusText}`);
-      }
-
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `JARVIS API error (${res.status}): ${res.statusText}`);
+      }
 
       let assistantMessage: Message;
       if (endpoint === '/api/generate-image') {
@@ -386,10 +500,13 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error contacting JARVIS backend:', err);
+      const errorText = err instanceof Error ? err.message : 'The request failed.';
       const errorMessage: Message = {
         id: Math.random().toString(36).substring(2, 9),
         role: 'assistant',
-        content: `**JARVIS Core Notice:** ${(err as Error).message}\n\nPlease verify network connection or Gemini API credentials in the Settings panel.`,
+        content: errorText.includes('not configured')
+          ? `**Setup required:** ${errorText}\n\nAdd GEMINI_API_KEY to the server's untracked .env file and restart the server.`
+          : `**JARVIS could not answer:** ${errorText}`,
         timestamp: Date.now(),
         isError: true,
       };
@@ -418,7 +535,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#060b13] text-slate-100 antialiased font-sans">
-      {/* Sidebar Navigation */}
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -435,9 +551,7 @@ export default function App() {
         onShare={() => setShareModalOpen(true)}
       />
 
-      {/* Main App Container */}
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
-        {/* Header */}
         <Header
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           selectedModel={settings.selectedModel}
@@ -447,35 +561,72 @@ export default function App() {
           voiceEnabled={settings.voiceEnabled}
           onToggleVoice={() => {
             if (settings.voiceEnabled) stopSpeaking();
-            setSettings((prev) => ({
-              ...prev,
-              voiceEnabled: !prev.voiceEnabled,
-            }));
+            setSettings((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }));
           }}
           user={user}
           onOpenAuth={() => setAuthModalOpen(true)}
           isOnline={isOnline}
-          syncStatus={syncStatus}
+          aiConfigured={aiConfigured}
           onOpenTools={() => setToolsModalOpen(true)}
           onExport={() => setExportModalOpen(true)}
           hasMessages={(activeConversation?.messages?.length || 0) > 0}
         />
 
-        {/* Offline Alert Banner */}
         {!isOnline && (
           <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-300">
             <div className="flex items-center gap-2">
               <WifiOff className="w-4 h-4 shrink-0" />
               <span>
-                <strong>Offline Mode:</strong> JARVIS is utilizing local offline cache.
-                Your conversations are preserved and will synchronize automatically when
-                reconnected.
+                <strong>Offline:</strong> Guest chats are not saved and AI replies require an internet connection. Account changes may not sync.
               </span>
             </div>
           </div>
         )}
 
-        {/* Chat / Hero Scroll Area */}
+        {accountNotice && (
+          <div role="status" className="bg-slate-900 border-b border-slate-700 px-4 py-2 flex items-center justify-between gap-3 text-xs text-slate-300">
+            <span>{accountNotice}</span>
+            <button
+              type="button"
+              onClick={() => setAccountNotice('')}
+              className="text-slate-400 hover:text-white"
+              aria-label="Dismiss account notice"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {!user.isGuest && (
+          <div className="bg-cyan-950/80 border-b border-cyan-500/30 px-4 py-2 flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs text-cyan-300">
+            <div className="flex items-start gap-2 min-w-0">
+              <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+              <div>
+                <p><strong>Signed in:</strong> conversations are saved to your account.</p>
+                <p className="text-[10px] text-cyan-200/70">Anyone with this reusable link can access your account until you sign out or sign in again.</p>
+              </div>
+            </div>
+            {directSignInUrl && (
+              <div className="flex items-center gap-2 min-w-0 md:max-w-[50%]">
+                <input
+                  type="text"
+                  readOnly
+                  value={directSignInUrl}
+                  aria-label="Reusable account sign-in URL"
+                  onFocus={(event) => event.currentTarget.select()}
+                  className="min-w-0 flex-1 rounded border border-cyan-500/30 bg-slate-950/70 px-2 py-1 text-[10px] text-cyan-100"
+                />
+                <button
+                  onClick={handleCopyDirectSignInUrl}
+                  className="shrink-0 text-[11px] underline hover:text-cyan-200 cursor-pointer"
+                >
+                  Copy URL
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div
           ref={chatScrollContainerRef}
           onScroll={handleScroll}
@@ -495,17 +646,16 @@ export default function App() {
                 />
               ))}
 
-              {/* Loading / Thinking Indicator */}
               {isLoading && (
                 <div className="py-4 px-3 md:px-6 bg-slate-900/30 border-y border-slate-800/40">
                   <div className="max-w-4xl mx-auto flex gap-3 md:gap-4 items-center">
-                    <ArcReactorLogo size="sm" glow={true} />
+                    <ArcReactorLogo glow={true} size="sm" />
                     <div className="flex items-center gap-2 text-xs md:text-sm text-cyan-300">
                       <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
                       <span className="font-mono">
                         {settings.webSearchEnabled
-                          ? 'JARVIS is accessing real-time Google search knowledge...'
-                          : 'JARVIS neural core is synthesizing response...'}
+                          ? 'JARVIS is accessing real-time web knowledge...'
+                          : 'JARVIS is preparing a response...'}
                       </span>
                     </div>
                   </div>
@@ -517,56 +667,39 @@ export default function App() {
           )}
         </div>
 
-        {/* Bottom Prompt Input Area */}
         <PromptBar
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
           webSearchEnabled={settings.webSearchEnabled}
           onToggleWebSearch={() =>
-            setSettings((prev) => ({
-              ...prev,
-              webSearchEnabled: !prev.webSearchEnabled,
-            }))
+            setSettings((prev) => ({ ...prev, webSearchEnabled: !prev.webSearchEnabled }))
           }
           dualEngineEnabled={settings.dualEngineEnabled}
           onToggleDualEngine={() =>
-            setSettings((prev) => ({
-              ...prev,
-              dualEngineEnabled: !prev.dualEngineEnabled,
-            }))
+            setSettings((prev) => ({ ...prev, dualEngineEnabled: !prev.dualEngineEnabled }))
           }
           showScrollBottom={showScrollBottom}
           onScrollToBottom={scrollToBottom}
         />
       </div>
 
-      {/* Modals */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         currentUser={user}
-        onSaveUser={(newUser) => setUser(newUser)}
-        onTriggerSync={() => {
-          setSyncStatus('syncing');
-          syncToServer(user.id, conversations).then((res) => {
-            setSyncStatus(res.success ? 'synced' : 'offline');
-          });
-        }}
-        isSyncing={syncStatus === 'syncing'}
+        onAuthenticated={handleAuthenticated}
+        onSignOut={handleSignOut}
       />
-
       <ShareModal
         isOpen={shareModalOpen}
         onClose={() => setShareModalOpen(false)}
         conversation={activeConversation}
       />
-
       <ExportModal
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
         conversation={activeConversation}
       />
-
       <ToolsModal
         isOpen={toolsModalOpen}
         onClose={() => setToolsModalOpen(false)}

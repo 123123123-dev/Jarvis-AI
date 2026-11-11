@@ -432,7 +432,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               </div>
               <div className="p-2.5 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between">
                 <span className="text-xs text-cyan-300 font-medium">
-                  JARVIS Neural Artwork (DALL-E 3 Style)
+                  JARVIS AI Artwork
                 </span>
                 <a
                   href={message.imageUrl}

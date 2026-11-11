@@ -40,7 +40,7 @@ export interface UserProfile {
   isGuest: boolean;
 }
 
-export type AIModelId = 'gemini-3.8-flash' | 'gemini-4-argon' | 'art-studio';
+export type AIModelId = 'jarvis-turbo' | 'jarvis-pro' | 'jarvis-art';
 
 export interface AppSettings {
   voiceEnabled: boolean;

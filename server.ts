@@ -1,9 +1,11 @@
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { generateComprehensiveJarvisResponse } from './src/services/intelligence';
+import { DatabaseSync } from 'node:sqlite';
 
 dotenv.config();
 
@@ -23,54 +25,273 @@ const ai = new GoogleGenAI({
   apiKey: apiKey || 'AIzaSyPlaceholderKeyForBuild',
 });
 
-// In-memory sync store for multi-session and cloud synchronization
-interface SyncItem {
+const databasePath = process.env.JARVIS_DATABASE_PATH || path.resolve('data/jarvis.sqlite');
+mkdirSync(path.dirname(databasePath), { recursive: true });
+const database = new DatabaseSync(databasePath);
+database.exec(`
+  PRAGMA foreign_keys = ON;
+  PRAGMA journal_mode = WAL;
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password_salt TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS direct_sign_in_links (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS conversations (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (user_id, conversation_id)
+  );
+`);
+
+interface AccountRecord {
   id: string;
-  title: string;
-  updatedAt: number;
-  messages: unknown[];
-  pinned?: boolean;
+  name: string;
+  email: string;
+  password_salt: string;
+  password_hash: string;
 }
 
-const syncDatabase: Record<string, SyncItem[]> = {};
+interface PublicAccount {
+  id: string;
+  name: string;
+  email: string;
+  isGuest: false;
+}
+
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const DIRECT_LINK_EXPIRY = Number.MAX_SAFE_INTEGER;
+const authAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function publicAccount(account: AccountRecord): PublicAccount {
+  return { id: account.id, name: account.name, email: account.email, isGuest: false };
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function createAccountSession(account: AccountRecord): { user: PublicAccount; token: string } {
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + SESSION_DURATION_MS;
+  database.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+    .run(hashToken(token), account.id, expiresAt);
+  return { user: publicAccount(account), token };
+}
+
+function accountFromRequest(req: Request): AccountRecord | undefined {
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!token) return undefined;
+
+  const session = database.prepare(
+    'SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?'
+  ).get(hashToken(token), Date.now()) as { user_id: string } | undefined;
+  if (!session) return undefined;
+
+  return database.prepare(
+    'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?'
+  ).get(session.user_id) as AccountRecord | undefined;
+}
+
+function requireAccount(req: Request, res: Response): AccountRecord | undefined {
+  const account = accountFromRequest(req);
+  if (!account) res.status(401).json({ error: 'Please sign in to access this account.' });
+  return account;
+}
+
+function limitAuthAttempts(req: Request, res: Response, next: NextFunction) {
+  const now = Date.now();
+  const key = req.ip || 'unknown';
+  const attempt = authAttempts.get(key);
+  if (attempt && attempt.resetAt > now && attempt.count >= 10) {
+    return res.status(429).json({ error: 'Too many account attempts. Please wait and try again.' });
+  }
+  authAttempts.set(key, {
+    count: attempt && attempt.resetAt > now ? attempt.count + 1 : 1,
+    resetAt: attempt && attempt.resetAt > now ? attempt.resetAt : now + 15 * 60 * 1000,
+  });
+  next();
+}
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'JARVIS AI Engine',
-    developer: 'Abdullah Waheed (LGS Paragon, Lahore)',
+    aiConfigured: Boolean(apiKey && !apiKey.includes('Placeholder')),
     time: new Date().toISOString(),
   });
 });
 
-// Real-time synchronization endpoints
-app.post('/api/sync', (req, res) => {
+app.post('/api/auth/register', limitAuthAttempts, (req, res) => {
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+  if (!name || name.length > 80) {
+    return res.status(400).json({ error: 'Name must be between 1 and 80 characters.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+  if (password.length < 12 || password.length > 128) {
+    return res.status(400).json({ error: 'Password must be between 12 and 128 characters.' });
+  }
+
+  const id = randomUUID();
+  const salt = randomBytes(16).toString('hex');
+  const passwordHash = scryptSync(password, salt, 64).toString('hex');
   try {
-    const { userId = 'guest_user', chats = [] } = req.body;
-    syncDatabase[userId] = chats;
-    res.json({
-      success: true,
-      syncedAt: Date.now(),
-      count: chats.length,
-    });
+    database.prepare(
+      'INSERT INTO users (id, name, email, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(id, name, email, salt, passwordHash, Date.now());
+    const account = database.prepare(
+      'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?'
+    ).get(id) as unknown as AccountRecord;
+    return res.status(201).json(createAccountSession(account));
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    if (`${(error as Error).message}`.includes('UNIQUE constraint failed')) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+    console.error('Account registration failed:', (error as Error).message);
+    return res.status(500).json({ error: 'Account registration failed. Please try again.' });
   }
 });
 
-app.get('/api/sync', (req, res) => {
-  try {
-    const userId = (req.query.userId as string) || 'guest_user';
-    const chats = syncDatabase[userId] || [];
-    res.json({
-      success: true,
-      syncedAt: Date.now(),
-      chats,
-    });
-  } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+app.post('/api/auth/login', limitAuthAttempts, (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const account = database.prepare(
+    'SELECT id, name, email, password_salt, password_hash FROM users WHERE email = ?'
+  ).get(email) as AccountRecord | undefined;
+  const candidateHash = scryptSync(password, account?.password_salt || 'jarvis-invalid-account-salt', 64);
+  const expectedHash = account ? Buffer.from(account.password_hash, 'hex') : Buffer.alloc(64);
+
+  if (!account || !timingSafeEqual(candidateHash, expectedHash)) {
+    return res.status(401).json({ error: 'Email or password is incorrect.' });
   }
+
+  return res.json(createAccountSession(account));
+});
+
+app.post('/api/auth/direct-link', (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return;
+
+  const token = randomBytes(32).toString('hex');
+  const now = Date.now();
+  database.prepare(
+    'DELETE FROM direct_sign_in_links WHERE user_id = ? OR expires_at <= ? OR used_at IS NOT NULL'
+  ).run(account.id, now);
+  database.prepare(
+    'INSERT INTO direct_sign_in_links (token_hash, user_id, expires_at) VALUES (?, ?, ?)'
+  ).run(hashToken(token), account.id, DIRECT_LINK_EXPIRY);
+  return res.json({ token });
+});
+
+app.post('/api/auth/redeem-link', (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  if (!/^[a-f0-9]{64}$/i.test(token)) {
+    return res.status(401).json({ error: 'This sign-in link is invalid, expired, or already used.' });
+  }
+
+  const now = Date.now();
+  const link = database.prepare(
+    'SELECT user_id FROM direct_sign_in_links WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?'
+  ).get(hashToken(token), now) as { user_id: string } | undefined;
+  if (!link) {
+    return res.status(401).json({ error: 'This sign-in link is invalid, expired, or already used.' });
+  }
+
+  const account = database.prepare(
+    'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?'
+  ).get(link.user_id) as AccountRecord | undefined;
+  if (!account) return res.status(401).json({ error: 'This sign-in link is invalid, expired, or already used.' });
+  return res.json(createAccountSession(account));
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const account = accountFromRequest(req);
+  return res.json({ user: account ? publicAccount(account) : null });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const authorization = req.headers.authorization || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (token) {
+    const account = accountFromRequest(req);
+    database.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+    if (account) {
+      database.prepare('DELETE FROM direct_sign_in_links WHERE user_id = ?').run(account.id);
+    }
+  }
+  return res.json({ success: true });
+});
+
+app.get('/api/conversations', (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return;
+  const rows = database.prepare(
+    'SELECT payload FROM conversations WHERE user_id = ? ORDER BY updated_at DESC'
+  ).all(account.id) as Array<{ payload: string }>;
+  return res.json({ conversations: rows.map((row) => JSON.parse(row.payload)) });
+});
+
+app.put('/api/conversations', (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return;
+  const conversations = req.body?.conversations;
+  if (!Array.isArray(conversations) || conversations.length > 500) {
+    return res.status(400).json({ error: 'Conversation data is invalid or exceeds the account limit.' });
+  }
+
+  const serializedConversations: Array<{ id: string; updatedAt: number; payload: string }> = [];
+  for (const conversation of conversations) {
+    if (!conversation || typeof conversation.id !== 'string' || conversation.id.length > 200) {
+      return res.status(400).json({ error: 'Conversation data contains an invalid entry.' });
+    }
+    serializedConversations.push({
+      id: conversation.id,
+      updatedAt: Number.isFinite(conversation.updatedAt) ? conversation.updatedAt : Date.now(),
+      payload: JSON.stringify(conversation),
+    });
+  }
+
+  if (serializedConversations.reduce((total, item) => total + item.payload.length, 0) > 50_000_000) {
+    return res.status(413).json({ error: 'Conversation history exceeds the account storage limit.' });
+  }
+
+  database.exec('BEGIN');
+  try {
+    database.prepare('DELETE FROM conversations WHERE user_id = ?').run(account.id);
+    const insert = database.prepare(
+      'INSERT INTO conversations (user_id, conversation_id, updated_at, payload) VALUES (?, ?, ?, ?)'
+    );
+    for (const conversation of serializedConversations) {
+      insert.run(account.id, conversation.id, conversation.updatedAt, conversation.payload);
+    }
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+  return res.json({ success: true });
 });
 
 // Helper to determine if a prompt is an image generation request
@@ -83,48 +304,11 @@ function isImagePrompt(text: string): boolean {
     lower.startsWith('draw ') ||
     lower.startsWith('paint ') ||
     lower.startsWith('/image') ||
-    lower.includes('dall-e') ||
     lower.startsWith('make an image of')
   );
 }
 
-// Procedural artwork generator for high-definition visual representations
-function createProceduralArtwork(prompt: string): string {
-  const safePrompt = prompt.replace(/[<>&"]/g, '');
-  const hues = [190, 210, 260, 320, 45];
-  const randomHue = hues[Math.floor(Math.random() * hues.length)];
-  const svgArtwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="100%" height="100%">
-    <defs>
-      <radialGradient id="artBg" cx="50%" cy="50%" r="70%">
-        <stop offset="0%" stop-color="hsl(${randomHue}, 80%, 25%)"/>
-        <stop offset="50%" stop-color="hsl(${(randomHue + 40) % 360}, 60%, 12%)"/>
-        <stop offset="100%" stop-color="#050a12"/>
-      </radialGradient>
-      <filter id="glow">
-        <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
-        <feMerge>
-          <feMergeNode in="coloredBlur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-    </defs>
-    <rect width="1024" height="1024" fill="url(#artBg)"/>
-    <g filter="url(#glow)">
-      <circle cx="512" cy="512" r="340" fill="none" stroke="hsl(${randomHue}, 90%, 60%)" stroke-width="4" stroke-dasharray="24 12" opacity="0.6"/>
-      <circle cx="512" cy="512" r="240" fill="none" stroke="hsl(${(randomHue + 60) % 360}, 90%, 70%)" stroke-width="6" opacity="0.8"/>
-      <polygon points="512,240 740,660 284,660" fill="none" stroke="hsl(${randomHue}, 90%, 65%)" stroke-width="3" opacity="0.7"/>
-      <polygon points="512,784 740,364 284,364" fill="none" stroke="hsl(${(randomHue + 120) % 360}, 90%, 65%)" stroke-width="3" opacity="0.7"/>
-      <circle cx="512" cy="512" r="60" fill="hsl(${randomHue}, 90%, 70%)" opacity="0.4"/>
-    </g>
-    <text x="512" y="870" text-anchor="middle" font-family="system-ui, sans-serif" font-size="28" font-weight="700" fill="#e0f2fe" opacity="0.95">JARVIS AI CREATIVE STUDIO</text>
-    <text x="512" y="920" text-anchor="middle" font-family="system-ui, sans-serif" font-size="20" fill="#38bdf8" opacity="0.85">"${safePrompt.slice(0, 55)}${safePrompt.length > 55 ? '...' : ''}"</text>
-    <text x="512" y="960" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" fill="#94a3b8" opacity="0.7">Synthesized for Abdullah Waheed · LGS Paragon, Lahore</text>
-  </svg>`;
-  const base64 = Buffer.from(svgArtwork).toString('base64');
-  return `data:image/svg+xml;base64,${base64}`;
-}
-
-// Generate DALL-E 3 / AI Artwork endpoint
+// Generate AI artwork endpoint
 app.post('/api/generate-image', async (req, res) => {
   try {
     const { prompt, aspectRatio = '1:1' } = req.body;
@@ -132,50 +316,44 @@ app.post('/api/generate-image', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('Placeholder')) {
-      try {
-        const response = await ai.models.generateImages({
-          model: 'imagen-3.0-generate-002',
-          prompt: prompt,
-          config: {
-            numberOfImages: 1,
-            outputMimeType: 'image/jpeg',
-            aspectRatio: (aspectRatio as '1:1' | '3:4' | '4:3' | '9:16' | '16:9') || '1:1',
-          },
-        });
-
-        const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
-        if (imageBytes) {
-          const imageUrl = `data:image/jpeg;base64,${imageBytes}`;
-          return res.json({
-            success: true,
-            imageUrl,
-            prompt,
-            engine: 'JARVIS Neural Art Engine (Imagen 3)',
-          });
-        }
-      } catch (modelErr) {
-        console.log('Imagen model generation quota/timeout, utilizing neural canvas generator.');
-      }
+    if (!apiKey || apiKey.includes('Placeholder')) {
+      return res.status(503).json({
+        error: 'AI image generation is not configured. Set GEMINI_API_KEY in the server environment.',
+      });
     }
 
-    const fallbackImageUrl = createProceduralArtwork(prompt);
+    const response = await ai.models.generateImages({
+      model: 'imagen-3.0-generate-002',
+      prompt,
+      config: {
+        numberOfImages: 1,
+        outputMimeType: 'image/jpeg',
+        aspectRatio: (aspectRatio as '1:1' | '3:4' | '4:3' | '9:16' | '16:9') || '1:1',
+      },
+    });
+
+    const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
+    if (!imageBytes) {
+      return res.status(502).json({ error: 'The image provider returned no image. Please try again.' });
+    }
 
     return res.json({
       success: true,
-      imageUrl: fallbackImageUrl,
+      imageUrl: `data:image/jpeg;base64,${imageBytes}`,
       prompt,
-      engine: 'JARVIS Neural Canvas Studio',
-      note: 'Artwork synthesized via JARVIS high-fidelity visual rendering core.',
+      engine: 'Imagen 3',
     });
-  } catch (err) {
-    console.log('Image generation fallback activated:', (err as Error).message);
-    const fallbackImageUrl = createProceduralArtwork(req.body?.prompt || 'Artwork');
-    return res.json({
-      success: true,
-      imageUrl: fallbackImageUrl,
-      prompt: req.body?.prompt || 'Artwork',
-      engine: 'JARVIS Neural Canvas Studio',
+  } catch (error) {
+    const message = `${(error as Error).message || ''}`;
+    const isQuotaError = message.includes('429') || message.includes('quota');
+    const isTimeout = message.toLowerCase().includes('timeout') || message.toLowerCase().includes('aborted');
+    console.error('JARVIS image request failed:', message.slice(0, 300));
+    return res.status(isQuotaError ? 429 : isTimeout ? 504 : 502).json({
+      error: isQuotaError
+        ? 'The AI provider quota is temporarily unavailable. Please try again later.'
+        : isTimeout
+          ? 'The image provider timed out. Check provider availability and try again.'
+        : 'The AI provider could not generate this image. Please try again.',
     });
   }
 });
@@ -191,7 +369,7 @@ app.post('/api/chat', async (req, res) => {
     const {
       messages = [],
       webSearch = true,
-      model = 'gemini-2.5-flash',
+      model = 'gemini-3.8-flash',
       attachments = [],
     } = req.body;
 
@@ -235,28 +413,26 @@ app.post('/api/chat', async (req, res) => {
             });
           }
         } catch (imgError) {
-          console.log('Direct image routing model fallback activated.');
+          const message = `${(imgError as Error).message || ''}`;
+          const isQuotaError = message.includes('429') || message.includes('quota');
+          console.error('JARVIS image request failed:', message.slice(0, 300));
+          return res.status(isQuotaError ? 429 : 502).json({
+            error: isQuotaError
+              ? 'The AI provider quota is temporarily unavailable. Please try again later.'
+              : 'The AI provider could not generate this image. Please try again.',
+          });
         }
+      } else {
+        return res.status(503).json({
+          error: 'AI image generation is not configured. Set GEMINI_API_KEY in the server environment.',
+        });
       }
 
-      const generatedArt = createProceduralArtwork(promptClean || latestText);
-      return res.json({
-        role: 'assistant',
-        content: `Here is the artwork generated for **"${promptClean || latestText}"**:\n\n![${promptClean || 'Generated Artwork'}](${generatedArt})\n\n*Artwork synthesized using JARVIS AI Creative Studio (Neural Canvas).*`,
-        imageUrl: generatedArt,
-        grounding: [],
-      });
+      return res.status(502).json({ error: 'The image provider returned no image. Please try again.' });
     }
 
     // Prepare system instruction
-    const systemInstruction = `You are JARVIS AI, an advanced, highly capable AI assistant developed and created by Abdullah Waheed (LGS Paragon, Lahore).
-You have full real-time access to the knowledge of the world powered by Google Search Grounding.
-Your characteristics:
-1. Highly articulate, intelligent, polite, and technically adept (like Marvel's J.A.R.V.I.S.).
-2. You provide comprehensive, structured, well-formatted answers with clear Markdown (headings, bullet points, code blocks with syntax highlighting, mathematical equations, tables when helpful).
-3. If asked about Pakistan, Lahore, DHA (Defence Housing Authority), LGS (Lahore Grammar School Paragon), Elon Musk, world news, current events, technology, science, or academics, provide accurate, rich, authoritative details.
-4. You support multi-file analysis (up to 10 files/images). When files or images are provided, analyze each one thoroughly, highlighting key insights, text extraction, visual layout, code debugging, or document summaries.
-5. Synthesize web search sources smoothly. Be proactive, insightful, and helpful at all times.`;
+    const systemInstruction = `You are JARVIS, a helpful general-purpose AI assistant. Answer the user's actual question directly and accurately. Be clear about uncertainty and never invent facts, sources, or actions. Use concise explanations by default, with structured steps or examples when useful. Analyze any attached files or images in the context of the user's request. If live search is unavailable or the answer may be out of date, say so.`;
 
     // Map conversation history
     const contents: Array<{ role: string; parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> }> = [];
@@ -320,15 +496,17 @@ Your characteristics:
     // Enable Google Search grounding if webSearch is enabled
     const tools = webSearch ? [{ googleSearch: {} }] : [];
 
-    // Model selection mapping to official Gemini API models
-    const selectedModel = (model === 'gemini-4-argon' || model === 'gemini-2.5-pro') ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+    // Model selection mapping to currently available Gemini API models.
+    const selectedModel = model === 'jarvis-pro'
+      ? 'gemini-3.1-flash-lite'
+      : 'gemini-flash-lite-latest';
     let responseText = '';
     let sources: Array<{ uri: string; title: string }> = [];
     let webSearchQueries: string[] = [];
 
     if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('Placeholder')) {
       const primaryTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Primary request timeout (7s)')), 7000)
+        setTimeout(() => reject(new Error('Primary request timeout (10s)')), 10000)
       );
 
       try {
@@ -379,15 +557,15 @@ Your characteristics:
           firstErrStr.includes('quota') ||
           firstErrStr.includes('timeout');
 
-        if (isQuotaOrTimeout && (tools.length > 0 || selectedModel !== 'gemini-2.5-flash')) {
-          console.log('Search tool or model timeout/quota limit. Retrying with gemini-2.5-flash without search tools...');
+        if (isQuotaOrTimeout && (tools.length > 0 || selectedModel !== 'gemini-flash-lite-latest')) {
+          console.log('Search tool or model timeout/quota limit. Retrying with the available flash model without search tools...');
           try {
             const retryTimeout = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('Retry timeout (5s)')), 5000)
+              setTimeout(() => reject(new Error('Retry timeout (8s)')), 8000)
             );
             const retryResponse = await Promise.race([
               ai.models.generateContent({
-                model: 'gemini-2.5-flash',
+                model: 'gemini-flash-lite-latest',
                 contents,
                 config: {
                   systemInstruction,
@@ -404,7 +582,7 @@ Your characteristics:
         }
       }
     } else {
-      throw new Error('429 RESOURCE_EXHAUSTED: Utilizing offline knowledge core.');
+      throw new Error('AI service is not configured. Set GEMINI_API_KEY in the server environment.');
     }
 
     return res.json({
@@ -425,27 +603,25 @@ Your characteristics:
       errStr.includes('429') ||
       errStr.includes('RESOURCE_EXHAUSTED') ||
       errStr.includes('quota');
+    const isTimeout = errStr.toLowerCase().includes('timeout') || errStr.toLowerCase().includes('aborted');
 
-    if (isQuotaError) {
-      console.log('Gemini API quota limit encountered (429). Activating JARVIS resilient knowledge engine.');
-    } else {
-      console.log('API fallback active:', errStr.slice(0, 100));
-    }
+    const status = !apiKey || apiKey.includes('Placeholder')
+      ? 503
+      : isQuotaError
+        ? 429
+        : isTimeout
+          ? 504
+          : 502;
+    const message = !apiKey || apiKey.includes('Placeholder')
+      ? 'AI service is not configured. Set GEMINI_API_KEY in the server environment.'
+      : isQuotaError
+        ? 'The AI provider reports that this key has no available quota. Enable billing or quota for the selected model, then retry.'
+        : isTimeout
+          ? 'The AI provider did not respond in time. Check model availability and try again.'
+          : 'The AI provider could not complete this request. Please try again.';
 
-    const result = await generateComprehensiveJarvisResponse(
-      latestText,
-      reqMessages,
-      currentAttachments,
-      isWebSearch
-    );
-
-    return res.json({
-      role: 'assistant',
-      content: result.content,
-      sources: result.sources,
-      modelUsed: result.modelUsed,
-      timestamp: Date.now(),
-    });
+    console.error('JARVIS request failed:', errStr.slice(0, 300));
+    return res.status(status).json({ error: message });
   }
 });
 
@@ -455,9 +631,12 @@ async function startServer() {
   const httpServer = http.createServer(app);
 
   if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    const staticDirectory = path.basename(__dirname) === 'dist'
+      ? __dirname
+      : path.resolve(__dirname, 'dist');
+    app.use(express.static(staticDirectory));
     app.get('*', (req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.resolve(staticDirectory, 'index.html'));
     });
   } else {
     const { createServer: createViteServer } = await import('vite');

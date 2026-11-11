@@ -1,17 +1,12 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
-
+export default defineConfig(() => {
   return {
-    base: '/Jarvis-AI/',
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY),
-    },
+    base: '/',
     plugins: [
       react(),
       tailwindcss(),
@@ -19,16 +14,16 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg'],
         manifest: {
-          id: '/Jarvis-AI/',
+          id: '/',
           name: 'JARVIS AI',
           short_name: 'JARVIS',
           description:
-            'JARVIS AI Assistant developed by Abdullah Waheed (LGS Paragon, Lahore) with real-time Google search grounding, artwork generation, voice synthesis, multi-file analysis, and offline support.',
+            'A general-purpose AI assistant with web search, AI artwork, voice features, file analysis, and account-saved conversations.',
           theme_color: '#060b13',
           background_color: '#060b13',
           display: 'standalone',
-          start_url: '/Jarvis-AI/',
-          scope: '/Jarvis-AI/',
+          start_url: '/',
+          scope: '/',
           icons: [
             {
               src: 'icon.svg',

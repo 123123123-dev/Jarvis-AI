@@ -27,7 +27,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   const handleCopyFullText = () => {
-    let text = `JARVIS AI Conversation: "${conversation.title}"\nDeveloped by Abdullah Waheed (LGS Paragon, Lahore)\n\n`;
+    let text = `JARVIS AI Conversation: "${conversation.title}"\n\n`;
     for (const msg of conversation.messages) {
       const author = msg.role === 'user' ? 'User' : 'JARVIS AI';
       text += `[${author}]: ${msg.content}\n\n`;
@@ -42,7 +42,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       try {
         await navigator.share({
           title: `JARVIS AI - ${conversation.title}`,
-          text: `Check out this AI conversation on JARVIS AI (Developed by Abdullah Waheed, LGS Paragon): "${conversation.title}"`,
+          text: `Check out this AI conversation on JARVIS AI: "${conversation.title}"`,
           url: shareUrl,
         });
       } catch {

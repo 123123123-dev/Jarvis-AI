@@ -1,18 +1,29 @@
 import { Conversation, UserProfile, AppSettings } from '../types';
 
-const STORAGE_KEYS = {
-  CONVERSATIONS: 'jarvis_conversations_v1',
-  ACTIVE_CHAT_ID: 'jarvis_active_chat_id_v1',
-  USER_PROFILE: 'jarvis_user_profile_v1',
-  OFFLINE_QUEUE: 'jarvis_offline_sync_queue_v1',
-  SETTINGS: 'jarvis_settings_v1',
-};
+const SETTINGS_KEY = 'jarvis_settings_v1';
+
+export const ACCOUNT_SESSION_TOKEN_KEY = 'jarvis_account_session';
+
+export function getAccountAuthHeaders(): Record<string, string> {
+  const token = sessionStorage.getItem(ACCOUNT_SESSION_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export function getDirectSignInTokenFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(/^\/app\/([a-f0-9]{64})$/i);
+  return match?.[1] || null;
+}
+
+export function getDirectSignInUrl(token: string): string {
+  if (typeof window === 'undefined') return '';
+  return new URL(`/app/${token}`, window.location.origin).toString();
+}
 
 export const defaultUser: UserProfile = {
   id: 'guest_user',
   name: 'Guest User',
-  email: 'guest@jarvis.local',
-  school: 'LGS Paragon, Lahore',
+  email: '',
   isGuest: true,
 };
 
@@ -20,72 +31,22 @@ export const defaultSettings: AppSettings = {
   voiceEnabled: false,
   webSearchEnabled: true,
   dualEngineEnabled: false,
-  selectedModel: 'gemini-3.8-flash',
+  selectedModel: 'jarvis-turbo',
 };
-
-// Local storage management
-export function loadConversations(): Conversation[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error('Failed to load conversations from storage:', e);
-    return [];
-  }
-}
-
-export function saveConversations(conversations: Conversation[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEYS.CONVERSATIONS, JSON.stringify(conversations));
-  } catch (e) {
-    console.error('Failed to save conversations to storage:', e);
-  }
-}
-
-export function loadActiveChatId(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_CHAT_ID);
-  } catch {
-    return null;
-  }
-}
-
-export function saveActiveChatId(id: string | null): void {
-  try {
-    if (id) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_CHAT_ID, id);
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_CHAT_ID);
-    }
-  } catch {
-    // ignore
-  }
-}
-
-export function loadUserProfile(): UserProfile {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.USER_PROFILE);
-    if (!raw) return defaultUser;
-    return JSON.parse(raw);
-  } catch {
-    return defaultUser;
-  }
-}
-
-export function saveUserProfile(profile: UserProfile): void {
-  try {
-    localStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
-  } catch (e) {
-    console.error('Failed to save profile:', e);
-  }
-}
 
 export function loadSettings(): AppSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    const raw = sessionStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings;
-    return { ...defaultSettings, ...JSON.parse(raw) };
+    const settings = { ...defaultSettings, ...JSON.parse(raw) };
+    if (settings.selectedModel === 'gemini-3.8-flash' || settings.selectedModel === 'gemini-2.5-flash' || settings.selectedModel === 'gemini-3.5-flash-lite') {
+      settings.selectedModel = 'jarvis-turbo';
+    } else if (settings.selectedModel === 'gemini-4-argon' || settings.selectedModel === 'gemini-2.5-pro' || settings.selectedModel === 'gemini-3.1-pro-preview') {
+      settings.selectedModel = 'jarvis-pro';
+    } else if (settings.selectedModel === 'art-studio') {
+      settings.selectedModel = 'jarvis-art';
+    }
+    return settings;
   } catch {
     return defaultSettings;
   }
@@ -93,61 +54,9 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch (e) {
     console.error('Failed to save settings:', e);
-  }
-}
-
-// Real-time Cloud Synchronization
-export async function syncToServer(
-  userId: string,
-  conversations: Conversation[]
-): Promise<{ success: boolean; syncedAt?: number; error?: string }> {
-  if (!navigator.onLine) {
-    // Enqueue for offline sync
-    try {
-      localStorage.setItem(
-        STORAGE_KEYS.OFFLINE_QUEUE,
-        JSON.stringify({ userId, conversations, queuedAt: Date.now() })
-      );
-    } catch {
-      // ignore
-    }
-    return { success: false, error: 'Offline mode active. Queued locally for sync.' };
-  }
-
-  try {
-    const res = await fetch('/api/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, chats: conversations }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Sync server responded with ${res.status}`);
-    }
-
-    const data = await res.json();
-    // Clear offline queue on successful sync
-    localStorage.removeItem(STORAGE_KEYS.OFFLINE_QUEUE);
-    return { success: true, syncedAt: data.syncedAt };
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
-}
-
-// Flush offline queue when returning online
-export async function flushOfflineQueue(): Promise<boolean> {
-  if (!navigator.onLine) return false;
-  try {
-    const queueRaw = localStorage.getItem(STORAGE_KEYS.OFFLINE_QUEUE);
-    if (!queueRaw) return true;
-    const { userId, conversations } = JSON.parse(queueRaw);
-    const result = await syncToServer(userId, conversations);
-    return result.success;
-  } catch {
-    return false;
   }
 }
 
@@ -197,7 +106,7 @@ export function exportConversationToFile(
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184); // Slate 400
-    doc.text('Developed by Abdullah Waheed (LGS Paragon, Lahore)', margin + 6, y + 11);
+    doc.text('Private conversation transcript', margin + 6, y + 11);
 
     y += 26;
 
@@ -302,7 +211,7 @@ export function exportConversationToFile(
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(148, 163, 184);
       doc.text(
-        `JARVIS AI · Developed by Abdullah Waheed (LGS Paragon, Lahore) · Page ${i} of ${totalPages}`,
+        `JARVIS AI · Page ${i} of ${totalPages}`,
         pageWidth / 2,
         pageHeight - 10,
         { align: 'center' }
@@ -322,7 +231,7 @@ export function exportConversationToFile(
     // 3. Markdown Export
     mimeType = 'text/markdown';
     filename += '.md';
-    content = `# ${conv.title}\n*JARVIS AI Assistant — Developed by Abdullah Waheed (LGS Paragon, Lahore)*\n*Exported: ${new Date().toLocaleString()}*\n\n---\n\n`;
+    content = `# ${conv.title}\n*JARVIS AI Assistant*\n*Exported: ${new Date().toLocaleString()}*\n\n---\n\n`;
     for (const msg of conv.messages) {
       const roleName = msg.role === 'user' ? '👤 User' : '⚡ JARVIS';
       content += `### ${roleName} (${new Date(msg.timestamp).toLocaleTimeString()})\n\n${msg.content}\n\n`;
@@ -343,7 +252,6 @@ export function exportConversationToFile(
 JARVIS AI CONVERSATION TRANSCRIPT
 Title: ${conv.title}
 Date: ${new Date().toLocaleString()}
-Developer: Abdullah Waheed (LGS Paragon, Lahore)
 Total Messages: ${conv.messages.length}
 ================================================================================\n\n`;
 

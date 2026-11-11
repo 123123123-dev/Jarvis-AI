@@ -16,7 +16,7 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({ onSelectPrompt }) => {
     },
     {
       icon: <Palette className="w-5 h-5 text-purple-400" />,
-      title: 'Generate DALL-E 3 Artwork',
+      title: 'Generate AI Artwork',
       prompt: 'Generate image of a futuristic cyberpunk Lahore skyline at night with neon lights and flying vehicles.',
       bgHover: 'hover:border-purple-500/50 hover:bg-purple-950/20',
     },
@@ -29,7 +29,7 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({ onSelectPrompt }) => {
     {
       icon: <FilePenLine className="w-5 h-5 text-amber-400" />,
       title: 'Draft a Leave Application / Letter',
-      prompt: 'Please draft a formal, polished student leave application addressed to the Principal of LGS Paragon Lahore requesting 2 days leave for family commitment.',
+      prompt: 'Draft a formal, polished leave application to a school principal requesting two days of leave for a family commitment. Use placeholders for the dates and student details.',
       bgHover: 'hover:border-amber-500/50 hover:bg-amber-950/20',
     },
   ];
@@ -48,11 +48,7 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({ onSelectPrompt }) => {
 
       {/* Hero Subtitle */}
       <p className="text-sm md:text-base text-slate-300 text-center max-w-2xl mb-8 leading-relaxed">
-        Created and developed by{' '}
-        <span className="text-cyan-400 font-semibold">
-          Abdullah Waheed (LGS Paragon, Lahore)
-        </span>
-        . Ask questions, search world news, generate artwork with DALL-E 3, solve math,
+        Ask questions, search the web, generate AI artwork, solve math,
         or upload up to 10 files!
       </p>
 
