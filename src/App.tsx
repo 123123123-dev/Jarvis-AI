@@ -35,14 +35,35 @@ import { WifiOff, Sparkles, Link } from 'lucide-react';
 
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const rawText = await response.text();
-  if (!rawText.trim()) {
+  const trimmed = rawText.trim();
+
+  if (!trimmed) {
     if (!response.ok) throw new Error(fallbackMessage);
     return {} as T;
   }
 
-  const trimmed = rawText.trim();
   const contentType = response.headers.get('content-type') || '';
   const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+
+  if (!response.ok) {
+    try {
+      const parsed = JSON.parse(trimmed) as { error?: string; message?: string };
+      const errorMessage =
+        typeof parsed?.error === 'string'
+          ? parsed.error
+          : typeof parsed?.message === 'string'
+            ? parsed.message
+            : '';
+      if (errorMessage) throw new Error(errorMessage);
+    } catch (error) {
+      if (error instanceof Error && error.message && !error.message.includes('Unexpected token')) {
+        throw error;
+      }
+    }
+
+    const preview = trimmed.replace(/\s+/g, ' ').slice(0, 220);
+    throw new Error(preview || fallbackMessage);
+  }
 
   if (!contentType.includes('application/json') && !looksLikeJson) {
     const preview = trimmed.replace(/\s+/g, ' ').slice(0, 220);
@@ -51,7 +72,7 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
 
   try {
     return JSON.parse(trimmed) as T;
-  } catch (error) {
+  } catch {
     const preview = trimmed.replace(/\s+/g, ' ').slice(0, 220);
     throw new Error(preview || fallbackMessage);
   }
