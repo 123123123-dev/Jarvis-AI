@@ -251,6 +251,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     service: 'JARVIS AI Engine',
     aiConfigured: Boolean(apiKey && !apiKey.includes('Placeholder')),
+    databaseConfigured: Boolean(databaseUrl || !process.env.VERCEL),
     time: new Date().toISOString(),
   });
 });

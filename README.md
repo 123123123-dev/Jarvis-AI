@@ -19,7 +19,7 @@ The included Vercel configuration serves the Vite frontend and routes `/api/*` t
 1. Import this GitHub repository into Vercel and use the repository root.
 2. Connect a Neon database to the Vercel project and set `DATABASE_URL` to its pooled connection string.
 3. Set `GEMINI_API_KEY` to a Google AI Studio API key in Vercel's environment variables.
-4. Redeploy after setting both secrets, then verify `https://your-domain/api/health` reports `"status":"ok"` and `"aiConfigured":true`.
+4. Redeploy after setting both secrets, then verify `https://your-domain/api/health` reports `"status":"ok"`, `"aiConfigured":true`, and `"databaseConfigured":true`.
 5. For Google Search indexing, add the deployed URL as a URL-prefix property in Google Search Console and submit `/sitemap.xml`. Indexing and ranking are controlled by Google and are not guaranteed.
 
 Never commit database URLs, API keys, or `.env` files.
