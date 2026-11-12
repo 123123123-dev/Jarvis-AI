@@ -5,7 +5,7 @@ import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from
 import { mkdirSync } from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import postgres from 'postgres';
 
 dotenv.config();
@@ -32,12 +32,6 @@ const postgresDatabase = databaseUrl
   ? postgres(databaseUrl, { ssl: 'require', max: 1, idle_timeout: 20, prepare: false })
   : undefined;
 let sqliteDatabase: DatabaseSync | undefined;
-
-if (!postgresDatabase && !process.env.VERCEL) {
-  const databasePath = process.env.JARVIS_DATABASE_PATH || path.resolve('data/jarvis.sqlite');
-  mkdirSync(path.dirname(databasePath), { recursive: true });
-  sqliteDatabase = new DatabaseSync(databasePath);
-}
 
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -139,7 +133,11 @@ async function initializeDatabase(): Promise<void> {
     for (const statement of schemaStatements) {
       await postgresDatabase.unsafe(statement);
     }
-  } else if (sqliteDatabase) {
+  } else if (!process.env.VERCEL) {
+    const { DatabaseSync: SQLiteDatabase } = await import('node:sqlite');
+    const databasePath = process.env.JARVIS_DATABASE_PATH || path.resolve('data/jarvis.sqlite');
+    mkdirSync(path.dirname(databasePath), { recursive: true });
+    sqliteDatabase = new SQLiteDatabase(databasePath);
     sqliteDatabase.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
     for (const statement of schemaStatements) sqliteDatabase.exec(statement);
   }
