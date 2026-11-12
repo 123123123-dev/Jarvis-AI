@@ -7,13 +7,24 @@ A general-purpose AI assistant with Gemini chat, optional Google Search groundin
 1. Install Node.js 24 or newer.
 2. Install dependencies with `npm install`.
 3. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` to a Google AI Studio API key.
-4. Start the app with `npm run dev` and open `http://localhost:3000`.
+4. For local SQLite storage, leave `DATABASE_URL` empty. To use Neon locally, set it to your Neon connection string.
+5. Start the app with `npm run dev` and open `http://localhost:3000`.
 
-Keep `GEMINI_API_KEY` on the server. Do not add it to a `VITE_` variable or commit `.env`.
+Keep `GEMINI_API_KEY` and `DATABASE_URL` on the server. Do not add them to `VITE_` variables or commit `.env`.
 
-Deploy this app to a Node.js host. GitHub Pages is static-only and cannot run the Gemini, registration, or account-history APIs.
+## Deploy to Vercel
 
-Accounts use a local SQLite database. Set `JARVIS_DATABASE_PATH` to a persistent writable path for deployment; without persistent storage, accounts and conversations will not survive server replacement. Password reset and email verification are not configured.
+The included Vercel configuration serves the Vite frontend and routes `/api/*` to the Express API. Vercel's function filesystem is temporary, so Vercel deployments require a Neon Postgres database; the database tables are created automatically on first request.
+
+1. Import this GitHub repository into Vercel and use the repository root.
+2. Connect a Neon database to the Vercel project and set `DATABASE_URL` to its pooled connection string.
+3. Set `GEMINI_API_KEY` to a Google AI Studio API key in Vercel's environment variables.
+4. Redeploy after setting both secrets, then verify `https://your-domain/api/health` reports `"status":"ok"` and `"aiConfigured":true`.
+5. For Google Search indexing, add the deployed URL as a URL-prefix property in Google Search Console and submit `/sitemap.xml`. Indexing and ranking are controlled by Google and are not guaranteed.
+
+Never commit database URLs, API keys, or `.env` files.
+
+Local accounts use SQLite by default. Set `JARVIS_DATABASE_PATH` to a persistent writable path when using SQLite on a host with persistent storage. Vercel requires Neon so accounts and conversations survive server replacement. Password reset and email verification are not configured.
 
 ## Build and checks
 

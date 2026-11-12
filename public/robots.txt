@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jarvis-ai-wine-seven.vercel.app/sitemap.xml

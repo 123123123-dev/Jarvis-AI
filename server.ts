@@ -5,7 +5,8 @@ import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from
 import { mkdirSync } from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import postgres from 'postgres';
 
 dotenv.config();
 
@@ -14,6 +15,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+app.set('trust proxy', 1);
 
 // Body parsers with increased limits for multi-file attachments (up to 10 files)
 app.use(express.json({ limit: '60mb' }));
@@ -25,39 +27,125 @@ const ai = new GoogleGenAI({
   apiKey: apiKey || 'AIzaSyPlaceholderKeyForBuild',
 });
 
-const databasePath = process.env.JARVIS_DATABASE_PATH || path.resolve('data/jarvis.sqlite');
-mkdirSync(path.dirname(databasePath), { recursive: true });
-const database = new DatabaseSync(databasePath);
-database.exec(`
-  PRAGMA foreign_keys = ON;
-  PRAGMA journal_mode = WAL;
-  CREATE TABLE IF NOT EXISTS users (
+const databaseUrl = process.env.DATABASE_URL;
+const postgresDatabase = databaseUrl
+  ? postgres(databaseUrl, { ssl: 'require', max: 1, idle_timeout: 20, prepare: false })
+  : undefined;
+let sqliteDatabase: DatabaseSync | undefined;
+
+if (!postgresDatabase && !process.env.VERCEL) {
+  const databasePath = process.env.JARVIS_DATABASE_PATH || path.resolve('data/jarvis.sqlite');
+  mkdirSync(path.dirname(databasePath), { recursive: true });
+  sqliteDatabase = new DatabaseSync(databasePath);
+}
+
+const schemaStatements = [
+  `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     password_salt TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
+    created_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS direct_sign_in_links (
+    expires_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS direct_sign_in_links (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL,
-    used_at INTEGER
-  );
-  CREATE TABLE IF NOT EXISTS conversations (
+    expires_at BIGINT NOT NULL,
+    used_at BIGINT
+  )`,
+  `CREATE TABLE IF NOT EXISTS conversations (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     conversation_id TEXT NOT NULL,
-    updated_at INTEGER NOT NULL,
+    updated_at BIGINT NOT NULL,
     payload TEXT NOT NULL,
     PRIMARY KEY (user_id, conversation_id)
-  );
-`);
+  )`,
+];
+
+type DatabaseParameter = SQLInputValue;
+
+function postgresStatement(statement: string): string {
+  let parameterIndex = 0;
+  return statement.replace(/\?/g, () => `$${++parameterIndex}`);
+}
+
+async function databaseGet<T>(
+  statement: string,
+  ...parameters: DatabaseParameter[]
+): Promise<T | undefined> {
+  if (postgresDatabase) {
+    const rows = await postgresDatabase.unsafe(postgresStatement(statement), parameters);
+    return rows[0] as T | undefined;
+  }
+  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+  return sqliteDatabase.prepare(statement).get(...parameters) as T | undefined;
+}
+
+async function databaseAll<T>(
+  statement: string,
+  ...parameters: DatabaseParameter[]
+): Promise<T[]> {
+  if (postgresDatabase) {
+    const rows = await postgresDatabase.unsafe(postgresStatement(statement), parameters);
+    return rows as unknown as T[];
+  }
+  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+  return sqliteDatabase.prepare(statement).all(...parameters) as T[];
+}
+
+async function databaseRun(
+  statement: string,
+  ...parameters: DatabaseParameter[]
+): Promise<void> {
+  if (postgresDatabase) {
+    await postgresDatabase.unsafe(postgresStatement(statement), parameters);
+    return;
+  }
+  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+  sqliteDatabase.prepare(statement).run(...parameters);
+}
+
+async function databaseTransaction(
+  action: (run: typeof databaseRun) => Promise<void>,
+): Promise<void> {
+  if (postgresDatabase) {
+    await postgresDatabase.begin(async (transaction) => {
+      await action(async (statement, ...parameters) => {
+        await transaction.unsafe(postgresStatement(statement), parameters);
+      });
+    });
+    return;
+  }
+  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+
+  sqliteDatabase.exec('BEGIN');
+  try {
+    await action(databaseRun);
+    sqliteDatabase.exec('COMMIT');
+  } catch (error) {
+    sqliteDatabase.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+async function initializeDatabase(): Promise<void> {
+  if (postgresDatabase) {
+    for (const statement of schemaStatements) {
+      await postgresDatabase.unsafe(statement);
+    }
+  } else if (sqliteDatabase) {
+    sqliteDatabase.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+    for (const statement of schemaStatements) sqliteDatabase.exec(statement);
+  }
+}
+
+const databaseReady = initializeDatabase();
 
 interface AccountRecord {
   id: string;
@@ -78,6 +166,19 @@ const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const DIRECT_LINK_EXPIRY = Number.MAX_SAFE_INTEGER;
 const authAttempts = new Map<string, { count: number; resetAt: number }>();
 
+app.use('/api', async (_req, res, next) => {
+  try {
+    if (!postgresDatabase && !sqliteDatabase) {
+      throw new Error('DATABASE_URL is required for Vercel deployments.');
+    }
+    await databaseReady;
+    next();
+  } catch (error) {
+    console.error('Database initialization failed:', (error as Error).message);
+    res.status(503).json({ error: 'The database is unavailable. Check the server configuration.' });
+  }
+});
+
 function publicAccount(account: AccountRecord): PublicAccount {
   return { id: account.id, name: account.name, email: account.email, isGuest: false };
 }
@@ -86,33 +187,50 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function createAccountSession(account: AccountRecord): { user: PublicAccount; token: string } {
+async function createAccountSession(account: AccountRecord): Promise<{ user: PublicAccount; token: string }> {
   const token = randomBytes(32).toString('hex');
   const expiresAt = Date.now() + SESSION_DURATION_MS;
-  database.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(hashToken(token), account.id, expiresAt);
+  await databaseRun(
+    'INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
+    hashToken(token),
+    account.id,
+    expiresAt,
+  );
   return { user: publicAccount(account), token };
 }
 
-function accountFromRequest(req: Request): AccountRecord | undefined {
+async function accountFromRequest(req: Request): Promise<AccountRecord | undefined> {
   const authorization = req.headers.authorization || '';
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
   if (!token) return undefined;
 
-  const session = database.prepare(
-    'SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?'
-  ).get(hashToken(token), Date.now()) as { user_id: string } | undefined;
+  const session = await databaseGet<{ user_id: string }>(
+    'SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?',
+    hashToken(token),
+    Date.now(),
+  );
   if (!session) return undefined;
 
-  return database.prepare(
-    'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?'
-  ).get(session.user_id) as AccountRecord | undefined;
+  return databaseGet<AccountRecord>(
+    'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?',
+    session.user_id,
+  );
 }
 
-function requireAccount(req: Request, res: Response): AccountRecord | undefined {
-  const account = accountFromRequest(req);
+async function requireAccount(req: Request, res: Response): Promise<AccountRecord | undefined> {
+  const account = await accountFromRequest(req);
   if (!account) res.status(401).json({ error: 'Please sign in to access this account.' });
   return account;
+}
+
+function asyncRoute(handler: (req: Request, res: Response) => Promise<unknown>): (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => void {
+  return (req, res, next) => {
+    void handler(req, res).catch(next);
+  };
 }
 
 function limitAuthAttempts(req: Request, res: Response, next: NextFunction) {
@@ -139,7 +257,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.post('/api/auth/register', limitAuthAttempts, (req, res) => {
+app.post('/api/auth/register', limitAuthAttempts, asyncRoute(async (req, res) => {
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
@@ -158,28 +276,40 @@ app.post('/api/auth/register', limitAuthAttempts, (req, res) => {
   const salt = randomBytes(16).toString('hex');
   const passwordHash = scryptSync(password, salt, 64).toString('hex');
   try {
-    database.prepare(
-      'INSERT INTO users (id, name, email, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(id, name, email, salt, passwordHash, Date.now());
-    const account = database.prepare(
-      'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?'
-    ).get(id) as unknown as AccountRecord;
-    return res.status(201).json(createAccountSession(account));
+    await databaseRun(
+      'INSERT INTO users (id, name, email, password_salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      id,
+      name,
+      email,
+      salt,
+      passwordHash,
+      Date.now(),
+    );
+    const account = await databaseGet<AccountRecord>(
+      'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?',
+      id,
+    );
+    if (!account) throw new Error('Registered account could not be loaded.');
+    return res.status(201).json(await createAccountSession(account));
   } catch (error) {
-    if (`${(error as Error).message}`.includes('UNIQUE constraint failed')) {
+    if (
+      `${(error as Error).message}`.includes('UNIQUE constraint failed') ||
+      (error as { code?: string }).code === '23505'
+    ) {
       return res.status(409).json({ error: 'An account with this email already exists.' });
     }
     console.error('Account registration failed:', (error as Error).message);
     return res.status(500).json({ error: 'Account registration failed. Please try again.' });
   }
-});
+}));
 
-app.post('/api/auth/login', limitAuthAttempts, (req, res) => {
+app.post('/api/auth/login', limitAuthAttempts, asyncRoute(async (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  const account = database.prepare(
-    'SELECT id, name, email, password_salt, password_hash FROM users WHERE email = ?'
-  ).get(email) as AccountRecord | undefined;
+  const account = await databaseGet<AccountRecord>(
+    'SELECT id, name, email, password_salt, password_hash FROM users WHERE email = ?',
+    email,
+  );
   const candidateHash = scryptSync(password, account?.password_salt || 'jarvis-invalid-account-salt', 64);
   const expectedHash = account ? Buffer.from(account.password_hash, 'hex') : Buffer.alloc(64);
 
@@ -187,74 +317,83 @@ app.post('/api/auth/login', limitAuthAttempts, (req, res) => {
     return res.status(401).json({ error: 'Email or password is incorrect.' });
   }
 
-  return res.json(createAccountSession(account));
-});
+  return res.json(await createAccountSession(account));
+}));
 
-app.post('/api/auth/direct-link', (req, res) => {
-  const account = requireAccount(req, res);
+app.post('/api/auth/direct-link', asyncRoute(async (req, res) => {
+  const account = await requireAccount(req, res);
   if (!account) return;
 
   const token = randomBytes(32).toString('hex');
   const now = Date.now();
-  database.prepare(
-    'DELETE FROM direct_sign_in_links WHERE user_id = ? OR expires_at <= ? OR used_at IS NOT NULL'
-  ).run(account.id, now);
-  database.prepare(
-    'INSERT INTO direct_sign_in_links (token_hash, user_id, expires_at) VALUES (?, ?, ?)'
-  ).run(hashToken(token), account.id, DIRECT_LINK_EXPIRY);
+  await databaseRun(
+    'DELETE FROM direct_sign_in_links WHERE user_id = ? OR expires_at <= ? OR used_at IS NOT NULL',
+    account.id,
+    now,
+  );
+  await databaseRun(
+    'INSERT INTO direct_sign_in_links (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
+    hashToken(token),
+    account.id,
+    DIRECT_LINK_EXPIRY,
+  );
   return res.json({ token });
-});
+}));
 
-app.post('/api/auth/redeem-link', (req, res) => {
+app.post('/api/auth/redeem-link', asyncRoute(async (req, res) => {
   const token = typeof req.body?.token === 'string' ? req.body.token : '';
   if (!/^[a-f0-9]{64}$/i.test(token)) {
     return res.status(401).json({ error: 'This sign-in link is invalid, expired, or already used.' });
   }
 
   const now = Date.now();
-  const link = database.prepare(
-    'SELECT user_id FROM direct_sign_in_links WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?'
-  ).get(hashToken(token), now) as { user_id: string } | undefined;
+  const link = await databaseGet<{ user_id: string }>(
+    'SELECT user_id FROM direct_sign_in_links WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?',
+    hashToken(token),
+    now,
+  );
   if (!link) {
     return res.status(401).json({ error: 'This sign-in link is invalid, expired, or already used.' });
   }
 
-  const account = database.prepare(
-    'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?'
-  ).get(link.user_id) as AccountRecord | undefined;
+  const account = await databaseGet<AccountRecord>(
+    'SELECT id, name, email, password_salt, password_hash FROM users WHERE id = ?',
+    link.user_id,
+  );
   if (!account) return res.status(401).json({ error: 'This sign-in link is invalid, expired, or already used.' });
-  return res.json(createAccountSession(account));
-});
+  return res.json(await createAccountSession(account));
+}));
 
-app.get('/api/auth/me', (req, res) => {
-  const account = accountFromRequest(req);
+app.get('/api/auth/me', asyncRoute(async (req, res) => {
+  const account = await accountFromRequest(req);
   return res.json({ user: account ? publicAccount(account) : null });
-});
+}));
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', asyncRoute(async (req, res) => {
   const authorization = req.headers.authorization || '';
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
   if (token) {
-    const account = accountFromRequest(req);
-    database.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+    const account = await accountFromRequest(req);
+    await databaseRun('DELETE FROM sessions WHERE token_hash = ?', hashToken(token));
     if (account) {
-      database.prepare('DELETE FROM direct_sign_in_links WHERE user_id = ?').run(account.id);
+      await databaseRun('DELETE FROM direct_sign_in_links WHERE user_id = ?', account.id);
     }
   }
   return res.json({ success: true });
-});
+}));
 
-app.get('/api/conversations', (req, res) => {
-  const account = requireAccount(req, res);
+app.get('/api/conversations', asyncRoute(async (req, res) => {
+  const account = await requireAccount(req, res);
   if (!account) return;
-  const rows = database.prepare(
-    'SELECT payload FROM conversations WHERE user_id = ? ORDER BY updated_at DESC'
-  ).all(account.id) as Array<{ payload: string }>;
+  const rows = await databaseAll<{ payload: string }>(
+    'SELECT payload FROM conversations WHERE user_id = ? ORDER BY updated_at DESC',
+    account.id,
+  );
   return res.json({ conversations: rows.map((row) => JSON.parse(row.payload)) });
-});
+}));
 
-app.put('/api/conversations', (req, res) => {
-  const account = requireAccount(req, res);
+app.put('/api/conversations', asyncRoute(async (req, res) => {
+  const account = await requireAccount(req, res);
   if (!account) return;
   const conversations = req.body?.conversations;
   if (!Array.isArray(conversations) || conversations.length > 500) {
@@ -277,22 +416,20 @@ app.put('/api/conversations', (req, res) => {
     return res.status(413).json({ error: 'Conversation history exceeds the account storage limit.' });
   }
 
-  database.exec('BEGIN');
-  try {
-    database.prepare('DELETE FROM conversations WHERE user_id = ?').run(account.id);
-    const insert = database.prepare(
-      'INSERT INTO conversations (user_id, conversation_id, updated_at, payload) VALUES (?, ?, ?, ?)'
-    );
+  await databaseTransaction(async (run) => {
+    await run('DELETE FROM conversations WHERE user_id = ?', account.id);
     for (const conversation of serializedConversations) {
-      insert.run(account.id, conversation.id, conversation.updatedAt, conversation.payload);
+      await run(
+        'INSERT INTO conversations (user_id, conversation_id, updated_at, payload) VALUES (?, ?, ?, ?)',
+        account.id,
+        conversation.id,
+        conversation.updatedAt,
+        conversation.payload,
+      );
     }
-    database.exec('COMMIT');
-  } catch (error) {
-    database.exec('ROLLBACK');
-    throw error;
-  }
+  });
   return res.json({ success: true });
-});
+}));
 
 // Helper to determine if a prompt is an image generation request
 function isImagePrompt(text: string): boolean {
@@ -627,7 +764,7 @@ app.post('/api/chat', async (req, res) => {
 
 // Serve frontend in production or mount Vite middleware in development
 async function startServer() {
-  const http = await import('http');
+  const http = await import('node:http');
   const httpServer = http.createServer(app);
 
   if (process.env.NODE_ENV === 'production') {
@@ -657,4 +794,14 @@ async function startServer() {
   });
 }
 
-startServer();
+app.use((error: Error, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(error);
+  console.error('Unhandled request error:', error.message);
+  return res.status(500).json({ error: 'Request failed. Please try again.' });
+});
+
+export default app;
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  void startServer();
+}
