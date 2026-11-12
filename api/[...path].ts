@@ -3,7 +3,7 @@ import type { Express, Request, Response } from 'express';
 let appPromise: Promise<Express> | undefined;
 
 function loadApp(): Promise<Express> {
-  appPromise ??= import('../server')
+  appPromise ??= import('../server.ts')
     .then(({ default: app }) => app)
     .catch((error: unknown) => {
       appPromise = undefined;
