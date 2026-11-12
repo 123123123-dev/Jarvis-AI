@@ -164,7 +164,7 @@ const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const DIRECT_LINK_EXPIRY = Number.MAX_SAFE_INTEGER;
 const authAttempts = new Map<string, { count: number; resetAt: number }>();
 
-app.use('/api', async (_req, res, next) => {
+app.use(['/api/auth', '/api/conversations'], async (_req, res, next) => {
   try {
     if (!postgresDatabase && !sqliteDatabase) {
       throw new Error('DATABASE_URL is required for Vercel deployments.');

@@ -14,7 +14,7 @@ Keep `GEMINI_API_KEY` and `DATABASE_URL` on the server. Do not add them to `VITE
 
 ## Deploy to Vercel
 
-The included Vercel configuration serves the Vite frontend and routes `/api/*` to the Express API. Vercel's function filesystem is temporary, so Vercel deployments require a Neon Postgres database; the database tables are created automatically on first request.
+The included Vercel configuration serves the Vite frontend and routes `/api/*` to the Express API. Vercel's function filesystem is temporary, so account registration and saved conversations require a Neon Postgres database; the database tables are created automatically on first request. Guest AI chat and the health check do not require the database.
 
 1. Import this GitHub repository into Vercel and use the repository root.
 2. Connect a Neon database to the Vercel project and set `DATABASE_URL` to its pooled connection string.
