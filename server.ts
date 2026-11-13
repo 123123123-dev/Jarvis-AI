@@ -27,7 +27,7 @@ const ai = new GoogleGenAI({
   apiKey: apiKey || 'AIzaSyPlaceholderKeyForBuild',
 });
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
 const postgresDatabase = databaseUrl
   ? postgres(databaseUrl, { ssl: 'require', max: 1, idle_timeout: 20, prepare: false })
   : undefined;
@@ -77,7 +77,7 @@ async function databaseGet<T>(
     const rows = await postgresDatabase.unsafe(postgresStatement(statement), parameters);
     return rows[0] as T | undefined;
   }
-  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+  if (!sqliteDatabase) throw new Error('SUPABASE_DB_URL or DATABASE_URL is required for Vercel deployments.');
   return sqliteDatabase.prepare(statement).get(...parameters) as T | undefined;
 }
 
@@ -89,7 +89,7 @@ async function databaseAll<T>(
     const rows = await postgresDatabase.unsafe(postgresStatement(statement), parameters);
     return rows as unknown as T[];
   }
-  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+  if (!sqliteDatabase) throw new Error('SUPABASE_DB_URL or DATABASE_URL is required for Vercel deployments.');
   return sqliteDatabase.prepare(statement).all(...parameters) as T[];
 }
 
@@ -101,7 +101,7 @@ async function databaseRun(
     await postgresDatabase.unsafe(postgresStatement(statement), parameters);
     return;
   }
-  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+  if (!sqliteDatabase) throw new Error('SUPABASE_DB_URL or DATABASE_URL is required for Vercel deployments.');
   sqliteDatabase.prepare(statement).run(...parameters);
 }
 
@@ -116,7 +116,7 @@ async function databaseTransaction(
     });
     return;
   }
-  if (!sqliteDatabase) throw new Error('DATABASE_URL is required for Vercel deployments.');
+  if (!sqliteDatabase) throw new Error('SUPABASE_DB_URL or DATABASE_URL is required for Vercel deployments.');
 
   sqliteDatabase.exec('BEGIN');
   try {
@@ -167,7 +167,7 @@ const authAttempts = new Map<string, { count: number; resetAt: number }>();
 app.use(['/api/auth', '/api/conversations'], async (_req, res, next) => {
   try {
     if (!postgresDatabase && !sqliteDatabase) {
-      throw new Error('DATABASE_URL is required for Vercel deployments.');
+      throw new Error('SUPABASE_DB_URL or DATABASE_URL is required for Vercel account storage.');
     }
     await databaseReady;
     next();
@@ -246,12 +246,24 @@ function limitAuthAttempts(req: Request, res: Response, next: NextFunction) {
 }
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (_req, res) => {
+  const databaseConfigured = Boolean(postgresDatabase || sqliteDatabase);
+  let databaseIsReady = Boolean(sqliteDatabase);
+  if (postgresDatabase) {
+    try {
+      await databaseReady;
+      databaseIsReady = true;
+    } catch (error) {
+      console.error('Database health check failed:', (error as Error).message);
+    }
+  }
+
   res.json({
-    status: 'ok',
+    status: databaseConfigured && !databaseIsReady ? 'degraded' : 'ok',
     service: 'JARVIS AI Engine',
     aiConfigured: Boolean(apiKey && !apiKey.includes('Placeholder')),
-    databaseConfigured: Boolean(databaseUrl || !process.env.VERCEL),
+    databaseConfigured,
+    databaseReady: databaseIsReady,
     time: new Date().toISOString(),
   });
 });

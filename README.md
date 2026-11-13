@@ -7,24 +7,25 @@ A general-purpose AI assistant with Gemini chat, optional Google Search groundin
 1. Install Node.js 24 or newer.
 2. Install dependencies with `npm install`.
 3. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` to a Google AI Studio API key.
-4. For local SQLite storage, leave `DATABASE_URL` empty. To use Neon locally, set it to your Neon connection string.
+4. For local SQLite storage, leave `SUPABASE_DB_URL` and `DATABASE_URL` empty. For Supabase Postgres, set `SUPABASE_DB_URL` to the database connection URI from the Supabase dashboard.
 5. Start the app with `npm run dev` and open `http://localhost:3000`.
 
-Keep `GEMINI_API_KEY` and `DATABASE_URL` on the server. Do not add them to `VITE_` variables or commit `.env`.
+Keep `GEMINI_API_KEY`, `SUPABASE_DB_URL`, and `DATABASE_URL` on the server. Do not add them to `VITE_` variables or commit `.env`.
 
 ## Deploy to Vercel
 
-The included Vercel configuration serves the Vite frontend and routes `/api/*` to the Express API. Vercel's function filesystem is temporary, so account registration and saved conversations require a Neon Postgres database; the database tables are created automatically on first request. Guest AI chat and the health check do not require the database.
+The included Vercel configuration serves the Vite frontend and routes `/api/*` to the Express API. Vercel's function filesystem is temporary, so account registration and saved conversations require a persistent Supabase Postgres database; the database tables are created automatically on first request. Guest AI chat and the health check do not require the database.
 
-1. Import this GitHub repository into Vercel and use the repository root.
-2. Connect a Neon database to the Vercel project and set `DATABASE_URL` to its pooled connection string.
+1. In Supabase, open **Project Settings → Database → Connection string → URI** and copy the connection URI. For Vercel, use Supabase's **Transaction pooler** URI when available. Put your database password in the URI; URL-encode special characters in the password.
+2. In Vercel, open the project **Settings → Environment Variables** and add `SUPABASE_DB_URL` with the URI as its value for **Production** (and Preview if desired). Do not use a `VITE_` prefix.
 3. Set `GEMINI_API_KEY` to a Google AI Studio API key in Vercel's environment variables.
-4. Redeploy after setting both secrets, then verify `https://your-domain/api/health` reports `"status":"ok"`, `"aiConfigured":true`, and `"databaseConfigured":true`.
-5. For Google Search indexing, add the deployed URL as a URL-prefix property in Google Search Console and submit `/sitemap.xml`. Indexing and ranking are controlled by Google and are not guaranteed.
+4. Save the variables and redeploy the latest `main` commit. The app uses Supabase Postgres directly (not Supabase Auth) for its existing account/password/session system and saved chats; it creates the required tables on first database request.
+5. Verify `https://your-domain/api/health` reports `"databaseConfigured":true` and `"databaseReady":true`. Then test account registration and sign-in. If it reports database not ready, check Supabase's connection string/password and Vercel's function logs.
+6. For Google Search indexing, add the deployed URL as a URL-prefix property in Google Search Console and submit `/sitemap.xml`. Indexing and ranking are controlled by Google and are not guaranteed.
 
 Never commit database URLs, API keys, or `.env` files.
 
-Local accounts use SQLite by default. Set `JARVIS_DATABASE_PATH` to a persistent writable path when using SQLite on a host with persistent storage. Vercel requires Neon so accounts and conversations survive server replacement. Password reset and email verification are not configured.
+Local accounts use SQLite by default. Set `JARVIS_DATABASE_PATH` to a persistent writable path when using SQLite on a host with persistent storage. On Vercel, use `SUPABASE_DB_URL` or the generic `DATABASE_URL` fallback so accounts and conversations survive server replacement. Password reset and email verification are not configured.
 
 ## Build and checks
 
