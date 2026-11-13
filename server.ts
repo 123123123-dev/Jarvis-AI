@@ -27,7 +27,17 @@ const ai = new GoogleGenAI({
   apiKey: apiKey || 'AIzaSyPlaceholderKeyForBuild',
 });
 
-const databaseUrl = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+const databaseUrlEnvironmentVariable = [
+  'SUPABASE_DB_URL',
+  'SUPABASE_DATABASE_URL',
+  'POSTGRES_URL',
+  'POSTGRES_PRISMA_URL',
+  'DATABASE_URL',
+  'POSTGRES_URL_NON_POOLING',
+].find((name) => process.env[name]);
+const databaseUrl = databaseUrlEnvironmentVariable
+  ? process.env[databaseUrlEnvironmentVariable]
+  : undefined;
 const postgresDatabase = databaseUrl
   ? postgres(databaseUrl, { ssl: 'require', max: 1, idle_timeout: 20, prepare: false })
   : undefined;
@@ -167,13 +177,16 @@ const authAttempts = new Map<string, { count: number; resetAt: number }>();
 app.use(['/api/auth', '/api/conversations'], async (_req, res, next) => {
   try {
     if (!postgresDatabase && !sqliteDatabase) {
-      throw new Error('SUPABASE_DB_URL or DATABASE_URL is required for Vercel account storage.');
+      throw new Error('A supported Postgres connection string is required for Vercel account storage.');
     }
     await databaseReady;
     next();
   } catch (error) {
     console.error('Database initialization failed:', (error as Error).message);
-    res.status(503).json({ error: 'The database is unavailable. Check the server configuration.' });
+    const message = databaseUrl
+      ? 'The configured database could not be reached or initialized. Check the Supabase connection string, password, and database permissions.'
+      : 'No database connection variable was found. Set SUPABASE_DB_URL in Vercel Production and redeploy.';
+    res.status(503).json({ error: message });
   }
 });
 
@@ -259,11 +272,12 @@ app.get('/api/health', async (_req, res) => {
   }
 
   res.json({
-    status: databaseConfigured && !databaseIsReady ? 'degraded' : 'ok',
+    status: databaseConfigured && databaseIsReady ? 'ok' : 'degraded',
     service: 'JARVIS AI Engine',
     aiConfigured: Boolean(apiKey && !apiKey.includes('Placeholder')),
     databaseConfigured,
     databaseReady: databaseIsReady,
+    databaseVariable: databaseUrlEnvironmentVariable || null,
     time: new Date().toISOString(),
   });
 });
