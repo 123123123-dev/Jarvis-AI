@@ -425,7 +425,7 @@ export default function App() {
     const isImageReq =
       settings.selectedModel === 'jarvis-art' ||
       /^(?:\/image\b|(?:generate|create|make)\s+(?:(?:an?|the)\s+)?(?:image|picture|artwork|illustration|photo|photograph|portrait)\b|(?:draw|paint|illustrate)\b|turn\s+.+\s+into\b)/i.test(text.trim()) ||
-      (hasImageReference && /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|make\s+(?:it|this|the image)|convert)\b/i.test(text));
+      (hasImageReference && /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|add|put|place|dress|make\s+(?:it|this|the image|him|her|them)|convert)\b/i.test(text));
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
