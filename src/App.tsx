@@ -421,13 +421,11 @@ export default function App() {
     if (!text.trim() && attachments.length === 0) return;
 
     // Check if prompt is an image generation request
+    const hasImageReference = attachments.some((attachment) => attachment.type.startsWith('image/'));
     const isImageReq =
       settings.selectedModel === 'jarvis-art' ||
-      text.toLowerCase().startsWith('generate image') ||
-      text.toLowerCase().startsWith('create image') ||
-      text.toLowerCase().startsWith('generate artwork') ||
-      text.toLowerCase().startsWith('draw ') ||
-      text.toLowerCase().startsWith('paint ');
+      /^(?:\/image\b|(?:generate|create|make)\s+(?:(?:an?|the)\s+)?(?:image|picture|artwork|illustration|photo|photograph|portrait)\b|(?:draw|paint|illustrate)\b|turn\s+.+\s+into\b)/i.test(text.trim()) ||
+      (hasImageReference && /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|make\s+(?:it|this|the image)|convert)\b/i.test(text));
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
@@ -493,9 +491,19 @@ export default function App() {
         })),
       };
 
-      if (isImageReq && settings.selectedModel === 'jarvis-art') {
+      if (isImageReq) {
         endpoint = '/api/generate-image';
-        body = { prompt: text, aspectRatio: '1:1' };
+        body = {
+          prompt: text || 'Create an artistic interpretation of the attached image.',
+          aspectRatio: '1:1',
+          attachments: attachments
+            .filter((attachment) => attachment.type.startsWith('image/'))
+            .map((attachment) => ({
+              name: attachment.name,
+              type: attachment.type,
+              data: attachment.data,
+            })),
+        };
       }
 
       const res = await fetch(endpoint, {

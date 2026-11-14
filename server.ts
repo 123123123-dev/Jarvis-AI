@@ -460,22 +460,97 @@ app.put('/api/conversations', asyncRoute(async (req, res) => {
 function isImagePrompt(text: string): boolean {
   const lower = text.trim().toLowerCase();
   return (
-    lower.startsWith('generate image') ||
-    lower.startsWith('create image') ||
-    lower.startsWith('generate artwork') ||
-    lower.startsWith('draw ') ||
-    lower.startsWith('paint ') ||
-    lower.startsWith('/image') ||
-    lower.startsWith('make an image of')
+    /^(?:\/image\b|(?:generate|create|make)\s+(?:(?:an?|the)\s+)?(?:image|picture|artwork|illustration|photo|photograph|portrait)\b|(?:draw|paint|illustrate)\b|turn\s+.+\s+into\b)/i.test(lower)
   );
+}
+
+interface ImageReference {
+  name?: string;
+  type?: string;
+  data?: string;
+}
+
+function imageErrorResponse(error: unknown): { status: number; message: string } {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  if (normalized.includes('429') || normalized.includes('resource_exhausted') || normalized.includes('quota')) {
+    return {
+      status: 429,
+      message: 'Image generation quota is unavailable. Check your Google AI project billing and image model quota, then try again.',
+    };
+  }
+  if (normalized.includes('safety') || normalized.includes('blocked') || normalized.includes('prohibited')) {
+    return {
+      status: 422,
+      message: 'The image provider blocked this request under its safety rules. Try a different, non-explicit prompt.',
+    };
+  }
+  if (normalized.includes('403') || normalized.includes('permission') || normalized.includes('api key')) {
+    return {
+      status: 403,
+      message: 'Your Google AI key cannot access the image model. Check the key, project, billing, and image-generation availability.',
+    };
+  }
+  if (normalized.includes('404') || normalized.includes('not found') || normalized.includes('not supported')) {
+    return {
+      status: 502,
+      message: 'The configured Google AI project does not currently have access to the image model.',
+    };
+  }
+  if (normalized.includes('timeout') || normalized.includes('aborted')) {
+    return {
+      status: 504,
+      message: 'Image generation took too long. Try again with a shorter prompt or a smaller reference image.',
+    };
+  }
+  return {
+    status: 502,
+    message: 'Google AI could not generate this image. Check the server logs and image model availability, then try again.',
+  };
+}
+
+async function generateArtwork(
+  prompt: string,
+  references: ImageReference[],
+  aspectRatio: string,
+): Promise<{ imageUrl: string; prompt: string }> {
+  const input = [
+    { type: 'text' as const, text: prompt },
+    ...references.map((reference) => ({
+      type: 'image' as const,
+      mime_type: reference.type!,
+      data: reference.data!.replace(/^data:[^,]*;base64,/, ''),
+    })),
+  ];
+
+  const interaction = await ai.interactions.create({
+    model: 'gemini-nano-banana-2.1',
+    input,
+    response_format: {
+      type: 'image',
+      mime_type: 'image/jpeg',
+      aspect_ratio: aspectRatio,
+      image_size: '1K',
+    },
+    store: false,
+  });
+  const imageBytes = interaction.output_image?.data;
+  if (!imageBytes) {
+    const reason = interaction.errors?.map((item) => item.message).filter(Boolean).join(' ');
+    throw new Error(reason || 'The image model returned no image. The prompt may have been blocked by safety filters.');
+  }
+  return { imageUrl: `data:image/jpeg;base64,${imageBytes}`, prompt };
 }
 
 // Generate AI artwork endpoint
 app.post('/api/generate-image', async (req, res) => {
   try {
-    const { prompt, aspectRatio = '1:1' } = req.body;
-    if (!prompt) {
+    const { prompt, aspectRatio = '1:1', attachments = [] } = req.body;
+    if (typeof prompt !== 'string' || !prompt.trim()) {
       return res.status(400).json({ error: 'Prompt is required' });
+    }
+    if (prompt.length > 5000) {
+      return res.status(413).json({ error: 'Image prompts must be 5,000 characters or fewer.' });
     }
 
     if (!apiKey || apiKey.includes('Placeholder')) {
@@ -484,39 +559,35 @@ app.post('/api/generate-image', async (req, res) => {
       });
     }
 
-    const response = await ai.models.generateImages({
-      model: 'imagen-3.0-generate-002',
-      prompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/jpeg',
-        aspectRatio: (aspectRatio as '1:1' | '3:4' | '4:3' | '9:16' | '16:9') || '1:1',
-      },
-    });
-
-    const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
-    if (!imageBytes) {
-      return res.status(502).json({ error: 'The image provider returned no image. Please try again.' });
+    if (!Array.isArray(attachments) || attachments.length > 10) {
+      return res.status(400).json({ error: 'Attach up to 10 reference images.' });
     }
+    const imageReferences: ImageReference[] = [];
+    for (const reference of attachments) {
+      if (!reference || typeof reference.data !== 'string' || typeof reference.type !== 'string' ||
+          !reference.type.startsWith('image/')) {
+        return res.status(400).json({ error: 'Image editing only accepts image reference files.' });
+      }
+      if (!/^image\/(png|jpeg|webp|heic|heif|gif|bmp|tiff)$/i.test(reference.type)) {
+        return res.status(400).json({ error: `The reference image type "${reference.type}" is not supported.` });
+      }
+      imageReferences.push(reference as ImageReference);
+    }
+    const supportedAspectRatios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
+    const requestedAspectRatio = supportedAspectRatios.includes(aspectRatio) ? aspectRatio : '1:1';
 
+    const result = await generateArtwork(prompt.trim(), imageReferences, requestedAspectRatio);
     return res.json({
       success: true,
-      imageUrl: `data:image/jpeg;base64,${imageBytes}`,
-      prompt,
-      engine: 'Imagen 3',
+      imageUrl: result.imageUrl,
+      prompt: result.prompt,
+      engine: 'Gemini Nano Banana',
     });
   } catch (error) {
-    const message = `${(error as Error).message || ''}`;
-    const isQuotaError = message.includes('429') || message.includes('quota');
-    const isTimeout = message.toLowerCase().includes('timeout') || message.toLowerCase().includes('aborted');
-    console.error('JARVIS image request failed:', message.slice(0, 300));
-    return res.status(isQuotaError ? 429 : isTimeout ? 504 : 502).json({
-      error: isQuotaError
-        ? 'The AI provider quota is temporarily unavailable. Please try again later.'
-        : isTimeout
-          ? 'The image provider timed out. Check provider availability and try again.'
-        : 'The AI provider could not generate this image. Please try again.',
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('JARVIS image request failed:', message.replace(apiKey, '[redacted]').slice(0, 500));
+    const failure = imageErrorResponse(error);
+    return res.status(failure.status).json({ error: failure.message });
   }
 });
 
@@ -546,51 +617,30 @@ app.post('/api/chat', async (req, res) => {
     const latestMessage = messages[messages.length - 1];
     latestText = latestMessage?.content || '';
 
-    // If latest message is a pure image generation request, auto-route to image synthesis
     if (isImagePrompt(latestText)) {
-      const promptClean = latestText
-        .replace(/^(generate image of|create image of|generate artwork of|draw|paint|\/image|make an image of)\s*/i, '')
-        .trim();
-
-      if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('Placeholder')) {
-        try {
-          const imageRes = await ai.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt: promptClean || latestText,
-            config: {
-              numberOfImages: 1,
-              outputMimeType: 'image/jpeg',
-              aspectRatio: '1:1',
-            },
-          });
-
-          const imageBytes = imageRes.generatedImages?.[0]?.image?.imageBytes;
-          if (imageBytes) {
-            const imageUrl = `data:image/jpeg;base64,${imageBytes}`;
-            return res.json({
-              role: 'assistant',
-              content: `Here is the artwork generated for **"${promptClean || latestText}"**:\n\n![${promptClean || 'Generated Artwork'}](${imageUrl})\n\n*Artwork synthesized using JARVIS AI Creative Studio (Imagen 3).*`,
-              imageUrl,
-              grounding: [],
-            });
-          }
-        } catch (imgError) {
-          const message = `${(imgError as Error).message || ''}`;
-          const isQuotaError = message.includes('429') || message.includes('quota');
-          console.error('JARVIS image request failed:', message.slice(0, 300));
-          return res.status(isQuotaError ? 429 : 502).json({
-            error: isQuotaError
-              ? 'The AI provider quota is temporarily unavailable. Please try again later.'
-              : 'The AI provider could not generate this image. Please try again.',
-          });
-        }
-      } else {
+      if (!apiKey || apiKey.includes('Placeholder')) {
         return res.status(503).json({
           error: 'AI image generation is not configured. Set GEMINI_API_KEY in the server environment.',
         });
       }
 
-      return res.status(502).json({ error: 'The image provider returned no image. Please try again.' });
+      try {
+        const imageReferences = Array.isArray(attachments)
+          ? attachments.filter((attachment: ImageReference) => attachment.type?.startsWith('image/'))
+          : [];
+        const result = await generateArtwork(latestText, imageReferences, '1:1');
+        return res.json({
+          role: 'assistant',
+          content: `Here is the artwork for **"${latestText}"**.`,
+          imageUrl: result.imageUrl,
+          grounding: [],
+        });
+      } catch (imageError) {
+        const message = imageError instanceof Error ? imageError.message : String(imageError);
+        console.error('JARVIS image request failed:', message.replace(apiKey, '[redacted]').slice(0, 500));
+        const failure = imageErrorResponse(imageError);
+        return res.status(failure.status).json({ error: failure.message });
+      }
     }
 
     // Prepare system instruction

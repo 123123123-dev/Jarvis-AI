@@ -10,6 +10,7 @@ import {
   Globe,
   Zap,
   ChevronDown,
+  Camera,
 } from 'lucide-react';
 import { Attachment } from '../types';
 
@@ -39,6 +40,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
   const [isListening, setIsListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<unknown>(null);
   const dictationBaseRef = useRef('');
   const finalTranscriptRef = useRef('');
@@ -127,44 +129,50 @@ export const PromptBar: React.FC<PromptBarProps> = ({
 
   // Handle file selection (up to 10 files)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const remainingSlots = 10 - attachments.length;
-    if (remainingSlots <= 0) {
-      alert('Maximum 10 files allowed per prompt.');
-      return;
-    }
-
-    const filesToProcess = Array.from(files).slice(0, remainingSlots);
-    const newAttachments: Attachment[] = [];
-
-    for (const file of filesToProcess) {
-      // Check file size (limit 15MB each)
-      if (file.size > 15 * 1024 * 1024) {
-        alert(`File ${file.name} is larger than 15MB. Please choose a smaller file.`);
-        continue;
+    try {
+      const remainingSlots = 10 - attachments.length;
+      if (remainingSlots <= 0) {
+        alert('Maximum 10 files allowed per prompt.');
+        return;
       }
 
-      const reader = new FileReader();
-      const readPromise = new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-      });
-      reader.readAsDataURL(file);
-      const dataUrl = await readPromise;
+      const filesToProcess = Array.from(files).slice(0, remainingSlots);
+      const newAttachments: Attachment[] = [];
 
-      newAttachments.push({
-        id: Math.random().toString(36).substring(2, 9),
-        name: file.name,
-        type: file.type || 'application/octet-stream',
-        size: file.size,
-        data: dataUrl,
-      });
-    }
+      for (const file of filesToProcess) {
+        if (file.size > 15 * 1024 * 1024) {
+          alert(`File ${file.name} is larger than 15MB. Please choose a smaller file.`);
+          continue;
+        }
 
-    setAttachments((prev) => [...prev, ...newAttachments]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            if (typeof reader.result === 'string') resolve(reader.result);
+            else reject(new Error(`Could not read ${file.name}.`));
+          };
+          reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+          reader.readAsDataURL(file);
+        });
+
+        newAttachments.push({
+          id: Math.random().toString(36).substring(2, 9),
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          data: dataUrl,
+        });
+      }
+
+      setAttachments((prev) => [...prev, ...newAttachments]);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not load the selected file.');
+    } finally {
+      input.value = '';
     }
   };
 
@@ -271,6 +279,14 @@ export const PromptBar: React.FC<PromptBarProps> = ({
               className="hidden"
               accept="image/*,.pdf,.txt,.csv,.json,.js,.ts,.py,.md"
             />
+            <input
+              type="file"
+              ref={cameraInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+              accept="image/*"
+              capture="environment"
+            />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -278,6 +294,15 @@ export const PromptBar: React.FC<PromptBarProps> = ({
               className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors cursor-pointer"
             >
               <Paperclip className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              title="Take a photo and attach it"
+              aria-label="Take a photo and attach it"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors cursor-pointer"
+            >
+              <Camera className="w-4 h-4" />
             </button>
 
             {/* Voice Dictation (Mic) */}

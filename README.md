@@ -1,6 +1,6 @@
 # JARVIS AI
 
-A general-purpose AI assistant with Gemini chat, optional Google Search grounding, AI image generation, voice input and playback, file attachments, conversation history, export, and share tools.
+A general-purpose AI assistant with Gemini chat, optional Google Search grounding, Gemini image generation and image edits, camera capture, voice input and playback, file attachments, conversation history, export, and share tools.
 
 ## Run locally
 
@@ -15,6 +15,8 @@ Keep `GEMINI_API_KEY`, `SUPABASE_DB_URL`, and `DATABASE_URL` on the server. Do n
 ## Deploy to Vercel
 
 The included Vercel configuration serves the Vite frontend and routes `/api/*` to the Express API. Vercel's function filesystem is temporary, so account registration and saved conversations require a persistent Supabase Postgres database; the database tables are created automatically on first request. Guest AI chat and the health check do not require the database.
+
+Image generation uses Gemini's `gemini-nano-banana-2.1` image model through the Gemini API. Use the **JARVIS Art** model, or start a prompt with a specific request such as “create image of a red Civic”, “generate a photorealistic picture of a car”, “draw a comic-style robot”, or “paint a watercolor landscape”. Attach a reference image and ask for a safe edit (for example, “make this a watercolor illustration”) to generate an edited image. The prompt bar's camera button can capture a photo on supported mobile browsers. Image generation has a separate Google AI quota from text chat; if Google reports zero image-model quota on the Free Tier, enable billing or upgrade the Google AI plan for the project behind `GEMINI_API_KEY`. Google model availability and safety filters still apply; the app does not bypass provider safeguards or support explicit sexual imagery or sexualized edits of people. For image generation, the Vercel function is configured for up to 60 seconds; actual maximum duration depends on the Vercel plan.
 
 1. In Supabase, open **Project Settings → Database → Connection string → URI** and copy the connection URI. For Vercel, use Supabase's **Transaction pooler** URI when available. Put your database password in the URI; URL-encode special characters in the password.
 2. In Vercel, open the project **Settings → Environment Variables** and add `SUPABASE_DB_URL` with the URI as its value for **Production** (and Preview if desired). Do not use a `VITE_` prefix. The server also recognizes `SUPABASE_DATABASE_URL`, `POSTGRES_URL`, `POSTGRES_PRISMA_URL`, `DATABASE_URL`, and `POSTGRES_URL_NON_POOLING`.
