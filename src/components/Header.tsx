@@ -20,6 +20,7 @@ import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
+  isSidebarOpen: boolean;
   selectedModel: AIModelId;
   onSelectModel: (model: AIModelId) => void;
   voiceEnabled: boolean;
@@ -35,6 +36,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   onToggleSidebar,
+  isSidebarOpen,
   selectedModel,
   onSelectModel,
   voiceEnabled,
@@ -100,7 +102,9 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-3">
         <button
           onClick={onToggleSidebar}
-          aria-label="Toggle Sidebar"
+          aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          aria-expanded={isSidebarOpen}
+          aria-controls="app-sidebar"
           className="p-1.5 rounded-lg hover:bg-slate-800/80 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer"
         >
           <Menu className="w-5 h-5" />

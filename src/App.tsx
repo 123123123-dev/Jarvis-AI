@@ -114,7 +114,9 @@ export default function App() {
   const [accountNotice, setAccountNotice] = useState('');
 
   // UI state
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 768
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
@@ -606,13 +608,16 @@ export default function App() {
         onTogglePin={handleTogglePin}
         user={user}
         onOpenAuth={() => setAuthModalOpen(true)}
+        directSignInUrl={directSignInUrl}
+        onCopyDirectSignInUrl={handleCopyDirectSignInUrl}
         onExport={() => setExportModalOpen(true)}
         onShare={() => setShareModalOpen(true)}
       />
 
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
         <Header
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          onToggleSidebar={() => setSidebarOpen((open) => !open)}
+          isSidebarOpen={sidebarOpen}
           selectedModel={settings.selectedModel}
           onSelectModel={(model: AIModelId) =>
             setSettings((prev) => ({ ...prev, selectedModel: model }))
@@ -662,27 +667,9 @@ export default function App() {
               <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
               <div>
                 <p><strong>Signed in:</strong> conversations are saved to your account.</p>
-                <p className="text-[10px] text-cyan-200/70">Anyone with this reusable link can access your account until you sign out or sign in again.</p>
+                <p className="text-[10px] text-cyan-200/70">Your reusable sign-in URL is in the sidebar. Keep it private.</p>
               </div>
             </div>
-            {directSignInUrl && (
-              <div className="flex items-center gap-2 min-w-0 md:max-w-[50%]">
-                <input
-                  type="text"
-                  readOnly
-                  value={directSignInUrl}
-                  aria-label="Reusable account sign-in URL"
-                  onFocus={(event) => event.currentTarget.select()}
-                  className="min-w-0 flex-1 rounded border border-cyan-500/30 bg-slate-950/70 px-2 py-1 text-[10px] text-cyan-100"
-                />
-                <button
-                  onClick={handleCopyDirectSignInUrl}
-                  className="shrink-0 text-[11px] underline hover:text-cyan-200 cursor-pointer"
-                >
-                  Copy URL
-                </button>
-              </div>
-            )}
           </div>
         )}
 

@@ -65,7 +65,7 @@ import { jsPDF } from 'jspdf';
 // Export conversation utilities
 export function exportConversationToFile(
   conv: Conversation,
-  format: 'pdf' | 'markdown' | 'json' | 'text' = 'pdf'
+  format: 'pdf' | 'markdown' | 'json' | 'text' | 'html' = 'pdf'
 ) {
   let content = '';
   let filename = `${conv.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}`;
@@ -227,6 +227,91 @@ export function exportConversationToFile(
     content = JSON.stringify(conv, null, 2);
     filename += '.json';
     mimeType = 'application/json';
+  } else if (format === 'html') {
+    const escapeHtml = (value: string) =>
+      value.replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[character] || character);
+    const safeImageData = (value?: string) =>
+        value && /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\r\n]+$/i.test(value)
+          ? value
+          : null;
+    const messages = conv.messages.map((msg) => {
+      const images = [
+        ...(msg.imageUrl ? [msg.imageUrl] : []),
+        ...(msg.attachments || [])
+          .filter((attachment) => attachment.type.startsWith('image/'))
+          .map((attachment) => attachment.data),
+      ]
+        .map(safeImageData)
+        .filter((image): image is string => image !== null)
+        .map((image) => `<img src="${escapeHtml(image)}" alt="Conversation image">`)
+        .join('');
+      const sources = (msg.sources || [])
+        .map((source) => {
+          const href = /^https?:\/\//i.test(source.uri) ? source.uri : '';
+          return href
+            ? `<li><a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title || href)}</a></li>`
+            : `<li>${escapeHtml(source.title || source.uri)}</li>`;
+        })
+        .join('');
+      const attachments = (msg.attachments || [])
+        .filter((attachment) => !attachment.type.startsWith('image/'))
+        .map((attachment) => `<li>${escapeHtml(attachment.name)}</li>`)
+        .join('');
+      const role = msg.role === 'user' ? 'You' : 'JARVIS';
+      return `<article class="message ${msg.role}">
+        <div class="message-heading"><strong>${role}</strong><time>${new Date(msg.timestamp).toLocaleString()}</time></div>
+        <div class="message-content">${escapeHtml(msg.content).replace(/\n/g, '<br>')}</div>
+        ${images ? `<div class="images">${images}</div>` : ''}
+        ${attachments ? `<ul class="attachments">${attachments}</ul>` : ''}
+        ${sources ? `<details><summary>Sources</summary><ul>${sources}</ul></details>` : ''}
+      </article>`;
+    }).join('\n');
+    const htmlTitle = escapeHtml(conv.title);
+    content = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Portable, offline JARVIS AI conversation archive">
+  <title>${htmlTitle} - JARVIS AI</title>
+  <style>
+    :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#060b13;color:#e2e8f0}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh}.layout{display:flex;min-height:100vh}
+    aside{width:260px;flex-shrink:0;padding:24px 18px;background:#080d16;border-right:1px solid #164e63}
+    .brand{color:#67e8f9;font-size:13px;font-weight:700;letter-spacing:.16em}.archive-label{margin-top:12px;color:#94a3b8;font-size:12px}
+    main{width:min(100%,900px);margin:0 auto;padding:32px 28px 60px}.topline{color:#22d3ee;font-size:12px;text-transform:uppercase;letter-spacing:.12em}
+    h1{font-size:clamp(22px,4vw,32px);margin:10px 0 6px;overflow-wrap:anywhere}.meta{color:#94a3b8;font-size:12px;margin-bottom:28px}
+    .message{margin:14px 0;padding:16px;border:1px solid #1e293b;border-radius:14px;background:#0b1220;overflow-wrap:anywhere}
+    .message.user{background:#0b1c2a;border-color:#164e63}.message-heading{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;color:#67e8f9;font-size:12px}
+    time{color:#94a3b8;font-size:11px;text-align:right}.message-content{font-size:14px;line-height:1.7;white-space:normal}
+    .images{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.images img{max-width:min(100%,420px);max-height:420px;object-fit:contain;border-radius:10px;border:1px solid #334155}
+    ul{padding-left:20px;font-size:12px;line-height:1.7}a{color:#67e8f9}details{margin-top:12px;color:#94a3b8;font-size:12px}
+    .notice{border:1px solid #334155;border-radius:10px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.6}
+    @media(max-width:640px){.layout{display:block}aside{width:100%;padding:14px 18px;border-right:0;border-bottom:1px solid #164e63}main{padding:24px 14px 40px}}
+    @media print{aside,.notice{display:none}body{background:white;color:#111}.message{break-inside:avoid;background:white;color:#111;border-color:#ccc}time,.meta{color:#555}}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside><div class="brand">JARVIS AI</div><div class="archive-label">Offline conversation archive</div></aside>
+    <main>
+      <div class="topline">Conversation snapshot</div>
+      <h1>${htmlTitle}</h1>
+      <div class="meta">${conv.messages.length} messages · Exported ${new Date().toLocaleString()}</div>
+      <div class="notice">This portable HTML keeps this conversation and its embedded images available offline. To continue chatting, open JARVIS AI and sign in to the same account.</div>
+      ${messages || '<p class="meta">This conversation has no messages yet.</p>'}
+    </main>
+  </div>
+</body>
+</html>`;
+    filename += '.html';
+    mimeType = 'text/html;charset=utf-8';
   } else if (format === 'markdown') {
     // 3. Markdown Export
     mimeType = 'text/markdown';

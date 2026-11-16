@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Download, FileCode, FileText, Code2, FileDown } from 'lucide-react';
+import { X, Download, FileCode, FileCode2, FileText, Code2, FileDown } from 'lucide-react';
 import { Conversation } from '../types';
 import { exportConversationToFile } from '../services/storage';
 
@@ -16,7 +16,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 }) => {
   if (!isOpen || !conversation) return null;
 
-  const handleExport = (format: 'pdf' | 'text' | 'markdown' | 'json') => {
+  const handleExport = (format: 'pdf' | 'text' | 'markdown' | 'json' | 'html') => {
     exportConversationToFile(conversation, format);
     onClose();
   };
@@ -154,6 +154,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">
                 Complete data schema with timestamps & attachments
+              </div>
+            </div>
+          </button>
+
+          {/* Portable HTML archive */}
+          <button
+            onClick={() => handleExport('html')}
+            className="w-full p-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-violet-500/40 text-left flex items-center gap-3 transition cursor-pointer group"
+          >
+            <div className="p-2 rounded-lg bg-violet-950 text-violet-400 border border-violet-800">
+              <FileCode2 className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-slate-200 group-hover:text-violet-300">
+                Portable HTML Archive (.html)
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                Open this conversation offline on another device, including embedded images. View-only snapshot.
               </div>
             </div>
           </button>

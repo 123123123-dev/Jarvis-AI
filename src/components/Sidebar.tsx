@@ -9,6 +9,7 @@ import {
   Pin,
   X,
   Sparkles,
+  Copy,
 } from 'lucide-react';
 import { Conversation, UserProfile } from '../types';
 
@@ -24,6 +25,8 @@ interface SidebarProps {
   onTogglePin: (id: string, e: React.MouseEvent) => void;
   user: UserProfile;
   onOpenAuth: () => void;
+  directSignInUrl: string | null;
+  onCopyDirectSignInUrl: () => void;
   onExport: () => void;
   onShare: () => void;
 }
@@ -40,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onTogglePin,
   user,
   onOpenAuth,
+  directSignInUrl,
+  onCopyDirectSignInUrl,
   onExport,
   onShare,
 }) => {
@@ -68,9 +73,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-45 w-72 flex flex-col bg-[#080d16] border-r border-cyan-950/70 transition-transform duration-200 ease-in-out ${
-          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        } shrink-0 select-none`}
+        id="app-sidebar"
+        aria-hidden={!isOpen}
+        inert={!isOpen}
+        className={`fixed md:static inset-y-0 left-0 z-45 flex flex-col bg-[#080d16] border-r border-cyan-950/70 transition-[width,transform] duration-200 ease-in-out shrink-0 select-none ${
+          isOpen
+            ? 'w-72 translate-x-0'
+            : 'w-72 -translate-x-full border-r-0 md:w-0 md:translate-x-0 md:overflow-hidden'
+        }`}
       >
         {/* Top Header inside sidebar on mobile */}
         <div className="p-3.5 pb-2 flex items-center justify-between md:hidden">
@@ -79,6 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </span>
           <button
             onClick={onClose}
+            aria-label="Close sidebar"
             className="p-1 rounded text-slate-400 hover:text-white"
           >
             <X className="w-5 h-5" />
@@ -217,8 +228,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Sidebar Footer: Export, Share, User Profile */}
+        {/* Sidebar Footer: Account link, Export, Share, User Profile */}
         <div className="p-3 border-t border-slate-800/80 space-y-2 bg-[#060b13]">
+          {directSignInUrl && (
+            <div className="rounded-lg border border-cyan-500/30 bg-cyan-950/40 p-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold text-cyan-200">Account sign-in URL</span>
+                <button
+                  type="button"
+                  onClick={onCopyDirectSignInUrl}
+                  title="Copy reusable account sign-in URL"
+                  className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-cyan-300 hover:text-white"
+                >
+                  <Copy className="h-3 w-3" />
+                  Copy
+                </button>
+              </div>
+              <input
+                type="text"
+                readOnly
+                value={directSignInUrl}
+                aria-label="Reusable account sign-in URL"
+                onFocus={(event) => event.currentTarget.select()}
+                className="w-full min-w-0 rounded border border-cyan-500/20 bg-slate-950/70 px-1.5 py-1 text-[9px] text-cyan-100"
+              />
+              <p className="mt-1 text-[9px] leading-tight text-cyan-100/60">
+                Anyone with this URL can access your account. Keep it private.
+              </p>
+            </div>
+          )}
+
           {/* Export & Share buttons side-by-side */}
           <div className="grid grid-cols-2 gap-2">
             <button
