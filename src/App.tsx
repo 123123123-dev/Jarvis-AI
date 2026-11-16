@@ -32,6 +32,7 @@ import {
   getDirectSignInUrl,
   isConversationArchive,
 } from './services/storage';
+import { isImageGenerationPrompt } from './services/imagePrompts';
 import { getWeatherRequest } from './services/weather';
 import { WifiOff, Sparkles, Link } from 'lucide-react';
 
@@ -465,7 +466,7 @@ export default function App() {
     const hasImageReference = attachments.some((attachment) => attachment.type.startsWith('image/'));
     const isImageReq =
       settings.selectedModel === 'jarvis-art' ||
-      /^(?:\/image\b|(?:generate|create|make)\s+(?:(?:an?|the)\s+)?(?:image|picture|artwork|illustration|photo|photograph|portrait)\b|(?:draw|paint|illustrate)\b|turn\s+.+\s+into\b)/i.test(text.trim()) ||
+      isImageGenerationPrompt(text) ||
       (hasImageReference && /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|add|put|place|dress|make\s+(?:it|this|the image|him|her|them)|convert)\b/i.test(text));
     const weatherRequest = getWeatherRequest(text);
 
