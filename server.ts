@@ -7,7 +7,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import postgres from 'postgres';
-import { isImageGenerationPrompt } from './src/services/imagePrompts';
 
 dotenv.config();
 
@@ -459,7 +458,10 @@ app.put('/api/conversations', asyncRoute(async (req, res) => {
 
 // Helper to determine if a prompt is an image generation request
 function isImagePrompt(text: string): boolean {
-  return isImageGenerationPrompt(text);
+  return /^\/image\b/i.test(text.trim()) ||
+    /\b(?:generate|create|make|draw|paint|illustrate|design)\b[\s\S]{0,120}\b(?:image|picture|artwork|illustration|photo|photograph|portrait|drawing|painting|wallpaper|logo|icon|graphic)\b/i.test(text) ||
+    /\b(?:draw|paint|illustrate)\b/i.test(text) ||
+    /\b(?:turn|transform|convert|restyle)\b[\s\S]{0,100}\b(?:into|as)\b/i.test(text);
 }
 
 interface ImageReference {
