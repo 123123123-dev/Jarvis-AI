@@ -10,7 +10,6 @@ import {
   Globe,
   Zap,
   ChevronDown,
-  Camera,
 } from 'lucide-react';
 import { Attachment } from '../types';
 
@@ -40,7 +39,6 @@ export const PromptBar: React.FC<PromptBarProps> = ({
   const [isListening, setIsListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<unknown>(null);
   const dictationBaseRef = useRef('');
   const finalTranscriptRef = useRef('');
@@ -279,14 +277,6 @@ export const PromptBar: React.FC<PromptBarProps> = ({
               className="hidden"
               accept="image/*,.pdf,.txt,.csv,.json,.js,.ts,.py,.md"
             />
-            <input
-              type="file"
-              ref={cameraInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-              accept="image/*"
-              capture="environment"
-            />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -294,15 +284,6 @@ export const PromptBar: React.FC<PromptBarProps> = ({
               className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors cursor-pointer"
             >
               <Paperclip className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => cameraInputRef.current?.click()}
-              title="Take a photo and attach it"
-              aria-label="Take a photo and attach it"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors cursor-pointer"
-            >
-              <Camera className="w-4 h-4" />
             </button>
 
             {/* Voice Dictation (Mic) */}

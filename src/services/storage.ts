@@ -34,6 +34,67 @@ export const defaultSettings: AppSettings = {
   selectedModel: 'jarvis-turbo',
 };
 
+export function isConversationArchive(value: unknown): value is Conversation {
+  if (!value || typeof value !== 'object') return false;
+  const conversation = value as Record<string, unknown>;
+  if (
+    typeof conversation.id !== 'string' ||
+    typeof conversation.title !== 'string' ||
+    typeof conversation.createdAt !== 'number' ||
+    typeof conversation.updatedAt !== 'number' ||
+    !Array.isArray(conversation.messages)
+  ) {
+    return false;
+  }
+
+  return conversation.messages.every((message: unknown) => {
+    if (!message || typeof message !== 'object') return false;
+    const item = message as Record<string, unknown>;
+    if (
+      typeof item.id !== 'string' ||
+      (item.role !== 'user' && item.role !== 'assistant') ||
+      typeof item.content !== 'string' ||
+      typeof item.timestamp !== 'number'
+    ) {
+      return false;
+    }
+
+    if (item.attachments !== undefined && !Array.isArray(item.attachments)) return false;
+    if (
+      Array.isArray(item.attachments) &&
+      !item.attachments.every((attachment: unknown) => {
+        if (!attachment || typeof attachment !== 'object') return false;
+        const file = attachment as Record<string, unknown>;
+        return (
+          typeof file.id === 'string' &&
+          typeof file.name === 'string' &&
+          typeof file.type === 'string' &&
+          typeof file.size === 'number' &&
+          typeof file.data === 'string'
+        );
+      })
+    ) {
+      return false;
+    }
+
+    if (
+      item.sources !== undefined &&
+      (!Array.isArray(item.sources) ||
+        !item.sources.every(
+          (source: unknown) =>
+            source !== null &&
+            typeof source === 'object' &&
+            typeof (source as Record<string, unknown>).uri === 'string' &&
+            typeof (source as Record<string, unknown>).title === 'string'
+        ))
+    ) {
+      return false;
+    }
+
+    return item.imageUrl === undefined || typeof item.imageUrl === 'string';
+  });
+}
+
 export function loadSettings(): AppSettings {
   try {
     const raw = sessionStorage.getItem(SETTINGS_KEY);
@@ -228,6 +289,7 @@ export function exportConversationToFile(
     filename += '.json';
     mimeType = 'application/json';
   } else if (format === 'html') {
+    const appUrl = new URL('/', window.location.origin).toString();
     const escapeHtml = (value: string) =>
       value.replace(/[&<>"']/g, (character) => ({
         '&': '&amp;',
@@ -273,6 +335,7 @@ export function exportConversationToFile(
       </article>`;
     }).join('\n');
     const htmlTitle = escapeHtml(conv.title);
+    const serializedConversation = JSON.stringify(conv).replace(/</g, '\\u003c');
     content = `<!doctype html>
 <html lang="en">
 <head>
@@ -282,32 +345,74 @@ export function exportConversationToFile(
   <title>${htmlTitle} - JARVIS AI</title>
   <style>
     :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#060b13;color:#e2e8f0}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh}.layout{display:flex;min-height:100vh}
-    aside{width:260px;flex-shrink:0;padding:24px 18px;background:#080d16;border-right:1px solid #164e63}
-    .brand{color:#67e8f9;font-size:13px;font-weight:700;letter-spacing:.16em}.archive-label{margin-top:12px;color:#94a3b8;font-size:12px}
-    main{width:min(100%,900px);margin:0 auto;padding:32px 28px 60px}.topline{color:#22d3ee;font-size:12px;text-transform:uppercase;letter-spacing:.12em}
-    h1{font-size:clamp(22px,4vw,32px);margin:10px 0 6px;overflow-wrap:anywhere}.meta{color:#94a3b8;font-size:12px;margin-bottom:28px}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh}.layout{min-height:100vh}
+    main{width:min(100%,1200px);margin:0 auto;padding:18px 20px 36px}.topline{color:#22d3ee;font-size:12px;text-transform:uppercase;letter-spacing:.12em}
+    h1{font-size:clamp(22px,4vw,32px);margin:10px 0 6px;overflow-wrap:anywhere}.meta{color:#94a3b8;font-size:12px;margin-bottom:16px}
     .message{margin:14px 0;padding:16px;border:1px solid #1e293b;border-radius:14px;background:#0b1220;overflow-wrap:anywhere}
     .message.user{background:#0b1c2a;border-color:#164e63}.message-heading{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;color:#67e8f9;font-size:12px}
     time{color:#94a3b8;font-size:11px;text-align:right}.message-content{font-size:14px;line-height:1.7;white-space:normal}
     .images{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.images img{max-width:min(100%,420px);max-height:420px;object-fit:contain;border-radius:10px;border:1px solid #334155}
     ul{padding-left:20px;font-size:12px;line-height:1.7}a{color:#67e8f9}details{margin-top:12px;color:#94a3b8;font-size:12px}
-    .notice{border:1px solid #334155;border-radius:10px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.6}
-    @media(max-width:640px){.layout{display:block}aside{width:100%;padding:14px 18px;border-right:0;border-bottom:1px solid #164e63}main{padding:24px 14px 40px}}
-    @media print{aside,.notice{display:none}body{background:white;color:#111}.message{break-inside:avoid;background:white;color:#111;border-color:#ccc}time,.meta{color:#555}}
+    .notice{border:1px solid #334155;border-radius:10px;padding:12px;color:#94a3b8;font-size:12px;line-height:1.6;margin-bottom:16px}
+    .app-frame{width:100%;height:calc(100vh - 190px);min-height:520px;border:1px solid #164e63;border-radius:12px;background:#080d16}
+    .app-frame iframe{width:100%;height:100%;border:0;border-radius:inherit;background:#060b13}
+    .fallback{margin-top:10px;border:0;border-radius:8px;padding:9px 12px;background:#164e63;color:#cffafe;font-size:12px;font-weight:600;cursor:pointer}
+    .archive{margin-top:18px;padding:12px;border:1px solid #1e293b;border-radius:10px}
+    @media(max-width:640px){main{padding:14px 10px 28px}.app-frame{height:calc(100vh - 210px);min-height:460px}}
+    @media print{.app-frame,.notice,.fallback{display:none}body{background:white;color:#111}.message{break-inside:avoid;background:white;color:#111;border-color:#ccc}time,.meta{color:#555}}
   </style>
 </head>
 <body>
   <div class="layout">
-    <aside><div class="brand">JARVIS AI</div><div class="archive-label">Offline conversation archive</div></aside>
     <main>
       <div class="topline">Conversation snapshot</div>
       <h1>${htmlTitle}</h1>
       <div class="meta">${conv.messages.length} messages · Exported ${new Date().toLocaleString()}</div>
-      <div class="notice">This portable HTML keeps this conversation and its embedded images available offline. To continue chatting, open JARVIS AI and sign in to the same account.</div>
-      ${messages || '<p class="meta">This conversation has no messages yet.</p>'}
+      <div id="import-status" class="notice" role="status">Opening a signed-out JARVIS session with this conversation. Your imported guest chat is temporary and will not be saved after you close or refresh the app.</div>
+      <div class="app-frame">
+        <iframe id="jarvis-app" title="JARVIS AI chat with imported conversation"></iframe>
+      </div>
+      <button id="open-in-tab" class="fallback" type="button" hidden>Open JARVIS in a new tab</button>
+      <details class="archive">
+        <summary>View the saved conversation offline</summary>
+        ${messages || '<p class="meta">This conversation has no messages yet.</p>'}
+      </details>
     </main>
   </div>
+  <script type="application/json" id="conversation-data">${serializedConversation}</script>
+  <script>
+    const appUrl = ${JSON.stringify(appUrl)};
+    const appOrigin = new URL(appUrl).origin;
+    const appFrame = document.getElementById('jarvis-app');
+    const openInTabButton = document.getElementById('open-in-tab');
+    const importStatus = document.getElementById('import-status');
+    const conversation = JSON.parse(document.getElementById('conversation-data').textContent);
+    const nonce = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    let appWindow = appFrame.contentWindow;
+
+    const onAppMessage = (event) => {
+      if (event.source !== appWindow || event.origin !== appOrigin || !event.data || event.data.nonce !== nonce) return;
+      if (event.data.type === 'jarvis-portable-ready') {
+        appWindow.postMessage({ type: 'jarvis-restore-conversation', nonce, conversation }, appOrigin);
+      } else if (event.data.type === 'jarvis-portable-restored') {
+        importStatus.textContent = 'Conversation opened in a signed-out JARVIS session. Continue chatting there; guest chats are not saved after closing or refreshing the app.';
+        openInTabButton.hidden = true;
+        window.clearTimeout(transferTimeout);
+      }
+    };
+
+    window.addEventListener('message', onAppMessage);
+    appFrame.src = appUrl + '#portable-import=' + encodeURIComponent(nonce);
+    const transferTimeout = window.setTimeout(() => {
+      importStatus.textContent = 'JARVIS did not load in this frame. You can try opening the app in a new tab.';
+      openInTabButton.hidden = false;
+    }, 15000);
+
+    openInTabButton.addEventListener('click', () => {
+      appWindow = window.open(appUrl + '#portable-import=' + encodeURIComponent(nonce), '_blank');
+      if (!appWindow) importStatus.textContent = 'Please allow pop-ups for this file, then try again.';
+    });
+  </script>
 </body>
 </html>`;
     filename += '.html';

@@ -30,6 +30,7 @@ import {
   getAccountAuthHeaders,
   getDirectSignInTokenFromUrl,
   getDirectSignInUrl,
+  isConversationArchive,
 } from './services/storage';
 import { WifiOff, Sparkles, Link } from 'lucide-react';
 
@@ -139,6 +140,42 @@ export default function App() {
   // Active conversation object
   const activeConversation =
     conversations.find((c) => c.id === activeChatId) || null;
+
+  useEffect(() => {
+    const nonce = new URLSearchParams(window.location.hash.slice(1)).get('portable-import');
+    const archiveWindow = window.parent !== window ? window.parent : window.opener;
+    if (!nonce || !archiveWindow) return;
+
+    const handlePortableRestore = (event: MessageEvent) => {
+      if (
+        event.source !== archiveWindow ||
+        (event.origin !== 'null' && event.origin !== window.location.origin) ||
+        !event.data ||
+        event.data.type !== 'jarvis-restore-conversation' ||
+        event.data.nonce !== nonce
+      ) {
+        return;
+      }
+
+      if (!isConversationArchive(event.data.conversation)) {
+        setAccountNotice('This conversation archive is invalid and could not be opened.');
+        return;
+      }
+
+      setConversations([event.data.conversation]);
+      setActiveChatId(event.data.conversation.id);
+      setUser(defaultUser);
+      setDirectSignInUrl(null);
+      setAccountNotice('Conversation imported in a signed-out guest session. Guest chats are not saved after you close or refresh the app.');
+      window.history.replaceState({}, '', window.location.pathname + window.location.search);
+      archiveWindow.postMessage({ type: 'jarvis-portable-restored', nonce }, '*');
+      window.removeEventListener('message', handlePortableRestore);
+    };
+
+    window.addEventListener('message', handlePortableRestore);
+    archiveWindow.postMessage({ type: 'jarvis-portable-ready', nonce }, '*');
+    return () => window.removeEventListener('message', handlePortableRestore);
+  }, []);
 
   // Redeem a reusable account link; ordinary tabs still start as guests.
   useEffect(() => {
