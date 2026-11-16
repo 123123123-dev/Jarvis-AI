@@ -2,6 +2,8 @@
 
 A general-purpose AI assistant with Gemini chat, optional Google Search grounding, Gemini image generation and image edits, voice input and playback, file attachments, conversation history, export, and share tools.
 
+The installable app is branded **JARVIS AI** and uses the supplied launcher icon. New, empty chats show the JARVIS welcome artwork; the regular chat background returns when the conversation starts.
+
 ## Run locally
 
 1. Install Node.js 24 or newer.

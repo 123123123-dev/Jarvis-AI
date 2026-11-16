@@ -12,11 +12,11 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg'],
+        includeAssets: ['icon.svg', 'jarvis-app-icon.png', 'jarvis-welcome-bg.png'],
         manifest: {
           id: '/',
           name: 'JARVIS AI',
-          short_name: 'JARVIS',
+          short_name: 'JARVIS AI',
           description:
             'A general-purpose AI assistant with web search, AI artwork, voice features, file analysis, and account-saved conversations.',
           theme_color: '#060b13',
@@ -25,6 +25,12 @@ export default defineConfig(() => {
           start_url: '/',
           scope: '/',
           icons: [
+            {
+              src: 'jarvis-app-icon.png',
+              sizes: '257x244',
+              type: 'image/png',
+              purpose: 'any',
+            },
             {
               src: 'icon.svg',
               sizes: '192x192 512x512',

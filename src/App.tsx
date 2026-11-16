@@ -141,6 +141,7 @@ export default function App() {
   // Active conversation object
   const activeConversation =
     conversations.find((c) => c.id === activeChatId) || null;
+  const isWelcomeScreen = !activeConversation || activeConversation.messages.length === 0;
 
   useEffect(() => {
     const nonce = new URLSearchParams(window.location.hash.slice(1)).get('portable-import');
@@ -762,8 +763,19 @@ export default function App() {
           ref={chatScrollContainerRef}
           onScroll={handleScroll}
           className="flex-1 overflow-y-auto flex flex-col relative"
+          style={
+            isWelcomeScreen
+              ? {
+                  backgroundImage:
+                    "linear-gradient(rgba(6, 11, 19, 0.28), rgba(6, 11, 19, 0.55)), url('/jarvis-welcome-bg.png')",
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: 'cover',
+                }
+              : undefined
+          }
         >
-          {!activeConversation || activeConversation.messages.length === 0 ? (
+          {isWelcomeScreen ? (
             <WelcomeHero onSelectPrompt={handleSelectPrompt} />
           ) : (
             <div className="flex-1 py-4 space-y-1">
