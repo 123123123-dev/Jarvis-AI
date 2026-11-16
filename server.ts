@@ -790,14 +790,18 @@ app.post('/api/chat', async (req, res) => {
             ? file.data.split(',')[1]
             : file.data;
 
-          if (file.type.startsWith('image/')) {
+          if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             latestParts.push({
               inlineData: {
                 mimeType: file.type,
                 data: base64Data,
               },
             });
-          } else {
+          } else if (
+            file.type.startsWith('text/') ||
+            file.type === 'application/json' ||
+            file.type === 'application/csv'
+          ) {
             try {
               const textContent = Buffer.from(base64Data, 'base64').toString('utf-8');
               latestParts.push({
@@ -811,6 +815,10 @@ app.post('/api/chat', async (req, res) => {
                 },
               });
             }
+          } else {
+            latestParts.push({
+              text: `[The attached file "${file.name}" (${file.type}) cannot be read as text or image by this model.]`,
+            });
           }
         }
       }
@@ -948,7 +956,7 @@ app.post('/api/chat', async (req, res) => {
     const message = !apiKey || apiKey.includes('Placeholder')
       ? 'AI service is not configured. Set GEMINI_API_KEY in the server environment.'
       : isQuotaError
-        ? 'The AI provider reports that this key has no available quota. Enable billing or quota for the selected model, then retry.'
+        ? 'Google AI reports that this API key has no available quota for the selected model. Image and document analysis require available Gemini quota; enable billing or quota for this Google AI project, then retry.'
         : isTimeout
           ? 'The AI provider did not respond in time. Check model availability and try again.'
           : 'The AI provider could not complete this request. Please try again.';

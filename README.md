@@ -4,6 +4,8 @@ A general-purpose AI assistant with Gemini chat, optional Google Search groundin
 
 The installable app is branded **JARVIS AI** and uses the supplied launcher icon. New, empty chats show the JARVIS welcome artwork; the regular chat background returns when the conversation starts.
 
+Attach screenshots or files with the paperclip, or paste a copied screenshot with `Ctrl+V`/`⌘+V`. Image and PDF attachments can be previewed in the chat; PDF content is sent to Gemini as a document. Voice dictation requires a supported browser, microphone permission, and a secure HTTPS connection. Image and document analysis requires available Gemini API quota.
+
 ## Run locally
 
 1. Install Node.js 24 or newer.

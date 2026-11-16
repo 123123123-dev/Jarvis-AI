@@ -12,7 +12,7 @@ import {
   X,
   Sparkles,
 } from 'lucide-react';
-import { Message, SourceCitation } from '../types';
+import { Attachment, Message, SourceCitation } from '../types';
 import { ArcReactorLogo } from './ArcReactorLogo';
 
 interface MessageItemProps {
@@ -29,6 +29,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const isUser = message.role === 'user';
 
   const copyToClipboard = () => {
@@ -397,19 +398,95 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   className="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-800/90 border border-slate-700 text-xs"
                 >
                   {att.type.startsWith('image/') ? (
-                    <img
-                      src={att.data}
-                      alt={att.name}
-                      className="w-7 h-7 object-cover rounded"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewAttachment(att)}
+                      title={`Open ${att.name}`}
+                      className="shrink-0 rounded focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                    >
+                      <img
+                        src={att.data}
+                        alt={att.name}
+                        className="w-12 h-12 object-cover rounded"
+                      />
+                    </button>
                   ) : (
-                    <FileText className="w-5 h-5 text-amber-400" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewAttachment(att)}
+                      title={`Open ${att.name}`}
+                      className="flex items-center gap-1.5 text-left"
+                    >
+                      <FileText className="w-5 h-5 text-amber-400" />
+                    </button>
                   )}
                   <span className="text-[11px] text-slate-200 font-medium truncate max-w-[120px]">
                     {att.name}
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {previewAttachment && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3 md:p-6 backdrop-blur-md"
+              onClick={() => setPreviewAttachment(null)}
+            >
+              <div
+                className="relative flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-cyan-500/40 bg-[#09101d]"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-2.5">
+                  <span className="truncate text-sm font-medium text-slate-200">
+                    {previewAttachment.name}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <a
+                      href={previewAttachment.data}
+                      download={previewAttachment.name}
+                      className="rounded border border-slate-700 px-2.5 py-1 text-xs text-cyan-300 hover:bg-slate-800"
+                    >
+                      Download
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewAttachment(null)}
+                      aria-label="Close attachment preview"
+                      className="rounded p-1 text-slate-300 hover:bg-slate-800 hover:text-white"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/40 p-3">
+                  {previewAttachment.type.startsWith('image/') ? (
+                    <img
+                      src={previewAttachment.data}
+                      alt={previewAttachment.name}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  ) : previewAttachment.type === 'application/pdf' ? (
+                    <iframe
+                      src={previewAttachment.data}
+                      title={previewAttachment.name}
+                      className="h-full w-full rounded bg-white"
+                    />
+                  ) : previewAttachment.type.startsWith('text/') ||
+                    previewAttachment.type === 'application/json' ||
+                    previewAttachment.type === 'application/csv' ? (
+                    <iframe
+                      src={previewAttachment.data}
+                      title={previewAttachment.name}
+                      className="h-full w-full rounded bg-white"
+                    />
+                  ) : (
+                    <div className="text-center text-sm text-slate-300">
+                      This file type can be downloaded, but cannot be previewed in the browser.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
