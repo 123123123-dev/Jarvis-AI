@@ -79,6 +79,25 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
   }
 }
 
+function getWeatherRequest(prompt: string): { location: string; temperatureUnit: 'celsius' | 'fahrenheit' } | null {
+  const match = prompt.match(
+    /\b(?:weather|temperature|temp)\b[\s\S]{0,80}?\b(?:in|at|for|of)\s+([^\n?!]+)/i
+  );
+  if (!match) return null;
+
+  const location = match[1]
+    .replace(/\b(?:right now|currently|today|tonight|tomorrow|in fahrenheit|in celsius|fahrenheit|celsius)\b.*$/i, '')
+    .replace(/\bdegrees?\s+[cf]\b.*$/i, '')
+    .replace(/[.,;]+$/, '')
+    .trim();
+  if (!location || location.length > 100) return null;
+
+  return {
+    location,
+    temperatureUnit: /\b(?:fahrenheit|°\s?f)\b/i.test(prompt) ? 'fahrenheit' : 'celsius',
+  };
+}
+
 async function createDirectSignInUrl(): Promise<string> {
   const response = await fetch('/api/auth/direct-link', {
     method: 'POST',
@@ -465,6 +484,7 @@ export default function App() {
       settings.selectedModel === 'jarvis-art' ||
       /^(?:\/image\b|(?:generate|create|make)\s+(?:(?:an?|the)\s+)?(?:image|picture|artwork|illustration|photo|photograph|portrait)\b|(?:draw|paint|illustrate)\b|turn\s+.+\s+into\b)/i.test(text.trim()) ||
       (hasImageReference && /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|add|put|place|dress|make\s+(?:it|this|the image|him|her|them)|convert)\b/i.test(text));
+    const weatherRequest = getWeatherRequest(text);
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
@@ -543,15 +563,39 @@ export default function App() {
               data: attachment.data,
             })),
         };
+      } else if (weatherRequest) {
+        const parameters = new URLSearchParams({
+            location: weatherRequest.location,
+            temperatureUnit: weatherRequest.temperatureUnit,
+        });
+        endpoint = `/api/weather?${parameters.toString()}`;
       }
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const res = endpoint.startsWith('/api/weather?')
+        ? await fetch(endpoint)
+        : await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
 
-      const data = await readJsonResponse<{ error?: string; content?: string; prompt?: string; imageUrl?: string; sources?: Array<{ uri: string; title: string }> }>(
+      const data = await readJsonResponse<{
+        error?: string;
+        content?: string;
+        prompt?: string;
+        imageUrl?: string;
+        sources?: Array<{ uri: string; title: string }>;
+        location?: string;
+        temperature?: number;
+        temperatureUnit?: string;
+        feelsLike?: number;
+        humidity?: number;
+        windSpeed?: number;
+        windSpeedUnit?: string;
+        conditions?: string;
+        observedAt?: string;
+        source?: string;
+      }>(
         res,
         `JARVIS API error (${res.status}): ${res.statusText}`
       );
@@ -560,7 +604,29 @@ export default function App() {
       }
 
       let assistantMessage: Message;
-      if (endpoint === '/api/generate-image') {
+      if (endpoint.startsWith('/api/weather?')) {
+        if (typeof data.temperature !== 'number' || !data.location) {
+          throw new Error('The weather service returned an incomplete response. Please try again.');
+        }
+        const unit = data.temperatureUnit || '°C';
+        const feelsLike = typeof data.feelsLike === 'number'
+          ? ` Feels like ${data.feelsLike}${unit}.`
+          : '';
+        const humidity = typeof data.humidity === 'number'
+          ? ` Humidity ${data.humidity}%.`
+          : '';
+        const wind = typeof data.windSpeed === 'number'
+          ? ` Wind ${data.windSpeed} ${data.windSpeedUnit || 'km/h'}.`
+          : '';
+        const observedAt = data.observedAt ? ` Local observation time: ${data.observedAt}.` : '';
+        assistantMessage = {
+          id: Math.random().toString(36).substring(2, 9),
+          role: 'assistant',
+          content: `Current weather in ${data.location}: ${data.temperature}${unit}, ${data.conditions || 'conditions unavailable'}.${feelsLike}${humidity}${wind}${observedAt}`,
+          sources: data.source ? [{ uri: data.source, title: 'Open-Meteo weather data' }] : [],
+          timestamp: Date.now(),
+        };
+      } else if (endpoint === '/api/generate-image') {
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',

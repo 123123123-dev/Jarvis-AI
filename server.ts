@@ -591,6 +591,127 @@ app.post('/api/generate-image', async (req, res) => {
   }
 });
 
+app.get('/api/weather', asyncRoute(async (req, res) => {
+  const location = typeof req.query.location === 'string' ? req.query.location.trim() : '';
+  const requestedUnit = req.query.temperatureUnit;
+  if (requestedUnit !== undefined && requestedUnit !== 'celsius' && requestedUnit !== 'fahrenheit') {
+    return res.status(400).json({ error: 'Temperature unit must be celsius or fahrenheit.' });
+  }
+  const temperatureUnit = requestedUnit === 'fahrenheit' ? 'fahrenheit' : 'celsius';
+  if (!location || location.length > 100) {
+    return res.status(400).json({ error: 'Enter a city or place name (up to 100 characters).' });
+  }
+
+  try {
+    const geocodingUrl = new URL('https://geocoding-api.open-meteo.com/v1/search');
+    geocodingUrl.searchParams.set('name', location);
+    geocodingUrl.searchParams.set('count', '5');
+    geocodingUrl.searchParams.set('language', 'en');
+    geocodingUrl.searchParams.set('format', 'json');
+
+    const geocodingResponse = await fetch(geocodingUrl, { signal: AbortSignal.timeout(8000) });
+    if (!geocodingResponse.ok) throw new Error(`Geocoding returned HTTP ${geocodingResponse.status}.`);
+    const geocoding = await geocodingResponse.json() as {
+      results?: Array<{
+        name: string;
+        latitude: number;
+        longitude: number;
+        timezone: string;
+        country?: string;
+        admin1?: string;
+      }>;
+    };
+    const place = geocoding.results?.[0];
+    if (!place) {
+      return res.status(404).json({ error: `No matching city or place was found for "${location}".` });
+    }
+
+    const forecastUrl = new URL('https://api.open-meteo.com/v1/forecast');
+    forecastUrl.searchParams.set('latitude', String(place.latitude));
+    forecastUrl.searchParams.set('longitude', String(place.longitude));
+    forecastUrl.searchParams.set(
+      'current',
+      'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m',
+    );
+    forecastUrl.searchParams.set('temperature_unit', temperatureUnit);
+    forecastUrl.searchParams.set('timezone', 'auto');
+
+    const forecastResponse = await fetch(forecastUrl, { signal: AbortSignal.timeout(8000) });
+    if (!forecastResponse.ok) throw new Error(`Weather provider returned HTTP ${forecastResponse.status}.`);
+    const forecast = await forecastResponse.json() as {
+      current?: {
+        time?: string;
+        temperature_2m?: number;
+        relative_humidity_2m?: number;
+        apparent_temperature?: number;
+        precipitation?: number;
+        weather_code?: number;
+        wind_speed_10m?: number;
+      };
+      current_units?: { temperature_2m?: string; wind_speed_10m?: string };
+    };
+    const current = forecast.current;
+    if (
+      !current ||
+      typeof current.temperature_2m !== 'number' ||
+      typeof current.weather_code !== 'number'
+    ) {
+      throw new Error('Weather provider returned incomplete current conditions.');
+    }
+
+    const conditions: Record<number, string> = {
+      0: 'Clear sky',
+      1: 'Mainly clear',
+      2: 'Partly cloudy',
+      3: 'Overcast',
+      45: 'Fog',
+      48: 'Rime fog',
+      51: 'Light drizzle',
+      53: 'Moderate drizzle',
+      55: 'Dense drizzle',
+      56: 'Light freezing drizzle',
+      57: 'Dense freezing drizzle',
+      61: 'Light rain',
+      63: 'Moderate rain',
+      65: 'Heavy rain',
+      66: 'Light freezing rain',
+      67: 'Heavy freezing rain',
+      71: 'Light snow',
+      73: 'Moderate snow',
+      75: 'Heavy snow',
+      77: 'Snow grains',
+      80: 'Light rain showers',
+      81: 'Moderate rain showers',
+      82: 'Violent rain showers',
+      85: 'Light snow showers',
+      86: 'Heavy snow showers',
+      95: 'Thunderstorm',
+      96: 'Thunderstorm with light hail',
+      99: 'Thunderstorm with heavy hail',
+    };
+    const locationLabel = [place.name, place.admin1, place.country]
+      .filter((part, index, parts) => Boolean(part) && parts.indexOf(part) === index)
+      .join(', ');
+
+    return res.json({
+      location: locationLabel,
+      temperature: current.temperature_2m,
+      temperatureUnit: forecast.current_units?.temperature_2m || (temperatureUnit === 'fahrenheit' ? '°F' : '°C'),
+      feelsLike: current.apparent_temperature,
+      humidity: current.relative_humidity_2m,
+      precipitation: current.precipitation,
+      windSpeed: current.wind_speed_10m,
+      windSpeedUnit: forecast.current_units?.wind_speed_10m || 'km/h',
+      conditions: conditions[current.weather_code] || 'Conditions unavailable',
+      observedAt: current.time,
+      source: 'https://open-meteo.com/',
+    });
+  } catch (error) {
+    console.error('Weather lookup failed:', error instanceof Error ? error.message : String(error));
+    return res.status(502).json({ error: 'Current weather is temporarily unavailable. Please try again.' });
+  }
+}));
+
 // Chat completion with Google Search Grounding and Multi-file attachments
 app.post('/api/chat', async (req, res) => {
   let latestText = '';
