@@ -32,6 +32,7 @@ import {
   getDirectSignInUrl,
   isConversationArchive,
 } from './services/storage';
+import { getWeatherRequest } from './services/weather';
 import { WifiOff, Sparkles, Link } from 'lucide-react';
 
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
@@ -77,25 +78,6 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
     const preview = trimmed.replace(/\s+/g, ' ').slice(0, 220);
     throw new Error(preview || fallbackMessage);
   }
-}
-
-function getWeatherRequest(prompt: string): { location: string; temperatureUnit: 'celsius' | 'fahrenheit' } | null {
-  const match = prompt.match(
-    /\b(?:weather|temperature|temp)\b[\s\S]{0,80}?\b(?:in|at|for|of)\s+([^\n?!]+)/i
-  );
-  if (!match) return null;
-
-  const location = match[1]
-    .replace(/\b(?:right now|currently|today|tonight|tomorrow|in fahrenheit|in celsius|fahrenheit|celsius)\b.*$/i, '')
-    .replace(/\bdegrees?\s+[cf]\b.*$/i, '')
-    .replace(/[.,;]+$/, '')
-    .trim();
-  if (!location || location.length > 100) return null;
-
-  return {
-    location,
-    temperatureUnit: /\b(?:fahrenheit|°\s?f)\b/i.test(prompt) ? 'fahrenheit' : 'celsius',
-  };
 }
 
 async function createDirectSignInUrl(): Promise<string> {
