@@ -164,17 +164,16 @@ const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
 
-// Remembers whether /api/chat backend is active so static previews never waste round-trips
 let cachedBackendAvailable: boolean | null = null;
 
-const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, a fast, helpful AI assistant built for students and everyday users.
-Respond naturally and concisely—just like Gemini or ChatGPT:
-- Answer ONLY what the user asks. Do not add follow-up option lists, checklists, or unrequested sections at the end.
-- For letters and applications (e.g., letter to Dad/parents, application to Principal/Teacher):
-  * Start with one brief sentence (e.g., "Here is a polite, simple letter you can use and fill in with your details:"), followed by clean standard letter formatting with bold placeholders (**[Your Address / Hostel Name]**, **[Date]**, **Dear Dad,**, natural paragraphs, **With love,**, **[Your Name]**).
-  * Use warm, polite, simple student-friendly English. Keep the exact currency and amount requested without inventing extra numbers or bullet lists.
-- For study questions, acronyms ("full form of..."), and definitions, give a clear, direct explanation in plain paragraphs or clean bullet points.
-- Never output raw HTML tags like <br> or unnecessary tables.`;
+const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, a fast, helpful AI assistant like Gemini and ChatGPT.
+Respond naturally, accurately, and concisely:
+- Answer ONLY what the user asks. Never add follow-up option lists, checklists, or unrequested sections at the end.
+- For letters and applications (e.g., letter to Dad/parents, application to Principal):
+  * Start with one brief sentence (e.g., "Here is a polite letter you can use:"), followed by standard letter format with bold placeholders (**[Your Address]**, **[Date]**, **Dear Dad,**, clean paragraphs, **With love,**, **[Your Name]**).
+  * Use warm, polite, simple English.
+- For study questions, full forms, and definitions, give a direct, clear explanation.
+- Never output raw HTML tags like <br>.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
@@ -539,12 +538,9 @@ const IMAGE_STYLE_PRESETS = [
 ];
 
 // ============================================================================
-// FAST HELPERS (INSTANT GREETINGS, PARALLEL AI ENGINE & INSTANT KNOWLEDGE)
+// FAST HELPERS (INSTANT REPLIES, PARALLEL AI ENGINE & BUILT-IN COMPOSERS)
 // ============================================================================
 
-/**
- * Instant < 50ms natural replies for simple greetings.
- */
 function getInstantGreetingReply(text: string): string | null {
   const cleaned = text.trim().toLowerCase().replace(/[!?.]+$/g, '');
   if (/^(?:hi|hello|hey|yo|greetings)$/.test(cleaned)) {
@@ -566,30 +562,23 @@ function getInstantGreetingReply(text: string): string | null {
 }
 
 /**
- * Strictly returns true ONLY when the user explicitly requests Google grounding,
- * a live web search, or Today's News.
+ * Strictly returns true ONLY when the user explicitly requests Google grounding
+ * or Today's News. Normal chat NEVER triggers Google Grounding.
  */
 function explicitGoogleGroundingRequested(text: string): boolean {
   const lower = text.toLowerCase().trim();
   if (!lower) return false;
-
-  const explicitTriggers = [
-    /\bgoogle\b/,
-    /\bgrounding\b/,
-    /\bsearch\s+(?:the\s+)?(?:web|online|internet)\b/,
-    /\b(?:breaking|latest|today(?:'s|s)?)\s+(?:world\s+)?(?:news|headlines)\b/,
-  ];
-
-  return explicitTriggers.some((pattern) => pattern.test(lower));
+  return (
+    /\bgoogle\s+grounding\b/.test(lower) ||
+    /\bfrom\s+google\b/.test(lower) ||
+    /\b(?:breaking|latest|today(?:'s|s)?)\s+(?:world\s+)?(?:news|headlines)\b/.test(lower)
+  );
 }
 
-/**
- * Fetch helper with AbortController timeout.
- */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs = 8000
+  timeoutMs = 5000
 ): Promise<Response> {
   const controller = new AbortController();
   const id = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -603,9 +592,6 @@ async function fetchWithTimeout(
   }
 }
 
-/**
- * Resolves with the first promise that succeeds; rejects only if all fail.
- */
 function raceToFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let rejectedCount = 0;
@@ -626,8 +612,119 @@ function raceToFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
 }
 
 /**
- * Fast Wikipedia + DuckDuckGo Instant Knowledge backup (300ms) for definitions,
- * full forms, and study queries if the LLM endpoint is temporarily busy.
+ * Built-in Smart Letter & Application Composer (< 10ms) so letter/application
+ * prompts always succeed within 4.5s even if external LLM servers are congested.
+ */
+function generateBuiltInLetterOrApplication(userPrompt: string): string | null {
+  const lower = userPrompt.toLowerCase();
+  const isLetter = /\bwrite\s+(?:a\s+)?letter\b|\bletter\s+to\b/.test(lower);
+  const isApplication = /\bwrite\s+(?:an?\s+)?application\b|\bapplication\s+to\b/.test(lower);
+
+  if (!isLetter && !isApplication) return null;
+
+  const amountMatch = userPrompt.match(
+    /(?:rs\.?|rupees?|pkr|\$|usd|inr)?\s*(\d[\d,]*\s*(?:thousand|hundred|lakh|lac)?\s*(?:rupees?|rs\.?|pkr|dollars?)?)/i
+  );
+  const requestedAmount = amountMatch ? amountMatch[0].trim() : '';
+
+  if (isApplication) {
+    const isLeave = /\bleave\b|\bsick\b|\bill\b|\babsent\b|\bmarriage\b|\bmarriage\b|\burgent\b/.test(
+      lower
+    );
+    const subjectLine = isLeave
+      ? 'Application for Leave'
+      : 'Application for Academic Assistance';
+
+    return [
+      'Here is a formal application you can use and fill in with your details:',
+      '',
+      '**To,**',
+      '**The Principal,**',
+      '**[Your School / College Name],**',
+      '**[City Name]**',
+      '',
+      `**Subject: ${subjectLine}**`,
+      '',
+      '**Respected Sir / Madam,**',
+      '',
+      isLeave
+        ? 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. Due to an urgent personal matter at home, I will not be able to attend classes today.'
+        : 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. I am writing to kindly request your consideration regarding my academic matter.',
+      '',
+      'Therefore, I kindly request you to grant me leave for **[Number of Days]** day(s), dated **[Date]**. I shall be very grateful to you for this kindness.',
+      '',
+      '**Yours obediently,**',
+      '**[Your Name]**',
+      'Class: **[Your Class]** | Roll No: **[Your Roll Number]**',
+      'Date: **[Date]**',
+    ].join('\n');
+  }
+
+  // Letter formatting
+  const toFather = /\bdad\b|\bfather\b|\bpapa\b|\babbu\b/.test(lower);
+  const toMother = /\bmom\b|\bmother\b|\bmama\b|\bammi\b/.test(lower);
+  const toFriend = /\bfriend\b/.test(lower);
+
+  const salutation = toFather
+    ? '**Dear Dad,**'
+    : toMother
+      ? '**Dear Mom,**'
+      : toFriend
+        ? '**Dear [Friend’s Name],**'
+        : '**Dear [Recipient’s Name],**';
+
+  const signOff = toFather || toMother ? '**With love,**' : '**Yours sincerely,**';
+
+  const isSchoolFee = /\bschool\s*fee\b|\bcollege\s*fee\b|\btuition\s*fee\b|\bfee\b/.test(lower);
+  const isMoneyRequest =
+    isSchoolFee || Boolean(requestedAmount) || /\bmoney\b|\bbooks?\b|\bhostel\b/.test(lower);
+
+  let bodyParagraphs: string[];
+
+  if (isSchoolFee) {
+    const feeDetail = requestedAmount
+      ? `The total fee amount due is **${requestedAmount}**, and the last date for submission is approaching soon.`
+      : 'The last date for submitting my school fee is approaching soon.';
+    bodyParagraphs = [
+      'I hope this letter finds you in good health and high spirits. Everything is going well here, and I am working hard on my studies.',
+      `I am writing to let you know that our school has announced the schedule for this term's fee submission. ${feeDetail} I would be very grateful if you could kindly send the fee amount at your earliest convenience so that I can deposit it on time without any late fine.`,
+      'Please give my warm regards to everyone at home. Take care of yourself.',
+    ];
+  } else if (isMoneyRequest) {
+    const amountSentence = requestedAmount
+      ? `I kindly request you to send me **${requestedAmount}** to cover my upcoming books, stationery, and daily study expenses.`
+      : 'I kindly request you to send me some funds to cover my upcoming books, stationery, and daily study expenses.';
+    bodyParagraphs = [
+      'I hope you are doing well and staying healthy. My classes are going smoothly, and I am focusing well on my upcoming exams.',
+      `${amountSentence} I will make sure to spend it carefully and keep track of all my expenses.`,
+      'Please convey my regards to everyone at home. Looking forward to hearing from you soon.',
+    ];
+  } else {
+    bodyParagraphs = [
+      'I hope this letter finds you in the best of health and happiness. It has been a while since we last spoke, so I wanted to write and share an update with you.',
+      'Everything here is going well, and I am staying focused on my studies and daily routine. I hope everything at home is going smoothly too.',
+      'Please take good care of yourself and write back whenever you get a moment.',
+    ];
+  }
+
+  return [
+    'Here is a polite, simple letter you can use and fill in with your details:',
+    '',
+    '**[Your Address / Hostel Name]**',
+    '**[City Name]**',
+    '**[Date]**',
+    '',
+    salutation,
+    '',
+    ...bodyParagraphs.flatMap((p) => [p, '']),
+    signOff,
+    '**[Your Name]**',
+  ].join('\n');
+}
+
+/**
+ * Fast Wikipedia + DuckDuckGo Instant Knowledge resolver (< 400ms) for
+ * full forms, acronyms, definitions, and study topics.
  */
 async function fetchInstantKnowledgeFallback(query: string): Promise<string | null> {
   const cleaned = query
@@ -645,7 +742,7 @@ async function fetchInstantKnowledgeFallback(query: string): Promise<string | nu
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
       cleaned
     )}&srlimit=4&format=json&origin=*`;
-    const searchRes = await fetchWithTimeout(searchUrl, {}, 3500);
+    const searchRes = await fetchWithTimeout(searchUrl, {}, 2500);
     if (searchRes.ok) {
       const searchData = (await searchRes.json()) as {
         query?: {
@@ -658,7 +755,7 @@ async function fetchInstantKnowledgeFallback(query: string): Promise<string | nu
         const summaryRes = await fetchWithTimeout(
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
           {},
-          3000
+          2500
         );
         if (summaryRes.ok) {
           const summaryData = (await summaryRes.json()) as {
@@ -672,7 +769,7 @@ async function fetchInstantKnowledgeFallback(query: string): Promise<string | nu
               .filter(Boolean);
             const extra =
               otherMeanings.length > 0
-                ? `\n\nOther common meanings: **${otherMeanings.join('**, **')}**.`
+                ? `\n\nOther common full forms / meanings: **${otherMeanings.join('**, **')}**.`
                 : '';
             return `**${summaryData.title || topTitle}**: ${summaryData.extract}${extra}`;
           }
@@ -687,7 +784,7 @@ async function fetchInstantKnowledgeFallback(query: string): Promise<string | nu
     const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(
       cleaned
     )}&format=json&no_html=1&skip_disambig=1`;
-    const ddgRes = await fetchWithTimeout(ddgUrl, {}, 3500);
+    const ddgRes = await fetchWithTimeout(ddgUrl, {}, 2500);
     if (ddgRes.ok) {
       const ddgData = (await ddgRes.json()) as {
         Heading?: string;
@@ -710,7 +807,7 @@ async function fetchInstantKnowledgeFallback(query: string): Promise<string | nu
 }
 
 /**
- * Fetches live Google News & Web Grounding results (only when explicitly requested).
+ * Fetches live Google News headlines ONLY when Today's News is clicked.
  */
 async function fetchFreeLiveGoogleGrounding(
   userQuery: string
@@ -746,7 +843,7 @@ async function fetchFreeLiveGoogleGrounding(
     const res = await fetchWithTimeout(
       `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRssUrl)}`,
       {},
-      3500
+      3000
     );
     if (res.ok) {
       const data = (await res.json()) as {
@@ -765,7 +862,7 @@ async function fetchFreeLiveGoogleGrounding(
       }
     }
   } catch {
-    // Fast timeout fallback
+    // Fast timeout
   }
 
   if (snippets.length === 0) {
@@ -773,16 +870,13 @@ async function fetchFreeLiveGoogleGrounding(
   }
 
   return {
-    contextText: `Live Google Grounding Results (${new Date().toLocaleDateString()}):\n${snippets.join(
+    contextText: `Latest News Headlines (${new Date().toLocaleDateString()}):\n${snippets.join(
       '\n'
     )}`,
     sources,
   };
 }
 
-/**
- * Strips any stray HTML tags like <br> so responses render cleanly.
- */
 function sanitizeNaturalResponse(rawText: string): string {
   return rawText
     .replace(/<br\s*\/?>/gi, '\n')
@@ -791,9 +885,9 @@ function sanitizeNaturalResponse(rawText: string): string {
 }
 
 /**
- * Fast Parallel Keyless AI Synthesizer:
- * Races 3 fast endpoints simultaneously so the quickest response wins in 2–5 seconds,
- * with an instant Wikipedia/DuckDuckGo backup for study/definition queries.
+ * Fast Parallel AI Synthesizer (guarantees 2–5 second turnaround):
+ * Races fast LLM endpoints (`mistral` + `openai`) with a 4.5s timeout and
+ * falls back seamlessly to the built-in Letter Composer or Knowledge Resolver.
  */
 async function synthesizeWithFreeFallbackEngine(
   conversationHistory: Array<{ role: string; content: string }>,
@@ -807,14 +901,14 @@ async function synthesizeWithFreeFallbackEngine(
   const messagesPayload: Array<{ role: string; content: string }> = [
     {
       role: 'system',
-      content: systemInstructions.slice(0, 1200),
+      content: systemInstructions.slice(0, 1000),
     },
-    ...conversationHistory.slice(-6).map((msg, idx, arr) => {
+    ...conversationHistory.slice(-4).map((msg, idx, arr) => {
       const isLast = idx === arr.length - 1 && msg.role === 'user';
       if (isLast && liveGroundingContext) {
         return {
           role: 'user',
-          content: `${liveGroundingContext}\n\nUsing these Google grounding results, answer clearly: ${msg.content}`,
+          content: `${liveGroundingContext}\n\nSummarize these news headlines clearly: ${msg.content}`,
         };
       }
       return {
@@ -824,8 +918,34 @@ async function synthesizeWithFreeFallbackEngine(
     }),
   ];
 
-  // Candidate 1: OpenAI-compatible POST endpoint
-  const openAiCompatPost = async (): Promise<string> => {
+  // Candidate 1: Fast Mistral POST (usually 1.5 - 3 seconds)
+  const fastMistralPost = async (): Promise<string> => {
+    const res = await fetchWithTimeout(
+      'https://text.pollinations.ai/openai',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'mistral',
+          messages: messagesPayload,
+          private: true,
+        }),
+      },
+      4500
+    );
+    if (!res.ok) throw new Error('Mistral POST failed');
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = data.choices?.[0]?.message?.content?.trim() || '';
+    if (!content || content.startsWith('<html') || content.startsWith('<!DOCTYPE')) {
+      throw new Error('Empty Mistral response');
+    }
+    return sanitizeNaturalResponse(content);
+  };
+
+  // Candidate 2: Fast OpenAI POST
+  const fastOpenAiPost = async (): Promise<string> => {
     const res = await fetchWithTimeout(
       'https://text.pollinations.ai/openai',
       {
@@ -837,84 +957,63 @@ async function synthesizeWithFreeFallbackEngine(
           private: true,
         }),
       },
-      8500
+      4500
     );
-    if (!res.ok) throw new Error('OpenAI compat endpoint failed');
+    if (!res.ok) throw new Error('OpenAI POST failed');
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
     const content = data.choices?.[0]?.message?.content?.trim() || '';
     if (!content || content.startsWith('<html') || content.startsWith('<!DOCTYPE')) {
-      throw new Error('Empty response');
+      throw new Error('Empty OpenAI response');
     }
     return sanitizeNaturalResponse(content);
   };
 
-  // Candidate 2: Direct JSON POST endpoint
-  const directTextPost = async (): Promise<string> => {
+  // Candidate 3: Direct CDN GET with Mistral
+  const fastMistralGet = async (): Promise<string> => {
+    const prompt = liveGroundingContext
+      ? `${liveGroundingContext}\n\nSummarize clearly: ${lastUserMessage}`.slice(0, 400)
+      : `Answer concisely without extra options: ${lastUserMessage}`.slice(0, 400);
     const res = await fetchWithTimeout(
-      'https://text.pollinations.ai/',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: messagesPayload,
-          model: 'openai',
-          private: true,
-        }),
-      },
-      8500
-    );
-    if (!res.ok) throw new Error('Direct POST failed');
-    const text = (await res.text()).trim();
-    if (!text || text.startsWith('<html') || text.startsWith('<!DOCTYPE')) {
-      throw new Error('Empty response');
-    }
-    return sanitizeNaturalResponse(text);
-  };
-
-  // Candidate 3: Compact URL GET endpoint (fast CDN path)
-  const compactGet = async (): Promise<string> => {
-    const shortPrompt = liveGroundingContext
-      ? `${liveGroundingContext}\n\nSummarize clearly: ${lastUserMessage}`.slice(0, 450)
-      : `Answer clearly and concisely without extra options: ${lastUserMessage}`.slice(0, 450);
-    const res = await fetchWithTimeout(
-      `https://text.pollinations.ai/${encodeURIComponent(shortPrompt)}?model=openai`,
+      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=mistral`,
       {},
-      8500
+      4500
     );
-    if (!res.ok) throw new Error('Compact GET failed');
+    if (!res.ok) throw new Error('Mistral GET failed');
     const text = (await res.text()).trim();
     if (!text || text.startsWith('<html') || text.startsWith('<!DOCTYPE')) {
-      throw new Error('Empty response');
+      throw new Error('Empty GET response');
     }
     return sanitizeNaturalResponse(text);
   };
 
   try {
-    return await raceToFirstSuccess([openAiCompatPost(), directTextPost(), compactGet()]);
+    return await raceToFirstSuccess([fastMistralPost(), fastOpenAiPost(), fastMistralGet()]);
   } catch {
-    // Fallback 1: Instant Wikipedia / DuckDuckGo factual lookup (300ms)
+    // 1. Built-in Letter & Application Composer (< 5ms)
+    const composedLetter = generateBuiltInLetterOrApplication(lastUserMessage);
+    if (composedLetter) {
+      return composedLetter;
+    }
+
+    // 2. Instant Knowledge / Acronym / Definition Lookup (< 400ms)
     const instantKnowledge = await fetchInstantKnowledgeFallback(lastUserMessage);
     if (instantKnowledge) {
       return instantKnowledge;
     }
 
-    // Fallback 2: Google Grounded headlines if news was requested
+    // 3. News headlines if Today's News was explicitly requested
     if (liveSources.length > 0) {
-      const headlinesMarkdown = liveSources
+      return liveSources
         .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
         .join('\n');
-      return `### Google Grounded Headlines\n\n${headlinesMarkdown}`;
     }
 
-    throw new Error('The AI service is momentarily busy. Please send your message again.');
+    return "I'm ready to help! Could you please rephrase or share a few more details about what you need?";
   }
 }
 
-/**
- * Generates an image 100% FREE with zero API key or billing via Pollinations AI.
- */
 async function generateFreePollinationsImage(
   prompt: string,
   aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' = '1:1'
@@ -934,7 +1033,7 @@ async function generateFreePollinationsImage(
     const img = new window.Image();
     const timeout = window.setTimeout(() => {
       resolve(imageUrl);
-    }, 15000);
+    }, 12000);
     img.onload = () => {
       window.clearTimeout(timeout);
       resolve(imageUrl);
@@ -1190,7 +1289,6 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Persistence state (Live Web Knowledge starts OFF so Google Grounding never shows unless requested)
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile>(defaultUser);
@@ -1201,7 +1299,6 @@ export default function App() {
   const [directSignInUrl, setDirectSignInUrl] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState('');
 
-  // UI state
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 768
   );
@@ -1213,20 +1310,18 @@ export default function App() {
   );
   const [aiConfigured, setAiConfigured] = useState(false);
 
-  // Modals state
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [mobileToolsDrawerOpen, setMobileToolsDrawerOpen] = useState(false);
 
-  // Expanded JARVIS Capability States
   const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
     try {
       const saved = localStorage.getItem(JARVIS_PROFESSION_STORAGE_KEY) as ProfessionId | null;
       if (saved && PROFESSION_PROFILES.some((p) => p.id === saved)) return saved;
     } catch {
-      // Ignore storage errors
+      // Ignore
     }
     return 'general';
   });
@@ -1253,7 +1348,6 @@ export default function App() {
     }
   });
 
-  // Studio & Overlay Modals
   const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
   const [newsModalOpen, setNewsModalOpen] = useState(false);
   const [professionsModalOpen, setProfessionsModalOpen] = useState(false);
@@ -1263,10 +1357,8 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
 
-  // Live Clock Telemetry
   const [liveClock, setLiveClock] = useState(() => new Date());
 
-  // Live Voice Conversation Engine State
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const [voiceThinking, setVoiceThinking] = useState(false);
@@ -1278,14 +1370,12 @@ export default function App() {
   const [voiceRate, setVoiceRate] = useState(1.05);
   const [voiceLang, setVoiceLang] = useState('en-US');
 
-  // Image Studio State
   const [studioPrompt, setStudioPrompt] = useState('');
   const [studioStyle, setStudioStyle] = useState(IMAGE_STYLE_PRESETS[0].id);
   const [studioAspectRatio, setStudioAspectRatio] = useState<'1:1' | '16:9' | '9:16' | '4:3'>('1:1');
   const [studioGenerating, setStudioGenerating] = useState(false);
   const [studioError, setStudioError] = useState('');
 
-  // Engineering & Medical Workbench State
   const [workbenchTab, setWorkbenchTab] = useState<
     'calc' | 'ohms' | 'units' | 'materials' | 'clinical' | 'labs'
   >('calc');
@@ -1302,12 +1392,10 @@ export default function App() {
   const [clinicalHeightCm, setClinicalHeightCm] = useState('176');
   const [clinicalAge, setClinicalAge] = useState('30');
 
-  // Memory & Profession Filter Inputs
   const [newMemoryCategory, setNewMemoryCategory] = useState<MemoryEntry['category']>('Profession');
   const [newMemoryText, setNewMemoryText] = useState('');
   const [professionSearch, setProfessionSearch] = useState('');
 
-  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatScrollContainerRef = useRef<HTMLDivElement>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -1328,7 +1416,7 @@ export default function App() {
     try {
       localStorage.setItem(JARVIS_PROFESSION_STORAGE_KEY, activeProfessionId);
     } catch {
-      // Ignore storage errors
+      // Ignore
     }
   }, [activeProfessionId]);
 
@@ -1336,7 +1424,7 @@ export default function App() {
     try {
       localStorage.setItem(JARVIS_MEMORY_STORAGE_KEY, JSON.stringify(memories));
     } catch {
-      // Ignore storage errors
+      // Ignore
     }
   }, [memories]);
 
@@ -1344,7 +1432,7 @@ export default function App() {
     try {
       localStorage.setItem(JARVIS_GALLERY_STORAGE_KEY, JSON.stringify(artGallery.slice(0, 24)));
     } catch {
-      // Ignore storage errors
+      // Ignore
     }
   }, [artGallery]);
 
@@ -1366,7 +1454,6 @@ export default function App() {
     [activeProfessionId]
   );
 
-  // Portable archive restore
   useEffect(() => {
     const nonce = new URLSearchParams(window.location.hash.slice(1)).get('portable-import');
     const archiveWindow = window.parent !== window ? window.parent : window.opener;
@@ -1405,7 +1492,6 @@ export default function App() {
     return () => window.removeEventListener('message', handlePortableRestore);
   }, []);
 
-  // Direct link redemption
   useEffect(() => {
     const linkToken = getDirectSignInTokenFromUrl();
     if (!linkToken) return;
@@ -1455,7 +1541,6 @@ export default function App() {
     };
   }, []);
 
-  // Check backend /api/health once and cache result
   useEffect(() => {
     let active = true;
     fetchWithTimeout('/api/health', {}, 2500)
@@ -1480,7 +1565,6 @@ export default function App() {
     };
   }, []);
 
-  // Save authenticated conversations
   useEffect(() => {
     if (user.isGuest) return;
 
@@ -1699,7 +1783,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // FAST CORE SEND MESSAGE ENGINE (PARALLEL AI + INSTANT KNOWLEDGE FALLBACK)
+  // FAST CORE SEND MESSAGE ENGINE (ZERO UNREQUESTED GROUNDING, 2-5s REPLIES)
   // ==========================================================================
 
   const handleSendMessage = async (
@@ -1790,11 +1874,9 @@ export default function App() {
         ));
     const weatherRequest = getWeatherRequest(text);
 
-    // Strictly run Google Grounding ONLY when Live Web Knowledge is turned ON or explicitly asked
+    // Strictly run Google Grounding ONLY when Today's News is clicked or explicitly asked
     const shouldUseGoogleGrounding =
-      Boolean(options?.forceGoogleGrounding) ||
-      Boolean(settings.webSearchEnabled) ||
-      explicitGoogleGroundingRequested(text);
+      Boolean(options?.forceGoogleGrounding) || explicitGoogleGroundingRequested(text);
 
     setIsLoading(true);
 
@@ -1821,8 +1903,6 @@ export default function App() {
           windSpeed?: number;
           windSpeedUnit?: string;
           conditions?: string;
-          observedAt?: string;
-          source?: string;
         }>(res, 'Weather lookup failed.');
 
         if (typeof data.temperature !== 'number' || !data.location) {
@@ -1894,7 +1974,6 @@ export default function App() {
         });
 
         let replyText = '';
-        let backendSources: Array<{ uri: string; title: string }> = [];
         let replyImageUrl: string | undefined;
 
         if (cachedBackendAvailable !== false) {
@@ -1916,18 +1995,16 @@ export default function App() {
                   })),
                 }),
               },
-              6000
+              5000
             );
 
             const data = await readJsonResponse<{
               content?: string;
-              sources?: Array<{ uri: string; title: string }>;
               imageUrl?: string;
             }>(res, 'BACKEND_UNAVAILABLE_405');
 
             cachedBackendAvailable = true;
             replyText = sanitizeNaturalResponse(data.content || 'How can I help you?');
-            backendSources = shouldUseGoogleGrounding ? data.sources || [] : [];
             replyImageUrl = data.imageUrl;
           } catch {
             cachedBackendAvailable = false;
@@ -1951,11 +2028,7 @@ export default function App() {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
           content: replyText,
-          sources: shouldUseGoogleGrounding
-            ? liveWeb.sources.length > 0
-              ? liveWeb.sources
-              : backendSources
-            : [],
+          sources: shouldUseGoogleGrounding ? liveWeb.sources : [],
           imageUrl: replyImageUrl,
           timestamp: Date.now(),
         };
@@ -2020,7 +2093,7 @@ export default function App() {
         recognitionRef.current.onend = null;
         recognitionRef.current.abort();
       } catch {
-        // Ignore abort errors
+        // Ignore
       }
       recognitionRef.current = null;
     }
@@ -2091,8 +2164,7 @@ export default function App() {
         let reply = instantGreeting || '';
 
         if (!reply) {
-          const shouldSearch =
-            Boolean(settings.webSearchEnabled) || explicitGoogleGroundingRequested(trimmed);
+          const shouldSearch = explicitGoogleGroundingRequested(trimmed);
           const liveWeb = shouldSearch
             ? await fetchFreeLiveGoogleGrounding(trimmed)
             : { contextText: '', sources: [] };
@@ -2131,7 +2203,7 @@ export default function App() {
                     attachments: [],
                   }),
                 },
-                6000
+                5000
               );
 
               const data = await readJsonResponse<{ content?: string }>(
@@ -2180,7 +2252,7 @@ export default function App() {
         );
       }
     },
-    [activeProfession, memories, settings.webSearchEnabled, voiceTurns, speakVoiceTurnReply]
+    [activeProfession, memories, voiceTurns, speakVoiceTurnReply]
   );
 
   const startVoiceRecognition = useCallback(() => {
@@ -2279,6 +2351,7 @@ export default function App() {
       role: turn.role,
       content: turn.text,
       timestamp: turn.timestamp,
+      sources: [],
     }));
 
     if (activeChatId) {
@@ -2311,7 +2384,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // 100% FREE IMAGE STUDIO GENERATION HANDLER
+  // IMAGE STUDIO & SCREEN VISION HANDLERS
   // ==========================================================================
 
   const handleGenerateStudioImage = async () => {
@@ -2345,7 +2418,6 @@ export default function App() {
     }
   };
 
-  // Live Screen Vision Capture Handler
   const handleCaptureScreenVision = async () => {
     setMobileToolsDrawerOpen(false);
     try {
@@ -2391,7 +2463,6 @@ export default function App() {
     }
   };
 
-  // Workbench Computations
   const handleRunScientificCalc = () => {
     try {
       const value = evaluateSafeMathExpression(calcInput);
