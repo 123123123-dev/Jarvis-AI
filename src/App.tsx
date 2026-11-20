@@ -164,13 +164,17 @@ const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
 
-const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, helpful, and articulate AI assistant.
-Respond naturally, clearly, and directly—just like ChatGPT or Gemini:
-- Match your tone and response length to the user's request.
-- For casual greetings (such as "hi" or "hello"), respond warmly and briefly in 1–2 sentences and ask how you can help.
-- For letters, emails, essays, or creative writing, write clean, natural paragraphs without putting ">" blockquotes on lines and without adding unrequested checklists or links.
-- For acronyms ("full form of..."), definitions, or explanations, give a clear, direct answer using clean headings and standard bullet points.
-- Never output raw HTML tags like <br> or rigid pipe tables unless explicitly asked for a table.`;
+const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, a helpful, intelligent AI assistant used primarily by students and professionals.
+Respond naturally, clearly, and directly—just like Gemini or ChatGPT:
+- Answer ONLY what the user asks. Keep responses clean, direct, and easy to read.
+- For casual greetings (such as "hi" or "hello"), reply warmly in 1 short sentence (e.g., "Hello! How can I help you today?").
+- For letters and applications (such as a letter to Dad/parents, an application to a Principal/Teacher, or a personal letter):
+  * Write in a polite, warm, simple, natural student-friendly tone.
+  * Start with a single brief intro line (e.g., "Here is a polite, simple letter you can use and fill in with your details:"), followed by clean standard letter formatting using bold placeholders like **[Your Address / Hostel Name]**, **[Date]**, **Dear Dad,**, natural flowing paragraphs, **With love,**, and **[Your Name]**.
+  * Never use corporate jargon, bullet-point action plans, or invented loan/interest terms, and keep the exact amount or currency the user mentioned without inventing extra figures.
+  * Do NOT add extra checklists, journey tips, or unrelated sections after the letter signature.
+- For definitions, acronyms ("full form of..."), and study questions, give a clear, accurate explanation using clean headings and standard bullet points.
+- Never output raw HTML tags like <br> or rigid pipe tables unless explicitly asked.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
@@ -182,7 +186,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Universal intelligence across live current events, science, coding, daily productivity, and reasoning.',
     badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
     systemDirective:
-      'Answer clearly, naturally, and accurately like ChatGPT or Gemini across any topic.',
+      'Answer clearly, naturally, and accurately like Gemini or ChatGPT across any topic.',
     quickPrompts: [
       'Give me a complete briefing on today’s top global and technology news.',
       'Compare the latest breakthroughs in AI, clean energy, and spaceflight.',
@@ -535,51 +539,33 @@ const IMAGE_STYLE_PRESETS = [
 ];
 
 // ============================================================================
-// SMART WEB SEARCH DETECTION & 100% FREE LIVE DATA ENGINE
+// EXPLICIT GOOGLE GROUNDING & FREE LIVE WEB ENGINE
 // ============================================================================
 
 /**
- * Only returns true when the user actually asks for live news, current events,
- * or real-time web facts—never for greetings, letters, definitions, or coding.
+ * Only runs Google Grounding / live web search when the user explicitly asks
+ * for Google grounding, web search, or live news—never on greetings, letters,
+ * or general study questions.
  */
-function needsLiveWebSearch(text: string): boolean {
+function explicitGoogleGroundingRequested(text: string): boolean {
   const lower = text.toLowerCase().trim();
-  if (!lower || lower.length < 4) return false;
+  if (!lower) return false;
 
-  // Exclude casual greetings, creative writing, letters, definitions, and code
-  const nonSearchPatterns = [
-    /^(?:hi|hello|hey|yo|greetings|good\s+(?:morning|afternoon|evening)|assalam\s*o?\s*alaikum|salam|how\s+are\s+you|what'?s\s+up|thanks|thank\s+you|ok|okay|bye)[!.?,\s]*$/i,
-    /^(?:write|draft|compose|create)\s+(?:a\s+|an\s+|me\s+a\s+)?(?:letter|email|application|essay|poem|story|speech|paragraph|cover\s+letter|resignation)/i,
-    /^(?:what\s+is\s+the\s+)?full\s+form\s+of\b/i,
-    /^(?:define|meaning\s+of|translate|summarize|rewrite|fix\s+grammar)/i,
-  ];
-  if (nonSearchPatterns.some((pattern) => pattern.test(lower))) {
-    return false;
-  }
-
-  // Trigger live search only for real-time news, live events, prices, or explicit lookups
-  const liveEventPatterns = [
-    /\bbreaking\s+(?:world\s+)?news\b/,
-    /\btoday(?:'s|s)?\s+(?:news|headlines|latest|weather|score|match|price|rate)\b/,
-    /\b(?:latest|recent|current)\s+(?:news|headlines|updates|developments|discoveries|scores)\b/,
-    /\bhappening\s+(?:right\s+)?now\b/,
-    /\bnews\b/,
-    /\bheadlines?\b/,
-    /\bstock\s+price\b/,
-    /\b(?:bitcoin|btc|eth|crypto|gold|dollar)\s+(?:price|rate)\b/,
-    /\bexchange\s+rate\b/,
-    /\bwho\s+won\b/,
-    /\blive\s+score\b/,
-    /\bsearch\s+(?:the\s+)?(?:web|google|online)\b/,
+  const explicitTriggers = [
+    /\bgoogle\b/,
+    /\bgrounding\b/,
+    /\bsearch\s+(?:the\s+)?(?:web|online|internet|for)\b/,
+    /\b(?:breaking|latest|today(?:'s|s)?|current)\s+(?:world\s+)?(?:news|headlines|updates)\b/,
+    /\b(?:news|headlines)\b/,
   ];
 
-  return liveEventPatterns.some((pattern) => pattern.test(lower));
+  return explicitTriggers.some((pattern) => pattern.test(lower));
 }
 
 /**
- * Fetches real-time Google News headlines 100% FREE with zero API keys or billing.
+ * Fetches live Google News & Web Grounding results 100% FREE with zero API keys.
  */
-async function fetchFreeLiveGoogleNews(
+async function fetchFreeLiveGoogleGrounding(
   userQuery: string
 ): Promise<{ contextText: string; sources: Array<{ uri: string; title: string }> }> {
   const sources: Array<{ uri: string; title: string }> = [];
@@ -598,7 +584,7 @@ async function fetchFreeLiveGoogleNews(
 
   const cleanTopic = userQuery
     .replace(
-      /give me a comprehensive, well-structured briefing of|give me today['’]s|give me the|search the live web (?:and give me|for)|happening right now today\.?/gi,
+      /give me (?:a comprehensive, well-structured briefing of|results? from google grounding (?:about|on|for)|today['’]s|the)|search (?:google|the web|online) (?:for|about)?|from google grounding|happening right now today\.?/gi,
       ''
     )
     .trim()
@@ -620,12 +606,12 @@ async function fetchFreeLiveGoogleNews(
       };
       if (Array.isArray(data.items) && data.items.length > 0) {
         gotGoogleNews = true;
-        for (const item of data.items.slice(0, 6)) {
+        for (const item of data.items.slice(0, 5)) {
           if (item.title && item.link) {
             addSource(
               item.link,
               item.title,
-              `- [${item.pubDate || 'Today'}] ${item.title}`
+              `- [Google News | ${item.pubDate || 'Today'}] ${item.title}`
             );
           }
         }
@@ -643,13 +629,13 @@ async function fetchFreeLiveGoogleNews(
       if (xmlRes.ok) {
         const xmlText = await xmlRes.text();
         const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
-        const items = Array.from(doc.querySelectorAll('item')).slice(0, 6);
+        const items = Array.from(doc.querySelectorAll('item')).slice(0, 5);
         for (const item of items) {
           const title = item.querySelector('title')?.textContent?.trim() || '';
           const link = item.querySelector('link')?.textContent?.trim() || '';
           const pubDate = item.querySelector('pubDate')?.textContent?.trim() || 'Today';
           if (title && link) {
-            addSource(link, title, `- [${pubDate}] ${title}`);
+            addSource(link, title, `- [Google News | ${pubDate}] ${title}`);
           }
         }
       }
@@ -658,12 +644,36 @@ async function fetchFreeLiveGoogleNews(
     }
   }
 
+  if (cleanTopic && !isTopHeadlines) {
+    try {
+      const wikiRes = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+          cleanTopic
+        )}&srlimit=3&format=json&origin=*`
+      );
+      if (wikiRes.ok) {
+        const wikiData = (await wikiRes.json()) as {
+          query?: { search?: Array<{ title: string; snippet: string }> };
+        };
+        for (const r of wikiData?.query?.search || []) {
+          const cleanSnippet = r.snippet.replace(/<[^>]+>/g, '');
+          const wikiUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(
+            r.title.replace(/\s+/g, '_')
+          )}`;
+          addSource(wikiUrl, `${r.title} - Wikipedia`, `- [Web Reference: ${r.title}] ${cleanSnippet}`);
+        }
+      }
+    } catch {
+      // Ignore Wikipedia failure
+    }
+  }
+
   if (snippets.length === 0) {
     return { contextText: '', sources: [] };
   }
 
   return {
-    contextText: `Here are today's live Google News headlines (${new Date().toLocaleDateString()}):\n${snippets.join(
+    contextText: `Live Google & Web Grounding Results (${new Date().toLocaleDateString()}):\n${snippets.join(
       '\n'
     )}`,
     sources,
@@ -682,26 +692,26 @@ function sanitizeNaturalResponse(rawText: string): string {
 
 /**
  * Free Keyless AI Synthesizer:
- * Answers naturally like ChatGPT/Gemini when `/api/chat` returns 405 Not Allowed
+ * Answers naturally like Gemini/ChatGPT when `/api/chat` returns 405 Not Allowed
  * in static preview or when running without a paid backend.
  */
 async function synthesizeWithFreeFallbackEngine(
   conversationHistory: Array<{ role: string; content: string }>,
   systemInstructions: string,
-  liveNewsContext: string,
+  liveGroundingContext: string,
   liveSources: Array<{ uri: string; title: string }>
 ): Promise<string> {
   const messagesPayload: Array<{ role: string; content: string }> = [
     {
       role: 'system',
-      content: systemInstructions.slice(0, 1400),
+      content: systemInstructions.slice(0, 1600),
     },
     ...conversationHistory.slice(-8).map((msg, idx, arr) => {
       const isLast = idx === arr.length - 1 && msg.role === 'user';
-      if (isLast && liveNewsContext) {
+      if (isLast && liveGroundingContext) {
         return {
           role: 'user',
-          content: `${liveNewsContext}\n\nUsing these live headlines, give a clear, natural news briefing answering: ${msg.content}`,
+          content: `${liveGroundingContext}\n\nUsing these Google grounding results, answer clearly: ${msg.content}`,
         };
       }
       return {
@@ -736,9 +746,9 @@ async function synthesizeWithFreeFallbackEngine(
   const lastUserMessage =
     conversationHistory[conversationHistory.length - 1]?.content || 'Hello';
   try {
-    const promptForGet = liveNewsContext
-      ? `${liveNewsContext}\n\nSummarize these live news headlines clearly: ${lastUserMessage}`
-      : lastUserMessage;
+    const promptForGet = liveGroundingContext
+      ? `${liveGroundingContext}\n\nSummarize these Google grounding results clearly: ${lastUserMessage}`
+      : `${NATURAL_CHAT_SYSTEM_PROMPT}\n\nUser: ${lastUserMessage}`;
     const getRes = await fetch(
       `https://text.pollinations.ai/${encodeURIComponent(promptForGet.slice(0, 1200))}`
     );
@@ -752,7 +762,7 @@ async function synthesizeWithFreeFallbackEngine(
     // Fall through to structured live briefing formatter
   }
 
-  // Attempt 3: Guaranteed Structured Live News Briefing if headlines were fetched
+  // Attempt 3: Guaranteed Structured Live Briefing if Google grounding sources were fetched
   if (liveSources.length > 0) {
     const todayLabel = new Date().toLocaleDateString('en-US', {
       weekday: 'long',
@@ -763,7 +773,7 @@ async function synthesizeWithFreeFallbackEngine(
     const headlinesMarkdown = liveSources
       .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
       .join('\n');
-    return `### Top Live Headlines — ${todayLabel}\n\n${headlinesMarkdown}`;
+    return `### Google Grounded Briefing — ${todayLabel}\n\n${headlinesMarkdown}`;
   }
 
   throw new Error(
@@ -1559,12 +1569,13 @@ export default function App() {
   };
 
   // ==========================================================================
-  // CORE SEND MESSAGE ENGINE (NATURAL CHATGPT/GEMINI STYLE + FREE LIVE NEWS)
+  // CORE SEND MESSAGE ENGINE
   // ==========================================================================
 
   const handleSendMessage = async (
     text: string,
-    attachments: Attachment[] = []
+    attachments: Attachment[] = [],
+    options?: { forceGoogleGrounding?: boolean }
   ) => {
     if (!text.trim() && attachments.length === 0) return;
 
@@ -1583,7 +1594,10 @@ export default function App() {
           text
         ));
     const weatherRequest = getWeatherRequest(text);
-    const isLiveNewsReq = settings.webSearchEnabled && needsLiveWebSearch(text);
+
+    // Only run Google Grounding when explicitly requested or triggered via Today's News
+    const shouldUseGoogleGrounding =
+      Boolean(options?.forceGoogleGrounding) || explicitGoogleGroundingRequested(text);
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
@@ -1699,8 +1713,8 @@ export default function App() {
           timestamp: Date.now(),
         };
       } else {
-        const liveWeb = isLiveNewsReq
-          ? await fetchFreeLiveGoogleNews(text)
+        const liveWeb = shouldUseGoogleGrounding
+          ? await fetchFreeLiveGoogleGrounding(text)
           : { contextText: '', sources: [] };
 
         const systemInstructions = buildSystemInstructions(activeProfession, memories);
@@ -1751,7 +1765,7 @@ export default function App() {
           }>(res, 'BACKEND_UNAVAILABLE_405');
 
           replyText = sanitizeNaturalResponse(data.content || 'How can I help you?');
-          backendSources = isLiveNewsReq ? data.sources || [] : [];
+          backendSources = shouldUseGoogleGrounding ? data.sources || [] : [];
           replyImageUrl = data.imageUrl;
         } catch {
           // Automatic fallback for static preview (405 Not Allowed)
@@ -1767,7 +1781,7 @@ export default function App() {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
           content: replyText,
-          sources: isLiveNewsReq
+          sources: shouldUseGoogleGrounding
             ? liveWeb.sources.length > 0
               ? liveWeb.sources
               : backendSources
@@ -1902,9 +1916,9 @@ export default function App() {
       setVoiceTurns((prev) => [...prev.slice(-14), userTurn]);
 
       try {
-        const isLiveNews = needsLiveWebSearch(trimmed);
-        const liveWeb = isLiveNews
-          ? await fetchFreeLiveGoogleNews(trimmed)
+        const shouldSearch = explicitGoogleGroundingRequested(trimmed);
+        const liveWeb = shouldSearch
+          ? await fetchFreeLiveGoogleGrounding(trimmed)
           : { contextText: '', sources: [] };
 
         const systemInstructions = `${buildSystemInstructions(
@@ -3079,8 +3093,7 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     setNewsModalOpen(false);
-                    setSettings((prev) => ({ ...prev, webSearchEnabled: true }));
-                    void handleSendMessage(cat.prompt, []);
+                    void handleSendMessage(cat.prompt, [], { forceGoogleGrounding: true });
                   }}
                   className="flex items-center justify-between p-4 sm:p-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 text-left transition group"
                 >
@@ -3682,7 +3695,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleAddMemory();
                 }}
-                placeholder="e.g., I am an engineer in Narowal; use SI units."
+                placeholder="e.g., I am a student in Narowal; use simple English."
                 className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
               />
               <button
