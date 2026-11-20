@@ -166,14 +166,13 @@ const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
 
 let cachedBackendAvailable: boolean | null = null;
 
-const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, a fast, helpful AI assistant like Gemini and ChatGPT.
-Respond naturally, accurately, and concisely:
-- Answer ONLY what the user asks. Never add follow-up option lists, checklists, or unrequested sections at the end.
-- For letters and applications (e.g., letter to Dad/parents, application to Principal):
-  * Start with one brief sentence (e.g., "Here is a polite letter you can use:"), followed by standard letter format with bold placeholders (**[Your Address]**, **[Date]**, **Dear Dad,**, clean paragraphs, **With love,**, **[Your Name]**).
-  * Use warm, polite, simple English.
-- For study questions, full forms, and definitions, give a direct, clear explanation.
-- Never output raw HTML tags like <br>.`;
+const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, accurate, and helpful AI assistant like ChatGPT and Gemini.
+Core rules:
+1. Conversation Context Awareness: Always read the full conversation history before answering. Determine whether the user's latest message is a follow-up/refinement to the previous message (for example: "about housing", "make it shorter", "explain the second one", "in Urdu", "what about in Pakistan?") or a completely new topic. If it is a follow-up, answer in direct relation to the earlier messages.
+2. Complete & Accurate Answers: Provide thorough, complete, accurate answers—never stop mid-explanation or give vague guesses.
+   - When asked for the "full form" of an abbreviation/acronym (like DHA), list all major well-known full forms clearly with brief descriptions, and if a specific domain is mentioned (e.g., housing), focus on that exact expansion (e.g., Defence Housing Authority).
+   - When asked to write a letter or application, include every specific detail the user asked for (such as coming home today, school fee, leave reason, dates, or amounts) in clean, polite standard letter format with bold placeholders (**[Your Address]**, **[Date]**, **Dear Dad,**, **With love,**, **[Your Name]**).
+3. Clean Formatting: Answer only what is asked without tacking on unrequested menus or raw HTML tags like <br>.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
@@ -185,7 +184,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Universal intelligence across study help, writing, coding, science, and live news.',
     badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
     systemDirective:
-      'Answer clearly, naturally, and concisely like Gemini or ChatGPT across any topic.',
+      'Answer clearly, accurately, and completely across any topic while tracking conversation context.',
     quickPrompts: [
       'Give me a briefing on today’s top global and technology news from Google grounding.',
       'Explain photosynthesis in simple terms for a high school student.',
@@ -219,7 +218,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Pharmacokinetics (ADME), receptor mechanisms, CYP450 drug interactions, and therapeutic monitoring.',
     badgeColor: 'text-teal-300 border-teal-500/40 bg-teal-500/10',
     systemDirective:
-      'Explain mechanisms of action, pharmacokinetics, drug interactions, and contraindications clearly and concisely.',
+      'Explain mechanisms of action, pharmacokinetics, drug interactions, and contraindications clearly and completely.',
     disclaimer:
       'Pharmacology Reference Mode: Verify all dosing and drug interactions with a licensed pharmacist or physician.',
     quickPrompts: [
@@ -537,8 +536,53 @@ const IMAGE_STYLE_PRESETS = [
   },
 ];
 
+// Curated acronym knowledge base merged with live Wikipedia disambiguation
+const ACRONYM_KNOWLEDGE_BASE: Record<
+  string,
+  Array<{ expansion: string; domain: string; details: string }>
+> = {
+  DHA: [
+    {
+      expansion: 'Defence Housing Authority',
+      domain: 'housing real estate property pakistan',
+      details:
+        'A major residential real estate and housing authority in Pakistan (with phases in Lahore, Karachi, Islamabad/Rawalpindi, Multan, Bahawalpur, Gujranwala, Peshawar, and Quetta) administered for armed forces personnel and civilians.',
+    },
+    {
+      expansion: 'Docosahexaenoic Acid',
+      domain: 'biology nutrition medicine chemistry omega 3',
+      details:
+        'An essential omega-3 fatty acid that is a primary structural component of the human brain, cerebral cortex, skin, and retina.',
+    },
+    {
+      expansion: 'Dubai Health Authority',
+      domain: 'healthcare medical dubai uae',
+      details:
+        'The government body responsible for overseeing healthcare services, hospitals, and medical licensing in Dubai, United Arab Emirates.',
+    },
+    {
+      expansion: 'District Health Authority',
+      domain: 'health government hospital punjab',
+      details:
+        'Regional public health administrative bodies responsible for district-level hospitals, immunization, and public healthcare delivery.',
+    },
+    {
+      expansion: 'Department of Home Affairs',
+      domain: 'government immigration australia south africa',
+      details:
+        'Government ministry responsible for immigration, border protection, citizenship, and internal security in countries such as Australia and South Africa.',
+    },
+    {
+      expansion: 'Dihydroxyacetone',
+      domain: 'chemistry cosmetics biochemistry',
+      details:
+        'A simple carbohydrate (triose) used in metabolic glycolysis pathways and as the active ingredient in sunless tanning products.',
+    },
+  ],
+};
+
 // ============================================================================
-// FAST HELPERS (INSTANT REPLIES, PARALLEL AI ENGINE & BUILT-IN COMPOSERS)
+// CONTEXT-AWARE INTELLIGENCE, PARALLEL AI ENGINE & SMART COMPOSERS
 // ============================================================================
 
 function getInstantGreetingReply(text: string): string | null {
@@ -561,10 +605,6 @@ function getInstantGreetingReply(text: string): string | null {
   return null;
 }
 
-/**
- * Strictly returns true ONLY when the user explicitly requests Google grounding
- * or Today's News. Normal chat NEVER triggers Google Grounding.
- */
 function explicitGoogleGroundingRequested(text: string): boolean {
   const lower = text.toLowerCase().trim();
   if (!lower) return false;
@@ -578,7 +618,7 @@ function explicitGoogleGroundingRequested(text: string): boolean {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs = 5000
+  timeoutMs = 10000
 ): Promise<Response> {
   const controller = new AbortController();
   const id = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -612,28 +652,124 @@ function raceToFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
 }
 
 /**
- * Built-in Smart Letter & Application Composer (< 10ms) so letter/application
- * prompts always succeed within 4.5s even if external LLM servers are congested.
+ * Determines whether the latest user message is a follow-up to the previous
+ * conversation turns (e.g., "about housing", "make it shorter", "explain more")
+ * or an independent new request.
  */
-function generateBuiltInLetterOrApplication(userPrompt: string): string | null {
-  const lower = userPrompt.toLowerCase();
-  const isLetter = /\bwrite\s+(?:a\s+)?letter\b|\bletter\s+to\b/.test(lower);
-  const isApplication = /\bwrite\s+(?:an?\s+)?application\b|\bapplication\s+to\b/.test(lower);
+function analyzeConversationContext(
+  conversationHistory: Array<{ role: string; content: string }>
+): {
+  isFollowUp: boolean;
+  latestMessage: string;
+  previousUserMessages: string[];
+  combinedTopicContext: string;
+} {
+  const userMessages = conversationHistory
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content.trim())
+    .filter(Boolean);
+
+  const latestMessage = userMessages[userMessages.length - 1] || '';
+  const previousUserMessages = userMessages.slice(0, -1);
+
+  if (previousUserMessages.length === 0) {
+    return {
+      isFollowUp: false,
+      latestMessage,
+      previousUserMessages: [],
+      combinedTopicContext: latestMessage,
+    };
+  }
+
+  const lower = latestMessage.toLowerCase();
+  const wordCount = latestMessage.split(/\s+/).filter(Boolean).length;
+
+  // Explicit new-topic starters are NOT follow-ups
+  const isExplicitNewTopic =
+    /^(?:write\s+(?:a|an)\b|create\b|generate\b|calculate\b|solve\b|translate\b|hi\b|hello\b)/i.test(
+      lower
+    );
+
+  // Follow-up indicators: short fragments ("about housing"), pronouns ("it", "that", "this"),
+  // refinements ("i mean", "make it", "in detail", "all possible", "for pakistan")
+  const hasFollowUpCue =
+    /^(?:about|regarding|for|in|on|with|and|or|also|what about|how about|i mean|i means|meaning|more|explain|elaborate|shorten|make it|change it|rewrite|why|how)\b/i.test(
+      lower
+    ) ||
+    /\b(?:it|this|that|these|those|above|previous|first one|second one|last one)\b/i.test(
+      lower
+    ) ||
+    (wordCount <= 4 && !isExplicitNewTopic);
+
+  const isFollowUp = !isExplicitNewTopic && hasFollowUpCue;
+  const lastMeaningfulPrev =
+    [...previousUserMessages]
+      .reverse()
+      .find((m) => !getInstantGreetingReply(m)) || previousUserMessages[previousUserMessages.length - 1];
+
+  const combinedTopicContext = isFollowUp
+    ? `${lastMeaningfulPrev} — ${latestMessage}`
+    : latestMessage;
+
+  return {
+    isFollowUp,
+    latestMessage,
+    previousUserMessages,
+    combinedTopicContext,
+  };
+}
+
+/**
+ * Context-Aware Letter & Application Composer:
+ * Extracts the user's actual topic (e.g., "that I am comming home today",
+ * "asking to pay his school fee") and handles follow-up refinements.
+ */
+function generateContextAwareLetterOrApplication(
+  conversationHistory: Array<{ role: string; content: string }>
+): string | null {
+  const ctx = analyzeConversationContext(conversationHistory);
+  const combinedLower = ctx.combinedTopicContext.toLowerCase();
+  const latestLower = ctx.latestMessage.toLowerCase();
+
+  const isLetter = /\bwrite\s+(?:a\s+)?letter\b|\bletter\s+to\b/.test(combinedLower);
+  const isApplication = /\bwrite\s+(?:an?\s+)?application\b|\bapplication\s+to\b/.test(
+    combinedLower
+  );
 
   if (!isLetter && !isApplication) return null;
 
-  const amountMatch = userPrompt.match(
+  const isShorter = /\bshort(?:er)?\b|\bbrief\b|\bsmall\b/.test(latestLower);
+
+  // Extract the user's specific reason/topic clause
+  const reasonMatch = ctx.combinedTopicContext.match(
+    /(?:that|saying|telling(?:\s+him|\s+her|\s+them)?|regarding|about|for\s+(?:asking\s+to)?|to\s+(?:ask|inform|tell|request))\s+(.+)$/i
+  );
+  let extractedReason = reasonMatch ? reasonMatch[1].trim() : '';
+  extractedReason = extractedReason
+    .replace(/\bcomming\b/gi, 'coming')
+    .replace(/\bstuding\b/gi, 'studying')
+    .replace(/\btommorow\b/gi, 'tomorrow')
+    .replace(/[.?!]+$/g, '')
+    .trim();
+
+  const amountMatch = ctx.combinedTopicContext.match(
     /(?:rs\.?|rupees?|pkr|\$|usd|inr)?\s*(\d[\d,]*\s*(?:thousand|hundred|lakh|lac)?\s*(?:rupees?|rs\.?|pkr|dollars?)?)/i
   );
   const requestedAmount = amountMatch ? amountMatch[0].trim() : '';
 
   if (isApplication) {
-    const isLeave = /\bleave\b|\bsick\b|\bill\b|\babsent\b|\bmarriage\b|\bmarriage\b|\burgent\b/.test(
-      lower
-    );
+    const isLeave = /\bleave\b|\bsick\b|\bill\b|\babsent\b|\burgent\b/.test(combinedLower);
     const subjectLine = isLeave
       ? 'Application for Leave'
-      : 'Application for Academic Assistance';
+      : extractedReason
+        ? `Application Regarding ${extractedReason.charAt(0).toUpperCase() + extractedReason.slice(1)}`
+        : 'Application for Kind Consideration';
+
+    const bodyText = isLeave
+      ? 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. Due to an urgent matter at home, I am unable to attend classes today.'
+      : extractedReason
+        ? `Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. I am writing to kindly request your consideration regarding ${extractedReason}.`
+        : 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. I am writing to kindly request your support regarding my academic matter.';
 
     return [
       'Here is a formal application you can use and fill in with your details:',
@@ -647,11 +783,9 @@ function generateBuiltInLetterOrApplication(userPrompt: string): string | null {
       '',
       '**Respected Sir / Madam,**',
       '',
-      isLeave
-        ? 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. Due to an urgent personal matter at home, I will not be able to attend classes today.'
-        : 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. I am writing to kindly request your consideration regarding my academic matter.',
+      bodyText,
       '',
-      'Therefore, I kindly request you to grant me leave for **[Number of Days]** day(s), dated **[Date]**. I shall be very grateful to you for this kindness.',
+      'Kindly grant my request for **[Date / Number of Days]**. I shall be very grateful to you for this kindness.',
       '',
       '**Yours obediently,**',
       '**[Your Name]**',
@@ -660,10 +794,10 @@ function generateBuiltInLetterOrApplication(userPrompt: string): string | null {
     ].join('\n');
   }
 
-  // Letter formatting
-  const toFather = /\bdad\b|\bfather\b|\bpapa\b|\babbu\b/.test(lower);
-  const toMother = /\bmom\b|\bmother\b|\bmama\b|\bammi\b/.test(lower);
-  const toFriend = /\bfriend\b/.test(lower);
+  // Recipient detection
+  const toFather = /\bdad\b|\bfather\b|\bpapa\b|\babbu\b/.test(combinedLower);
+  const toMother = /\bmom\b|\bmother\b|\bmama\b|\bammi\b/.test(combinedLower);
+  const toFriend = /\bfriend\b/.test(combinedLower);
 
   const salutation = toFather
     ? '**Dear Dad,**'
@@ -675,35 +809,51 @@ function generateBuiltInLetterOrApplication(userPrompt: string): string | null {
 
   const signOff = toFather || toMother ? '**With love,**' : '**Yours sincerely,**';
 
-  const isSchoolFee = /\bschool\s*fee\b|\bcollege\s*fee\b|\btuition\s*fee\b|\bfee\b/.test(lower);
-  const isMoneyRequest =
-    isSchoolFee || Boolean(requestedAmount) || /\bmoney\b|\bbooks?\b|\bhostel\b/.test(lower);
+  const isComingHome = /\bcoming\s+home\b|\bcomming\s+home\b|\breturn(?:ing)?\s+home\b|\bvisit(?:ing)?\s+home\b/.test(
+    combinedLower
+  );
+  const isSchoolFee = /\bschool\s*fee\b|\bcollege\s*fee\b|\btuition\s*fee\b|\bfee\b/.test(
+    combinedLower
+  );
 
   let bodyParagraphs: string[];
 
-  if (isSchoolFee) {
+  if (isComingHome) {
+    const whenText = /\btomorrow\b/.test(combinedLower)
+      ? 'tomorrow'
+      : /\btonight\b/.test(combinedLower)
+        ? 'tonight'
+        : 'today';
+    bodyParagraphs = isShorter
+      ? [
+          `I hope you are doing well. I am writing to let you know that I am **coming home ${whenText}**!`,
+          `I will leave after finishing my classes and expect to arrive by **[Arrival Time]**. Looking forward to seeing everyone at home soon.`,
+        ]
+      : [
+          'I hope this letter finds you in the best of health and happiness. Everything is going well here with my studies.',
+          `I am excited to let you know that I am **coming home ${whenText}**! My classes wrap up in the afternoon, and I will take the **[Bus / Train / Flight]** scheduled for **[Departure Time]**, so I should reach home around **[Arrival Time]**.`,
+          'I am really looking forward to spending time with you and everyone at home. Please let me know if you need me to bring anything on my way back.',
+        ];
+  } else if (isSchoolFee) {
     const feeDetail = requestedAmount
-      ? `The total fee amount due is **${requestedAmount}**, and the last date for submission is approaching soon.`
-      : 'The last date for submitting my school fee is approaching soon.';
+      ? `The total fee amount due is **${requestedAmount}**, and the due date is approaching soon.`
+      : 'The due date for submitting my school fee is approaching soon.';
     bodyParagraphs = [
       'I hope this letter finds you in good health and high spirits. Everything is going well here, and I am working hard on my studies.',
-      `I am writing to let you know that our school has announced the schedule for this term's fee submission. ${feeDetail} I would be very grateful if you could kindly send the fee amount at your earliest convenience so that I can deposit it on time without any late fine.`,
+      `I am writing to let you know that our school has announced the schedule for this term's fee submission. ${feeDetail} I would be very grateful if you could kindly send the fee amount at your earliest convenience so I can deposit it on time.`,
       'Please give my warm regards to everyone at home. Take care of yourself.',
     ];
-  } else if (isMoneyRequest) {
-    const amountSentence = requestedAmount
-      ? `I kindly request you to send me **${requestedAmount}** to cover my upcoming books, stationery, and daily study expenses.`
-      : 'I kindly request you to send me some funds to cover my upcoming books, stationery, and daily study expenses.';
+  } else if (extractedReason) {
+    const normalizedReason = extractedReason.replace(/^i\s+am\b/i, 'I am').replace(/^i\b/i, 'I');
     bodyParagraphs = [
-      'I hope you are doing well and staying healthy. My classes are going smoothly, and I am focusing well on my upcoming exams.',
-      `${amountSentence} I will make sure to spend it carefully and keep track of all my expenses.`,
-      'Please convey my regards to everyone at home. Looking forward to hearing from you soon.',
+      'I hope this letter finds you in good health and high spirits. Everything is going well on my end.',
+      `I am writing this letter to let you know that **${normalizedReason}**. I wanted to inform you in advance so everything can be planned smoothly.`,
+      'Please give my warm regards to everyone at home. Take good care of yourself and write back soon.',
     ];
   } else {
     bodyParagraphs = [
-      'I hope this letter finds you in the best of health and happiness. It has been a while since we last spoke, so I wanted to write and share an update with you.',
-      'Everything here is going well, and I am staying focused on my studies and daily routine. I hope everything at home is going smoothly too.',
-      'Please take good care of yourself and write back whenever you get a moment.',
+      'I hope this letter finds you in the best of health and happiness. Everything here is going well, and I am staying focused on my studies and daily routine.',
+      'Please give my warm regards to everyone at home and take good care of yourself.',
     ];
   }
 
@@ -723,39 +873,143 @@ function generateBuiltInLetterOrApplication(userPrompt: string): string | null {
 }
 
 /**
- * Fast Wikipedia + DuckDuckGo Instant Knowledge resolver (< 400ms) for
- * full forms, acronyms, definitions, and study topics.
+ * Context-Aware Acronym & Knowledge Resolver:
+ * Tracks previous messages so follow-ups like "about housing" after "full form of DHA"
+ * resolve directly to "Defence Housing Authority (DHA)".
  */
-async function fetchInstantKnowledgeFallback(query: string): Promise<string | null> {
-  const cleaned = query
+async function fetchContextAwareKnowledgeFallback(
+  conversationHistory: Array<{ role: string; content: string }>
+): Promise<string | null> {
+  const ctx = analyzeConversationContext(conversationHistory);
+  const fullContext = ctx.combinedTopicContext;
+  const fullLower = fullContext.toLowerCase();
+
+  // Detect if the conversation is asking for an acronym / full form
+  const isFullFormQuery =
+    /\b(?:full\s*form|fully\s*form|stand\s*for|stands\s*for|acronym|abbreviation)\b/i.test(
+      fullLower
+    );
+
+  // Extract uppercase acronym token (e.g., DHA, NADRA, MBBS, CPU) from current or previous turns
+  const acronymMatch =
+    ctx.latestMessage.match(/\b([A-Z]{2,8})\b/) ||
+    fullContext.match(/\b([A-Z]{2,8})\b/) ||
+    fullContext.match(/(?:full\s*form|fully\s*form)\s+(?:of\s+)?([a-zA-Z]{2,8})\b/i);
+
+  const acronym = acronymMatch ? acronymMatch[1].toUpperCase() : '';
+
+  if (isFullFormQuery && acronym) {
+    // Check domain filter from current or previous turns (e.g., "about housing", "medical", "dubai")
+    const filterWords = fullLower
+      .replace(
+        /\b(?:what|is|the|give|me|all|possible|full|fully|forms?|of|stand|for|i|mean|means|about|regarding|in|on)\b/g,
+        ' '
+      )
+      .replace(new RegExp(`\\b${acronym.toLowerCase()}\\b`, 'g'), ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 3);
+
+    const curatedEntries = ACRONYM_KNOWLEDGE_BASE[acronym];
+    if (curatedEntries && curatedEntries.length > 0) {
+      if (filterWords.length > 0) {
+        const matched = curatedEntries.filter((entry) =>
+          filterWords.some(
+            (fw) =>
+              entry.domain.toLowerCase().includes(fw) ||
+              entry.expansion.toLowerCase().includes(fw) ||
+              entry.details.toLowerCase().includes(fw)
+          )
+        );
+        if (matched.length > 0) {
+          return matched
+            .map((m) => `**${acronym}** stands for **${m.expansion}**.\n\n${m.details}`)
+            .join('\n\n---\n\n');
+        }
+      }
+
+      // Return all possible full forms cleanly
+      const listMarkdown = curatedEntries
+        .map(
+          (entry, idx) =>
+            `${idx + 1}. **${entry.expansion}** — ${entry.details}`
+        )
+        .join('\n');
+      return `Here are the main full forms of **${acronym}**:\n\n${listMarkdown}`;
+    }
+
+    // Dynamic Wikipedia Disambiguation lookup for any other acronym (e.g., NADRA, HEC, CPU, DNA)
+    try {
+      const searchQuery =
+        filterWords.length > 0
+          ? `${acronym} ${filterWords.join(' ')}`
+          : `${acronym} acronym`;
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+        searchQuery
+      )}&srlimit=5&format=json&origin=*`;
+      const searchRes = await fetchWithTimeout(searchUrl, {}, 3000);
+      if (searchRes.ok) {
+        const searchData = (await searchRes.json()) as {
+          query?: { search?: Array<{ title?: string; snippet?: string }> };
+        };
+        const hits = searchData.query?.search || [];
+        if (hits.length > 0 && hits[0].title) {
+          const topTitle = hits[0].title;
+          const summaryRes = await fetchWithTimeout(
+            `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
+            {},
+            3000
+          );
+          if (summaryRes.ok) {
+            const summary = (await summaryRes.json()) as {
+              title?: string;
+              extract?: string;
+            };
+            if (summary.extract) {
+              const otherTitles = hits
+                .slice(1, 4)
+                .map((h) => h.title)
+                .filter(Boolean);
+              const othersLine =
+                otherTitles.length > 0
+                  ? `\n\nOther related meanings: **${otherTitles.join('**, **')}**.`
+                  : '';
+              return `**${acronym} — ${summary.title || topTitle}**: ${summary.extract}${othersLine}`;
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // General factual / study lookup using cleaned topic keywords
+  const cleanedTopic = fullContext
     .replace(
-      /^(?:what\s+is\s+(?:the\s+)?(?:full\s+form\s+of|meaning\s+of|definition\s+of|stand\s+for)?|what\s+does\s+|define|explain|who\s+is|tell\s+me\s+about)\s+/i,
-      ''
+      /\b(?:what\s+is|who\s+is|define|explain|tell\s+me\s+about|give\s+me|all\s+possible|i\s+mean|i\s+means)\b/gi,
+      ' '
     )
-    .replace(/\bstand\s+for\b/i, '')
-    .replace(/[?!.]+$/g, '')
+    .replace(/[?!.]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleaned || cleaned.length > 80) return null;
+  if (!cleanedTopic || cleanedTopic.length > 90) return null;
 
   try {
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-      cleaned
-    )}&srlimit=4&format=json&origin=*`;
-    const searchRes = await fetchWithTimeout(searchUrl, {}, 2500);
+      cleanedTopic
+    )}&srlimit=3&format=json&origin=*`;
+    const searchRes = await fetchWithTimeout(searchUrl, {}, 3000);
     if (searchRes.ok) {
       const searchData = (await searchRes.json()) as {
-        query?: {
-          search?: Array<{ title?: string }>;
-        };
+        query?: { search?: Array<{ title?: string }> };
       };
-      const results = searchData.query?.search || [];
-      if (results.length > 0 && results[0].title) {
-        const topTitle = results[0].title;
+      const topTitle = searchData.query?.search?.[0]?.title;
+      if (topTitle) {
         const summaryRes = await fetchWithTimeout(
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
           {},
-          2500
+          3000
         );
         if (summaryRes.ok) {
           const summaryData = (await summaryRes.json()) as {
@@ -763,40 +1017,9 @@ async function fetchInstantKnowledgeFallback(query: string): Promise<string | nu
             extract?: string;
           };
           if (summaryData.extract) {
-            const otherMeanings = results
-              .slice(1)
-              .map((r) => r.title)
-              .filter(Boolean);
-            const extra =
-              otherMeanings.length > 0
-                ? `\n\nOther common full forms / meanings: **${otherMeanings.join('**, **')}**.`
-                : '';
-            return `**${summaryData.title || topTitle}**: ${summaryData.extract}${extra}`;
+            return `**${summaryData.title || topTitle}**: ${summaryData.extract}`;
           }
         }
-      }
-    }
-  } catch {
-    // Fall through to DuckDuckGo
-  }
-
-  try {
-    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(
-      cleaned
-    )}&format=json&no_html=1&skip_disambig=1`;
-    const ddgRes = await fetchWithTimeout(ddgUrl, {}, 2500);
-    if (ddgRes.ok) {
-      const ddgData = (await ddgRes.json()) as {
-        Heading?: string;
-        AbstractText?: string;
-        RelatedTopics?: Array<{ Text?: string }>;
-      };
-      if (ddgData.AbstractText) {
-        return `**${ddgData.Heading || cleaned}**: ${ddgData.AbstractText}`;
-      }
-      const firstTopic = ddgData.RelatedTopics?.find((t) => t.Text)?.Text;
-      if (firstTopic) {
-        return firstTopic;
       }
     }
   } catch {
@@ -843,7 +1066,7 @@ async function fetchFreeLiveGoogleGrounding(
     const res = await fetchWithTimeout(
       `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRssUrl)}`,
       {},
-      3000
+      3500
     );
     if (res.ok) {
       const data = (await res.json()) as {
@@ -885,9 +1108,11 @@ function sanitizeNaturalResponse(rawText: string): string {
 }
 
 /**
- * Fast Parallel AI Synthesizer (guarantees 2–5 second turnaround):
- * Races fast LLM endpoints (`mistral` + `openai`) with a 4.5s timeout and
- * falls back seamlessly to the built-in Letter Composer or Knowledge Resolver.
+ * Multi-Model Parallel AI Synthesizer:
+ * - Passes the last 10 turns of conversation history so follow-ups are always understood.
+ * - Races 4 parallel requests (`openai`, `mistral`, `llama` POST + compact GET) with a 10s window
+ *   so responses are complete and accurate.
+ * - Falls back seamlessly to the Context-Aware Letter Composer or Context-Aware Knowledge Resolver.
  */
 async function synthesizeWithFreeFallbackEngine(
   conversationHistory: Array<{ role: string; content: string }>,
@@ -895,92 +1120,68 @@ async function synthesizeWithFreeFallbackEngine(
   liveGroundingContext: string,
   liveSources: Array<{ uri: string; title: string }>
 ): Promise<string> {
-  const lastUserMessage =
-    conversationHistory[conversationHistory.length - 1]?.content || 'Hello';
+  const ctx = analyzeConversationContext(conversationHistory);
+
+  const recentTurns = conversationHistory.slice(-10).map((msg, idx, arr) => {
+    const isLast = idx === arr.length - 1 && msg.role === 'user';
+    if (isLast && liveGroundingContext) {
+      return {
+        role: 'user',
+        content: `${liveGroundingContext}\n\nSummarize these news headlines clearly: ${msg.content}`,
+      };
+    }
+    return {
+      role: msg.role === 'assistant' ? 'assistant' : 'user',
+      content: msg.content,
+    };
+  });
 
   const messagesPayload: Array<{ role: string; content: string }> = [
     {
       role: 'system',
-      content: systemInstructions.slice(0, 1000),
+      content: systemInstructions.slice(0, 1400),
     },
-    ...conversationHistory.slice(-4).map((msg, idx, arr) => {
-      const isLast = idx === arr.length - 1 && msg.role === 'user';
-      if (isLast && liveGroundingContext) {
-        return {
-          role: 'user',
-          content: `${liveGroundingContext}\n\nSummarize these news headlines clearly: ${msg.content}`,
-        };
-      }
-      return {
-        role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content,
-      };
-    }),
+    ...recentTurns,
   ];
 
-  // Candidate 1: Fast Mistral POST (usually 1.5 - 3 seconds)
-  const fastMistralPost = async (): Promise<string> => {
+  const queryOpenAiEndpoint = async (modelName: string): Promise<string> => {
     const res = await fetchWithTimeout(
       'https://text.pollinations.ai/openai',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'mistral',
+          model: modelName,
           messages: messagesPayload,
           private: true,
         }),
       },
-      4500
+      10000
     );
-    if (!res.ok) throw new Error('Mistral POST failed');
+    if (!res.ok) throw new Error(`${modelName} failed`);
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
     const content = data.choices?.[0]?.message?.content?.trim() || '';
     if (!content || content.startsWith('<html') || content.startsWith('<!DOCTYPE')) {
-      throw new Error('Empty Mistral response');
+      throw new Error(`Empty ${modelName} response`);
     }
     return sanitizeNaturalResponse(content);
   };
 
-  // Candidate 2: Fast OpenAI POST
-  const fastOpenAiPost = async (): Promise<string> => {
-    const res = await fetchWithTimeout(
-      'https://text.pollinations.ai/openai',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'openai',
-          messages: messagesPayload,
-          private: true,
-        }),
-      },
-      4500
-    );
-    if (!res.ok) throw new Error('OpenAI POST failed');
-    const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = data.choices?.[0]?.message?.content?.trim() || '';
-    if (!content || content.startsWith('<html') || content.startsWith('<!DOCTYPE')) {
-      throw new Error('Empty OpenAI response');
-    }
-    return sanitizeNaturalResponse(content);
-  };
+  const queryDirectGetWithContext = async (): Promise<string> => {
+    const contextAwarePrompt = liveGroundingContext
+      ? `${liveGroundingContext}\n\nSummarize clearly: ${ctx.latestMessage}`
+      : ctx.isFollowUp
+        ? `Previous context: ${ctx.previousUserMessages.slice(-2).join(' | ')}\nFollow-up question: ${ctx.latestMessage}\nGive a complete, accurate answer.`
+        : `Give a complete, accurate answer: ${ctx.latestMessage}`;
 
-  // Candidate 3: Direct CDN GET with Mistral
-  const fastMistralGet = async (): Promise<string> => {
-    const prompt = liveGroundingContext
-      ? `${liveGroundingContext}\n\nSummarize clearly: ${lastUserMessage}`.slice(0, 400)
-      : `Answer concisely without extra options: ${lastUserMessage}`.slice(0, 400);
     const res = await fetchWithTimeout(
-      `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=mistral`,
+      `https://text.pollinations.ai/${encodeURIComponent(contextAwarePrompt.slice(0, 650))}?model=openai`,
       {},
-      4500
+      10000
     );
-    if (!res.ok) throw new Error('Mistral GET failed');
+    if (!res.ok) throw new Error('GET endpoint failed');
     const text = (await res.text()).trim();
     if (!text || text.startsWith('<html') || text.startsWith('<!DOCTYPE')) {
       throw new Error('Empty GET response');
@@ -989,18 +1190,23 @@ async function synthesizeWithFreeFallbackEngine(
   };
 
   try {
-    return await raceToFirstSuccess([fastMistralPost(), fastOpenAiPost(), fastMistralGet()]);
+    return await raceToFirstSuccess([
+      queryOpenAiEndpoint('openai'),
+      queryOpenAiEndpoint('mistral'),
+      queryOpenAiEndpoint('llama'),
+      queryDirectGetWithContext(),
+    ]);
   } catch {
-    // 1. Built-in Letter & Application Composer (< 5ms)
-    const composedLetter = generateBuiltInLetterOrApplication(lastUserMessage);
+    // 1. Context-Aware Letter & Application Composer
+    const composedLetter = generateContextAwareLetterOrApplication(conversationHistory);
     if (composedLetter) {
       return composedLetter;
     }
 
-    // 2. Instant Knowledge / Acronym / Definition Lookup (< 400ms)
-    const instantKnowledge = await fetchInstantKnowledgeFallback(lastUserMessage);
-    if (instantKnowledge) {
-      return instantKnowledge;
+    // 2. Context-Aware Acronym & Knowledge Resolver
+    const smartKnowledge = await fetchContextAwareKnowledgeFallback(conversationHistory);
+    if (smartKnowledge) {
+      return smartKnowledge;
     }
 
     // 3. News headlines if Today's News was explicitly requested
@@ -1010,7 +1216,7 @@ async function synthesizeWithFreeFallbackEngine(
         .join('\n');
     }
 
-    return "I'm ready to help! Could you please rephrase or share a few more details about what you need?";
+    return "I'm ready to help! Could you please share a few more details about what you'd like to know?";
   }
 }
 
@@ -1783,7 +1989,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // FAST CORE SEND MESSAGE ENGINE (ZERO UNREQUESTED GROUNDING, 2-5s REPLIES)
+  // CONTEXT-AWARE CORE SEND MESSAGE ENGINE
   // ==========================================================================
 
   const handleSendMessage = async (
@@ -1837,7 +2043,7 @@ export default function App() {
       setConversations(updatedConversations);
     }
 
-    // Fast path: instant < 50ms reply for simple greetings with zero Google grounding
+    // Instant < 50ms reply for simple greetings with zero Google grounding
     if (attachments.length === 0) {
       const instantGreeting = getInstantGreetingReply(text);
       if (instantGreeting) {
@@ -1995,7 +2201,7 @@ export default function App() {
                   })),
                 }),
               },
-              5000
+              8000
             );
 
             const data = await readJsonResponse<{
@@ -2174,7 +2380,7 @@ export default function App() {
             memories
           )}\nRespond naturally and concisely as if speaking out loud.`;
 
-          const historyPayload = voiceTurns.slice(-6).map((t) => ({
+          const historyPayload = voiceTurns.slice(-8).map((t) => ({
             role: t.role,
             content: t.text,
           }));
@@ -2203,7 +2409,7 @@ export default function App() {
                     attachments: [],
                   }),
                 },
-                5000
+                8000
               );
 
               const data = await readJsonResponse<{ content?: string }>(
