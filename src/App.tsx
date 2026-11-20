@@ -65,7 +65,6 @@ import {
   RefreshCw,
   Wrench,
   PhoneOff,
-  KeyRound,
   Save,
   LayoutGrid,
   Share2,
@@ -164,7 +163,6 @@ interface SpeechRecognitionInstance {
 const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
-const JARVIS_DIRECT_API_KEY_STORAGE = 'jarvis_client_gemini_key_v1';
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
@@ -735,72 +733,6 @@ function evaluateSafeMathExpression(rawExpr: string): number {
   return result;
 }
 
-async function callDirectGeminiFallback(
-  apiKey: string,
-  messages: Array<{ role: string; content: string }>,
-  useWebSearch: boolean,
-  attachments: Attachment[]
-): Promise<{ content: string; sources: Array<{ uri: string; title: string }> }> {
-  const contents = messages.map((m, idx) => {
-    const parts: Array<Record<string, unknown>> = [{ text: m.content }];
-    if (idx === messages.length - 1 && attachments.length > 0) {
-      for (const att of attachments) {
-        if (att.data && att.data.includes(',')) {
-          const base64Data = att.data.split(',')[1];
-          parts.push({
-            inlineData: {
-              mimeType: att.type || 'image/png',
-              data: base64Data,
-            },
-          });
-        }
-      }
-    }
-    return {
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts,
-    };
-  });
-
-  const payload: Record<string, unknown> = {
-    contents,
-    ...(useWebSearch ? { tools: [{ google_search: {} }] } : {}),
-  };
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }
-  );
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data?.error?.message || `Gemini API error (${res.status})`);
-  }
-
-  const candidate = data?.candidates?.[0];
-  const text =
-    candidate?.content?.parts
-      ?.map((p: { text?: string }) => p.text || '')
-      .join('') || 'Processed, sir.';
-
-  const chunks = candidate?.groundingMetadata?.groundingChunks || [];
-  const sources: Array<{ uri: string; title: string }> = [];
-  for (const ch of chunks) {
-    if (ch?.web?.uri) {
-      sources.push({
-        uri: ch.web.uri,
-        title: ch.web.title || ch.web.uri,
-      });
-    }
-  }
-
-  return { content: text, sources };
-}
-
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const rawText = await response.text();
   const trimmed = rawText.trim();
@@ -816,7 +748,7 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
   if (!response.ok) {
     if (response.status === 405 || trimmed.includes('405 Not Allowed')) {
       throw new Error(
-        'STATIC_HOST_405: This URL is static hosting (GitHub Pages) which does not run /api/chat. Open your Vercel deployment URL or tap "Direct API Key" to connect directly.'
+        'This preview URL does not run backend API routes. Open https://jarvis-ai-wine-seven.vercel.app/ to connect to your live JARVIS server.'
       );
     }
 
@@ -886,15 +818,13 @@ async function revokeAccountSession(): Promise<void> {
 // ============================================================================
 
 export default function App() {
-  // Responsive mobile detection (< 768px = Mobile Phone; >= 768px = Laptop/Chromebook/MacBook)
   const [isMobileView, setIsMobileView] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < 768
   );
 
   useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobileView(mobile);
+      setIsMobileView(window.innerWidth < 768);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -926,17 +856,6 @@ export default function App() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [mobileToolsDrawerOpen, setMobileToolsDrawerOpen] = useState(false);
-
-  // Client-side Gemini API key fallback
-  const [directApiKey, setDirectApiKey] = useState<string>(() => {
-    try {
-      return localStorage.getItem(JARVIS_DIRECT_API_KEY_STORAGE) || '';
-    } catch {
-      return '';
-    }
-  });
-  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
 
   // Expanded JARVIS Capability States
   const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
@@ -1173,7 +1092,7 @@ export default function App() {
     };
   }, []);
 
-  // Check backend /api/health OR direct client API key
+  // Check backend /api/health
   useEffect(() => {
     let active = true;
     fetch('/api/health')
@@ -1181,15 +1100,15 @@ export default function App() {
         readJsonResponse<{ aiConfigured?: boolean }>(response, 'The health check response was invalid.')
       )
       .then((health) => {
-        if (active) setAiConfigured(Boolean(health.aiConfigured) || Boolean(directApiKey));
+        if (active) setAiConfigured(Boolean(health.aiConfigured));
       })
       .catch(() => {
-        if (active) setAiConfigured(Boolean(directApiKey));
+        if (active) setAiConfigured(false);
       });
     return () => {
       active = false;
     };
-  }, [directApiKey]);
+  }, []);
 
   // Save authenticated conversations
   useEffect(() => {
@@ -1287,7 +1206,6 @@ export default function App() {
         setImageStudioOpen(false);
         setWorkbenchOpen(false);
         setMemoryModalOpen(false);
-        setApiKeyModalOpen(false);
         setMobileToolsDrawerOpen(false);
       }
     };
@@ -1589,61 +1507,33 @@ export default function App() {
           timestamp: Date.now(),
         };
       } else {
-        let usedDirectClient = false;
-        let chatContent = '';
-        let chatSources: Array<{ uri: string; title: string }> = [];
-        let chatImageUrl: string | undefined;
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: enrichedMessages,
+            webSearch: settings.webSearchEnabled || isLiveNewsReq,
+            model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
+            attachments: attachments.map((a) => ({
+              name: a.name,
+              type: a.type,
+              data: a.data,
+            })),
+          }),
+        });
 
-        try {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: enrichedMessages,
-              webSearch: settings.webSearchEnabled || isLiveNewsReq,
-              model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
-              attachments: attachments.map((a) => ({
-                name: a.name,
-                type: a.type,
-                data: a.data,
-              })),
-            }),
-          });
-
-          const data = await readJsonResponse<{
-            content?: string;
-            sources?: Array<{ uri: string; title: string }>;
-            imageUrl?: string;
-          }>(res, `JARVIS API error (${res.status}): ${res.statusText}`);
-
-          chatContent = data.content || 'Response processed, sir.';
-          chatSources = data.sources || [];
-          chatImageUrl = data.imageUrl;
-        } catch (backendErr) {
-          const msg = backendErr instanceof Error ? backendErr.message : '';
-          if (msg.startsWith('STATIC_HOST_405') && directApiKey.trim()) {
-            const fallback = await callDirectGeminiFallback(
-              directApiKey.trim(),
-              enrichedMessages,
-              settings.webSearchEnabled || isLiveNewsReq,
-              attachments
-            );
-            chatContent = fallback.content;
-            chatSources = fallback.sources;
-            usedDirectClient = true;
-          } else {
-            throw backendErr;
-          }
-        }
+        const data = await readJsonResponse<{
+          content?: string;
+          sources?: Array<{ uri: string; title: string }>;
+          imageUrl?: string;
+        }>(res, `JARVIS API error (${res.status}): ${res.statusText}`);
 
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: usedDirectClient
-            ? `${chatContent}\n\n---\n*Connected via Direct Gemini Client Mode*`
-            : chatContent,
-          sources: chatSources,
-          imageUrl: chatImageUrl,
+          content: data.content || 'Response processed, sir.',
+          sources: data.sources || [],
+          imageUrl: data.imageUrl,
           timestamp: Date.now(),
         };
       }
@@ -1667,15 +1557,12 @@ export default function App() {
     } catch (err) {
       console.error('Error contacting JARVIS backend:', err);
       const errorText = err instanceof Error ? err.message : 'The request failed.';
-      const is405 = errorText.startsWith('STATIC_HOST_405');
       const errorMessage: Message = {
         id: Math.random().toString(36).substring(2, 9),
         role: 'assistant',
-        content: is405
-          ? `**Static Hosting Notice:** This URL is static hosting and cannot run \`/api/chat\`.\n\n**Fix:** Open your **Vercel** URL or tap **Direct API Key** in Tools to enter your \`GEMINI_API_KEY\`.`
-          : errorText.includes('not configured')
-            ? `**Setup required:** ${errorText}\n\nAdd GEMINI_API_KEY to the server's .env file and restart.`
-            : `**JARVIS could not answer:** ${errorText}`,
+        content: errorText.includes('not configured')
+          ? `**Setup required:** ${errorText}\n\nEnsure GEMINI_API_KEY is configured in your Vercel project Environment Variables.`
+          : `**JARVIS could not answer:** ${errorText}`,
         timestamp: Date.now(),
         isError: true,
       };
@@ -1795,35 +1682,19 @@ export default function App() {
           content: `${groundingPrefix}\n[VOICE CONVERSATION MODE: Respond naturally, clearly, and conversationally as if speaking out loud in real time.]\n\nSpoken Input: ${trimmed}`,
         });
 
-        let reply = '';
-        try {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: historyPayload,
-              webSearch: true,
-              model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
-              attachments: [],
-            }),
-          });
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: historyPayload,
+            webSearch: true,
+            model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
+            attachments: [],
+          }),
+        });
 
-          const data = await readJsonResponse<{ content?: string }>(res, 'Live Voice API error');
-          reply = data.content || 'Processed, sir.';
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : '';
-          if (msg.startsWith('STATIC_HOST_405') && directApiKey.trim()) {
-            const fallback = await callDirectGeminiFallback(
-              directApiKey.trim(),
-              historyPayload,
-              true,
-              []
-            );
-            reply = fallback.content;
-          } else {
-            throw err;
-          }
-        }
+        const data = await readJsonResponse<{ content?: string }>(res, 'Live Voice API error');
+        const reply = data.content || 'Processed, sir.';
 
         const assistantTurn: VoiceTurn = {
           id: Math.random().toString(36).substring(2, 9),
@@ -1842,9 +1713,7 @@ export default function App() {
       } catch (err) {
         setVoiceThinking(false);
         setVoiceError(
-          err instanceof Error
-            ? err.message.replace('STATIC_HOST_405: ', '')
-            : 'Live voice processing failed.'
+          err instanceof Error ? err.message : 'Live voice processing failed.'
         );
       }
     },
@@ -1854,7 +1723,6 @@ export default function App() {
       settings.dualEngineEnabled,
       settings.selectedModel,
       voiceTurns,
-      directApiKey,
       speakVoiceTurnReply,
     ]
   );
@@ -2029,12 +1897,7 @@ export default function App() {
 
       setArtGallery((prev) => [newArt, ...prev]);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Could not synthesize image.';
-      setStudioError(
-        msg.startsWith('STATIC_HOST_405')
-          ? 'Image generation requires your Vercel backend server URL.'
-          : msg
-      );
+      setStudioError(err instanceof Error ? err.message : 'Could not synthesize image.');
     } finally {
       setStudioGenerating(false);
     }
@@ -2250,22 +2113,13 @@ export default function App() {
         action: () => setMemoryModalOpen(true),
       },
       {
-        id: 'api-key',
-        label: 'Configure Direct Gemini API Key (For GitHub Pages Static Hosting)',
-        shortcut: 'KEY',
-        action: () => {
-          setApiKeyInput(directApiKey);
-          setApiKeyModalOpen(true);
-        },
-      },
-      {
         id: 'new-chat',
         label: 'Start New Conversation Session',
         shortcut: 'Ctrl+K',
         action: () => handleNewChat(),
       },
     ],
-    [directApiKey]
+    []
   );
 
   const filteredCommands = useMemo(() => {
@@ -2322,9 +2176,7 @@ export default function App() {
           hasMessages={(activeConversation?.messages?.length || 0) > 0}
         />
 
-        {/* ==================================================================== */}
-        {/* MOBILE PHONE COMPACT ACTION BAR (< 768px ONLY)                       */}
-        {/* ==================================================================== */}
+        {/* MOBILE PHONE COMPACT ACTION BAR (< 768px ONLY) */}
         <div className="flex md:hidden bg-[#08101d]/95 border-b border-cyan-500/25 px-2 py-1.5 items-center justify-between gap-1.5 shrink-0">
           <button
             type="button"
@@ -2369,16 +2221,14 @@ export default function App() {
           </button>
         </div>
 
-        {/* ==================================================================== */}
-        {/* LAPTOP / CHROMEBOOK / MACBOOK FULL COMMAND DOCK (>= 768px ONLY)      */}
-        {/* ==================================================================== */}
+        {/* LAPTOP / CHROMEBOOK / MACBOOK COMMAND DOCK (>= 768px ONLY) */}
         <div className="hidden md:flex bg-[#08101d]/95 border-b border-cyan-500/20 px-4 py-1.5 items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={openLiveVoiceSession}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-200 text-xs font-medium transition shadow-sm"
-              title="Start ChatGPT-style two-way hands-free voice conversation"
+              title="Start two-way hands-free voice conversation"
             >
               <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
               <span>Live Voice</span>
@@ -2448,23 +2298,6 @@ export default function App() {
             >
               <Brain className="w-3.5 h-3.5 text-violet-400" />
               <span>Memory ({memories.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setApiKeyInput(directApiKey);
-                setApiKeyModalOpen(true);
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition ${
-                directApiKey
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                  : 'bg-amber-500/15 border-amber-500/40 text-amber-200 hover:bg-amber-500/25'
-              }`}
-              title="Configure Direct Gemini API Key for static GitHub Pages hosting"
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              <span>{directApiKey ? 'Direct Key Active' : 'Direct API Key'}</span>
             </button>
           </div>
 
@@ -2721,22 +2554,6 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setMobileToolsDrawerOpen(false);
-                  setApiKeyInput(directApiKey);
-                  setApiKeyModalOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
-              >
-                <KeyRound className="w-5 h-5 text-amber-400" />
-                <span className="text-xs font-semibold text-white">Direct API Key</span>
-                <span className="text-[10px] text-slate-400">
-                  {directApiKey ? 'Connected' : 'Configure key'}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
                   setToolsModalOpen(true);
                 }}
                 className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
@@ -2765,11 +2582,11 @@ export default function App() {
                   setMobileToolsDrawerOpen(false);
                   setShareModalOpen(true);
                 }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left col-span-2"
               >
                 <Share2 className="w-5 h-5 text-indigo-400" />
                 <span className="text-xs font-semibold text-white">Share Chat</span>
-                <span className="text-[10px] text-slate-400">Share conversation</span>
+                <span className="text-[10px] text-slate-400">Share conversation link or summary</span>
               </button>
             </div>
           </div>
@@ -2800,7 +2617,7 @@ export default function App() {
         onInsertPrompt={(text) => handleSendMessage(text, [])}
       />
 
-      {/* LIVE TWO-WAY VOICE CONVERSATION OVERLAY (FULL SCREEN ON MOBILE & DESKTOP) */}
+      {/* LIVE TWO-WAY VOICE CONVERSATION OVERLAY */}
       {liveVoiceOpen && (
         <div className="fixed inset-0 z-50 h-[100dvh] w-full bg-[#040811]/95 backdrop-blur-xl flex flex-col justify-between p-4 md:p-6 text-slate-100 jarvis-mobile-safe-bottom">
           <div className="flex flex-wrap items-center justify-between gap-2 max-w-4xl w-full mx-auto">
@@ -2999,7 +2816,7 @@ export default function App() {
         </div>
       )}
 
-      {/* REAL-TIME NEWS MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
+      {/* REAL-TIME NEWS MODAL */}
       {newsModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
           <div className="bg-[#0b1322] border-0 sm:border border-cyan-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-2xl p-5 sm:p-6 shadow-2xl flex flex-col justify-between sm:block space-y-5 overflow-y-auto jarvis-mobile-safe-bottom">
@@ -3057,7 +2874,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ALL-PROFESSIONS SPECIALIST MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
+      {/* ALL-PROFESSIONS SPECIALIST MODAL */}
       {professionsModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
           <div className="bg-[#0b1322] border-0 sm:border border-cyan-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[88vh] flex flex-col p-4 sm:p-6 shadow-2xl jarvis-mobile-safe-bottom">
@@ -3161,7 +2978,7 @@ export default function App() {
         </div>
       )}
 
-      {/* IMAGE CREATION STUDIO MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
+      {/* IMAGE CREATION STUDIO MODAL */}
       {imageStudioOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
           <div className="bg-[#0b1322] border-0 sm:border border-fuchsia-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col p-4 sm:p-6 shadow-2xl jarvis-mobile-safe-bottom">
@@ -3299,7 +3116,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ENGINEERING & MEDICAL WORKBENCH MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
+      {/* ENGINEERING & MEDICAL WORKBENCH MODAL */}
       {workbenchOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
           <div className="bg-[#0b1322] border-0 sm:border border-emerald-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-3xl sm:max-h-[88vh] flex flex-col p-4 sm:p-6 shadow-2xl space-y-4 jarvis-mobile-safe-bottom">
@@ -3592,7 +3409,7 @@ export default function App() {
         </div>
       )}
 
-      {/* JARVIS PERSISTENT NEURAL MEMORY MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
+      {/* JARVIS PERSISTENT NEURAL MEMORY MODAL */}
       {memoryModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
           <div className="bg-[#0b1322] border-0 sm:border border-violet-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-xl p-4 sm:p-6 shadow-2xl flex flex-col space-y-4 jarvis-mobile-safe-bottom">
@@ -3676,71 +3493,6 @@ export default function App() {
                   </div>
                 ))
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DIRECT GEMINI API KEY MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
-      {apiKeyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
-          <div className="bg-[#0b1322] border-0 sm:border border-amber-500/40 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-md p-5 sm:p-6 shadow-2xl flex flex-col justify-center space-y-4 jarvis-mobile-safe-bottom">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-semibold text-white">
-                  Direct Gemini API Key
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setApiKeyModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Save your Gemini API key locally in your browser so JARVIS can answer and search live
-              Google news directly even on static GitHub Pages URLs.
-            </p>
-            <input
-              type="password"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="AIzaSy..."
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono"
-            />
-            <div className="flex items-center justify-end gap-2">
-              {directApiKey && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    localStorage.removeItem(JARVIS_DIRECT_API_KEY_STORAGE);
-                    setDirectApiKey('');
-                    setApiKeyInput('');
-                    setApiKeyModalOpen(false);
-                  }}
-                  className="px-3 py-2 rounded-lg bg-rose-500/20 text-rose-300 text-xs"
-                >
-                  Remove Key
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  const trimmed = apiKeyInput.trim();
-                  if (trimmed) {
-                    localStorage.setItem(JARVIS_DIRECT_API_KEY_STORAGE, trimmed);
-                    setDirectApiKey(trimmed);
-                    setAiConfigured(true);
-                  }
-                  setApiKeyModalOpen(false);
-                }}
-                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs"
-              >
-                Save Key
-              </button>
             </div>
           </div>
         </div>
