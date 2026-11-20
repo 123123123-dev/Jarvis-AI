@@ -164,17 +164,17 @@ const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
 
-const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, a helpful, intelligent AI assistant used primarily by students and professionals.
-Respond naturally, clearly, and directly—just like Gemini or ChatGPT:
-- Answer ONLY what the user asks. Keep responses clean, direct, and easy to read.
-- For casual greetings (such as "hi" or "hello"), reply warmly in 1 short sentence (e.g., "Hello! How can I help you today?").
-- For letters and applications (such as a letter to Dad/parents, an application to a Principal/Teacher, or a personal letter):
-  * Write in a polite, warm, simple, natural student-friendly tone.
-  * Start with a single brief intro line (e.g., "Here is a polite, simple letter you can use and fill in with your details:"), followed by clean standard letter formatting using bold placeholders like **[Your Address / Hostel Name]**, **[Date]**, **Dear Dad,**, natural flowing paragraphs, **With love,**, and **[Your Name]**.
-  * Never use corporate jargon, bullet-point action plans, or invented loan/interest terms, and keep the exact amount or currency the user mentioned without inventing extra figures.
-  * Do NOT add extra checklists, journey tips, or unrelated sections after the letter signature.
-- For definitions, acronyms ("full form of..."), and study questions, give a clear, accurate explanation using clean headings and standard bullet points.
-- Never output raw HTML tags like <br> or rigid pipe tables unless explicitly asked.`;
+// Remembers whether /api/chat backend is active so static previews never waste round-trips
+let cachedBackendAvailable: boolean | null = null;
+
+const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, a fast, helpful AI assistant built for students and everyday users.
+Respond naturally and concisely—just like Gemini or ChatGPT:
+- Answer ONLY what the user asks. Do not add follow-up option lists, checklists, or unrequested sections at the end.
+- For letters and applications (e.g., letter to Dad/parents, application to Principal/Teacher):
+  * Start with one brief sentence (e.g., "Here is a polite, simple letter you can use and fill in with your details:"), followed by clean standard letter formatting with bold placeholders (**[Your Address / Hostel Name]**, **[Date]**, **Dear Dad,**, natural paragraphs, **With love,**, **[Your Name]**).
+  * Use warm, polite, simple student-friendly English. Keep the exact currency and amount requested without inventing extra numbers or bullet lists.
+- For study questions, acronyms ("full form of..."), and definitions, give a clear, direct explanation in plain paragraphs or clean bullet points.
+- Never output raw HTML tags like <br> or unnecessary tables.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
@@ -183,14 +183,14 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
     shortName: 'All-Domain Core',
     category: 'Universal',
     description:
-      'Universal intelligence across live current events, science, coding, daily productivity, and reasoning.',
+      'Universal intelligence across study help, writing, coding, science, and live news.',
     badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
     systemDirective:
-      'Answer clearly, naturally, and accurately like Gemini or ChatGPT across any topic.',
+      'Answer clearly, naturally, and concisely like Gemini or ChatGPT across any topic.',
     quickPrompts: [
-      'Give me a complete briefing on today’s top global and technology news.',
-      'Compare the latest breakthroughs in AI, clean energy, and spaceflight.',
-      'Help me plan a high-productivity daily schedule and workflow.',
+      'Give me a briefing on today’s top global and technology news from Google grounding.',
+      'Explain photosynthesis in simple terms for a high school student.',
+      'Help me plan a daily study timetable.',
     ],
   },
   {
@@ -465,37 +465,37 @@ const NEWS_CATEGORIES = [
     id: 'breaking',
     label: 'Top World & Breaking News',
     prompt:
-      'Give me a comprehensive, well-structured briefing of the biggest breaking world news and major headlines happening right now today.',
+      'Give me a briefing from Google grounding of the biggest breaking world news and headlines today.',
   },
   {
     id: 'ai-tech',
     label: 'AI, Robotics & Tech',
     prompt:
-      'Give me today’s latest artificial intelligence, robotics, semiconductor, and major tech industry news and breakthroughs.',
+      'Give me today’s latest AI, robotics, and technology news from Google grounding.',
   },
   {
     id: 'markets',
     label: 'Global Markets & Economy',
     prompt:
-      'Give me today’s stock market movements, macroeconomic news, central bank updates, and major business headlines.',
+      'Give me today’s stock market and global economy headlines from Google grounding.',
   },
   {
     id: 'science-space',
     label: 'Science, Space & Energy',
     prompt:
-      'Give me the latest scientific discoveries, space exploration missions, and clean energy breakthroughs happening now.',
+      'Give me the latest science, space, and energy discoveries from Google grounding.',
   },
   {
     id: 'medical-news',
     label: 'Medicine & Biotech Updates',
     prompt:
-      'Give me the latest medical research breakthroughs, clinical trial milestones, and global public health news today.',
+      'Give me today’s latest medical and biotech news from Google grounding.',
   },
   {
     id: 'sports',
     label: 'Live Sports & Tournaments',
     prompt:
-      'Give me today’s major sports scores, ongoing tournaments, and top athletic headlines worldwide.',
+      'Give me today’s major sports scores and headlines from Google grounding.',
   },
 ];
 
@@ -539,13 +539,35 @@ const IMAGE_STYLE_PRESETS = [
 ];
 
 // ============================================================================
-// EXPLICIT GOOGLE GROUNDING & FREE LIVE WEB ENGINE
+// FAST HELPERS (INSTANT GREETINGS, STRICT GOOGLE GROUNDING & TIMEOUTS)
 // ============================================================================
 
 /**
- * Only runs Google Grounding / live web search when the user explicitly asks
- * for Google grounding, web search, or live news—never on greetings, letters,
- * or general study questions.
+ * Instant < 50ms natural replies for simple greetings so the user never waits.
+ */
+function getInstantGreetingReply(text: string): string | null {
+  const cleaned = text.trim().toLowerCase().replace(/[!?.]+$/g, '');
+  if (/^(?:hi|hello|hey|yo|greetings)$/.test(cleaned)) {
+    return 'Hello! How can I help you today?';
+  }
+  if (/^(?:assalam\s*o?\s*alaikum|salam|as-salamu alaykum)$/.test(cleaned)) {
+    return 'Wa Alaikum Assalam! How can I help you today?';
+  }
+  if (/^(?:good morning|good afternoon|good evening)$/.test(cleaned)) {
+    return `${text.trim().replace(/[!?.]+$/g, '')}! How can I help you today?`;
+  }
+  if (/^(?:how are you|how r u|how are you doing)$/.test(cleaned)) {
+    return "I'm doing great, thank you! What can I help you with today?";
+  }
+  if (/^(?:thanks|thank you|thx)$/.test(cleaned)) {
+    return "You're welcome! Let me know if you need anything else.";
+  }
+  return null;
+}
+
+/**
+ * Strictly returns true ONLY when the user explicitly requests Google grounding,
+ * a live web search, or Today's News.
  */
 function explicitGoogleGroundingRequested(text: string): boolean {
   const lower = text.toLowerCase().trim();
@@ -554,16 +576,35 @@ function explicitGoogleGroundingRequested(text: string): boolean {
   const explicitTriggers = [
     /\bgoogle\b/,
     /\bgrounding\b/,
-    /\bsearch\s+(?:the\s+)?(?:web|online|internet|for)\b/,
-    /\b(?:breaking|latest|today(?:'s|s)?|current)\s+(?:world\s+)?(?:news|headlines|updates)\b/,
-    /\b(?:news|headlines)\b/,
+    /\bsearch\s+(?:the\s+)?(?:web|online|internet)\b/,
+    /\b(?:breaking|latest|today(?:'s|s)?)\s+(?:world\s+)?(?:news|headlines)\b/,
   ];
 
   return explicitTriggers.some((pattern) => pattern.test(lower));
 }
 
 /**
- * Fetches live Google News & Web Grounding results 100% FREE with zero API keys.
+ * Fetch helper with strict AbortController timeout so requests never stall.
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 5000
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(id);
+  }
+}
+
+/**
+ * Fetches live Google News & Web Grounding results (only when explicitly requested).
  */
 async function fetchFreeLiveGoogleGrounding(
   userQuery: string
@@ -580,92 +621,45 @@ async function fetchFreeLiveGoogleGrounding(
   };
 
   const isTopHeadlines =
-    /breaking world news|top world|major headlines happening right now/i.test(userQuery);
+    /breaking world news|top world|major headlines/i.test(userQuery);
 
   const cleanTopic = userQuery
     .replace(
-      /give me (?:a comprehensive, well-structured briefing of|results? from google grounding (?:about|on|for)|today['’]s|the)|search (?:google|the web|online) (?:for|about)?|from google grounding|happening right now today\.?/gi,
+      /give me (?:a briefing from google grounding of|results? from google grounding (?:about|on|for)|today['’]s|the)|search (?:google|the web|online) (?:for|about)?|from google grounding/gi,
       ''
     )
     .trim()
-    .slice(0, 100);
+    .slice(0, 90);
 
   const googleNewsRssUrl =
     isTopHeadlines || !cleanTopic
       ? 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'
       : `https://news.google.com/rss/search?q=${encodeURIComponent(cleanTopic)}&hl=en-US&gl=US&ceid=US:en`;
 
-  let gotGoogleNews = false;
   try {
-    const res = await fetch(
-      `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRssUrl)}`
+    const res = await fetchWithTimeout(
+      `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRssUrl)}`,
+      {},
+      3000
     );
     if (res.ok) {
       const data = (await res.json()) as {
         items?: Array<{ title?: string; pubDate?: string; link?: string }>;
       };
-      if (Array.isArray(data.items) && data.items.length > 0) {
-        gotGoogleNews = true;
-        for (const item of data.items.slice(0, 5)) {
+      if (Array.isArray(data.items)) {
+        for (const item of data.items.slice(0, 6)) {
           if (item.title && item.link) {
             addSource(
               item.link,
               item.title,
-              `- [Google News | ${item.pubDate || 'Today'}] ${item.title}`
+              `- [${item.pubDate || 'Today'}] ${item.title}`
             );
           }
         }
       }
     }
   } catch {
-    // Fall through to XML proxy
-  }
-
-  if (!gotGoogleNews) {
-    try {
-      const xmlRes = await fetch(
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(googleNewsRssUrl)}`
-      );
-      if (xmlRes.ok) {
-        const xmlText = await xmlRes.text();
-        const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
-        const items = Array.from(doc.querySelectorAll('item')).slice(0, 5);
-        for (const item of items) {
-          const title = item.querySelector('title')?.textContent?.trim() || '';
-          const link = item.querySelector('link')?.textContent?.trim() || '';
-          const pubDate = item.querySelector('pubDate')?.textContent?.trim() || 'Today';
-          if (title && link) {
-            addSource(link, title, `- [Google News | ${pubDate}] ${title}`);
-          }
-        }
-      }
-    } catch {
-      // Ignore proxy errors
-    }
-  }
-
-  if (cleanTopic && !isTopHeadlines) {
-    try {
-      const wikiRes = await fetch(
-        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-          cleanTopic
-        )}&srlimit=3&format=json&origin=*`
-      );
-      if (wikiRes.ok) {
-        const wikiData = (await wikiRes.json()) as {
-          query?: { search?: Array<{ title: string; snippet: string }> };
-        };
-        for (const r of wikiData?.query?.search || []) {
-          const cleanSnippet = r.snippet.replace(/<[^>]+>/g, '');
-          const wikiUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(
-            r.title.replace(/\s+/g, '_')
-          )}`;
-          addSource(wikiUrl, `${r.title} - Wikipedia`, `- [Web Reference: ${r.title}] ${cleanSnippet}`);
-        }
-      }
-    } catch {
-      // Ignore Wikipedia failure
-    }
+    // Fast timeout fallback
   }
 
   if (snippets.length === 0) {
@@ -673,7 +667,7 @@ async function fetchFreeLiveGoogleGrounding(
   }
 
   return {
-    contextText: `Live Google & Web Grounding Results (${new Date().toLocaleDateString()}):\n${snippets.join(
+    contextText: `Live Google Grounding Results (${new Date().toLocaleDateString()}):\n${snippets.join(
       '\n'
     )}`,
     sources,
@@ -681,7 +675,7 @@ async function fetchFreeLiveGoogleGrounding(
 }
 
 /**
- * Cleans up any stray HTML tags like <br> so responses always render cleanly.
+ * Strips any stray HTML tags like <br> so responses render cleanly.
  */
 function sanitizeNaturalResponse(rawText: string): string {
   return rawText
@@ -691,9 +685,7 @@ function sanitizeNaturalResponse(rawText: string): string {
 }
 
 /**
- * Free Keyless AI Synthesizer:
- * Answers naturally like Gemini/ChatGPT when `/api/chat` returns 405 Not Allowed
- * in static preview or when running without a paid backend.
+ * Fast Keyless AI Synthesizer (targets 3–5 second turnaround).
  */
 async function synthesizeWithFreeFallbackEngine(
   conversationHistory: Array<{ role: string; content: string }>,
@@ -704,9 +696,9 @@ async function synthesizeWithFreeFallbackEngine(
   const messagesPayload: Array<{ role: string; content: string }> = [
     {
       role: 'system',
-      content: systemInstructions.slice(0, 1600),
+      content: systemInstructions.slice(0, 1200),
     },
-    ...conversationHistory.slice(-8).map((msg, idx, arr) => {
+    ...conversationHistory.slice(-6).map((msg, idx, arr) => {
       const isLast = idx === arr.length - 1 && msg.role === 'user';
       if (isLast && liveGroundingContext) {
         return {
@@ -721,17 +713,21 @@ async function synthesizeWithFreeFallbackEngine(
     }),
   ];
 
-  // Attempt 1: Keyless Pollinations Chat API
+  // Fast POST with 5.5s timeout
   try {
-    const res = await fetch('https://text.pollinations.ai/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: messagesPayload,
-        model: 'openai',
-        private: true,
-      }),
-    });
+    const res = await fetchWithTimeout(
+      'https://text.pollinations.ai/',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: messagesPayload,
+          model: 'openai-fast',
+          private: true,
+        }),
+      },
+      5500
+    );
     if (res.ok) {
       const text = (await res.text()).trim();
       if (text && !text.startsWith('<html') && !text.startsWith('<!DOCTYPE')) {
@@ -739,18 +735,20 @@ async function synthesizeWithFreeFallbackEngine(
       }
     }
   } catch {
-    // Fall through to GET endpoint
+    // Fall through to fast GET endpoint
   }
 
-  // Attempt 2: Keyless Pollinations GET API
+  // Fast GET fallback with 4.5s timeout
   const lastUserMessage =
     conversationHistory[conversationHistory.length - 1]?.content || 'Hello';
   try {
     const promptForGet = liveGroundingContext
       ? `${liveGroundingContext}\n\nSummarize these Google grounding results clearly: ${lastUserMessage}`
       : `${NATURAL_CHAT_SYSTEM_PROMPT}\n\nUser: ${lastUserMessage}`;
-    const getRes = await fetch(
-      `https://text.pollinations.ai/${encodeURIComponent(promptForGet.slice(0, 1200))}`
+    const getRes = await fetchWithTimeout(
+      `https://text.pollinations.ai/${encodeURIComponent(promptForGet.slice(0, 1000))}`,
+      {},
+      4500
     );
     if (getRes.ok) {
       const text = (await getRes.text()).trim();
@@ -759,26 +757,17 @@ async function synthesizeWithFreeFallbackEngine(
       }
     }
   } catch {
-    // Fall through to structured live briefing formatter
+    // Fall through
   }
 
-  // Attempt 3: Guaranteed Structured Live Briefing if Google grounding sources were fetched
   if (liveSources.length > 0) {
-    const todayLabel = new Date().toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
     const headlinesMarkdown = liveSources
       .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
       .join('\n');
-    return `### Google Grounded Briefing — ${todayLabel}\n\n${headlinesMarkdown}`;
+    return `### Google Grounded Headlines\n\n${headlinesMarkdown}`;
   }
 
-  throw new Error(
-    'Could not connect to the AI service right now. Please check your internet connection and try again.'
-  );
+  throw new Error('The AI service took too long to respond. Please try again.');
 }
 
 /**
@@ -803,7 +792,7 @@ async function generateFreePollinationsImage(
     const img = new window.Image();
     const timeout = window.setTimeout(() => {
       resolve(imageUrl);
-    }, 25000);
+    }, 15000);
     img.onload = () => {
       window.clearTimeout(timeout);
       resolve(imageUrl);
@@ -820,18 +809,7 @@ function buildSystemInstructions(
   profession: ProfessionProfile,
   memories: MemoryEntry[]
 ): string {
-  const now = new Date();
-  const formattedDate = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const parts: string[] = [
-    NATURAL_CHAT_SYSTEM_PROMPT,
-    `Current Date: ${formattedDate}.`,
-  ];
+  const parts: string[] = [NATURAL_CHAT_SYSTEM_PROMPT];
 
   if (profession.id !== 'general') {
     parts.push(`Active Specialist Mode (${profession.name}): ${profession.systemDirective}`);
@@ -839,10 +817,10 @@ function buildSystemInstructions(
 
   if (memories.length > 0) {
     const memorySummary = memories
-      .slice(0, 10)
+      .slice(0, 6)
       .map((m) => `- (${m.category}) ${m.content}`)
       .join('\n');
-    parts.push(`User Preferences & Memory:\n${memorySummary}`);
+    parts.push(`User Memory:\n${memorySummary}`);
   }
 
   return parts.join('\n\n');
@@ -1332,18 +1310,25 @@ export default function App() {
     };
   }, []);
 
-  // Check backend /api/health
+  // Check backend /api/health once and cache result
   useEffect(() => {
     let active = true;
-    fetch('/api/health')
+    fetchWithTimeout('/api/health', {}, 2500)
       .then((response) =>
         readJsonResponse<{ aiConfigured?: boolean }>(response, 'The health check response was invalid.')
       )
       .then((health) => {
-        if (active) setAiConfigured(Boolean(health.aiConfigured));
+        if (active) {
+          const configured = Boolean(health.aiConfigured);
+          setAiConfigured(configured);
+          cachedBackendAvailable = configured;
+        }
       })
       .catch(() => {
-        if (active) setAiConfigured(false);
+        if (active) {
+          setAiConfigured(false);
+          cachedBackendAvailable = false;
+        }
       });
     return () => {
       active = false;
@@ -1569,7 +1554,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // CORE SEND MESSAGE ENGINE
+  // FAST CORE SEND MESSAGE ENGINE (3–6 SECONDS, NO UNREQUESTED GROUNDING)
   // ==========================================================================
 
   const handleSendMessage = async (
@@ -1582,22 +1567,6 @@ export default function App() {
     if (isMobileView && sidebarOpen) {
       setSidebarOpen(false);
     }
-
-    const hasImageReference = attachments.some((attachment) =>
-      attachment.type.startsWith('image/')
-    );
-    const isImageReq =
-      settings.selectedModel === 'jarvis-art' ||
-      isImageGenerationPrompt(text) ||
-      (hasImageReference &&
-        /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|add|put|place|dress|make\s+(?:it|this|the image|him|her|them)|convert)\b/i.test(
-          text
-        ));
-    const weatherRequest = getWeatherRequest(text);
-
-    // Only run Google Grounding when explicitly requested or triggered via Today's News
-    const shouldUseGoogleGrounding =
-      Boolean(options?.forceGoogleGrounding) || explicitGoogleGroundingRequested(text);
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
@@ -1639,6 +1608,47 @@ export default function App() {
       setConversations(updatedConversations);
     }
 
+    // Fast path: instant < 50ms reply for simple greetings with zero Google grounding
+    if (attachments.length === 0) {
+      const instantGreeting = getInstantGreetingReply(text);
+      if (instantGreeting) {
+        const instantMessage: Message = {
+          id: Math.random().toString(36).substring(2, 9),
+          role: 'assistant',
+          content: instantGreeting,
+          sources: [],
+          timestamp: Date.now(),
+        };
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === currentConvId
+              ? { ...c, updatedAt: Date.now(), messages: [...c.messages, instantMessage] }
+              : c
+          )
+        );
+        if (settings.voiceEnabled) {
+          handleToggleSpeakMessage(instantMessage.id, instantMessage.content);
+        }
+        return;
+      }
+    }
+
+    const hasImageReference = attachments.some((attachment) =>
+      attachment.type.startsWith('image/')
+    );
+    const isImageReq =
+      settings.selectedModel === 'jarvis-art' ||
+      isImageGenerationPrompt(text) ||
+      (hasImageReference &&
+        /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|add|put|place|dress|make\s+(?:it|this|the image|him|her|them)|convert)\b/i.test(
+          text
+        ));
+    const weatherRequest = getWeatherRequest(text);
+
+    // Strictly run Google Grounding ONLY when explicitly requested
+    const shouldUseGoogleGrounding =
+      Boolean(options?.forceGoogleGrounding) || explicitGoogleGroundingRequested(text);
+
     setIsLoading(true);
 
     try {
@@ -1654,7 +1664,7 @@ export default function App() {
           location: weatherRequest.location,
           temperatureUnit: weatherRequest.temperatureUnit,
         });
-        const res = await fetch(`/api/weather?${parameters.toString()}`);
+        const res = await fetchWithTimeout(`/api/weather?${parameters.toString()}`, {}, 4500);
         const data = await readJsonResponse<{
           location?: string;
           temperature?: number;
@@ -1680,12 +1690,11 @@ export default function App() {
           typeof data.windSpeed === 'number'
             ? ` Wind ${data.windSpeed} ${data.windSpeedUnit || 'km/h'}.`
             : '';
-        const observedAt = data.observedAt ? ` Local observation time: ${data.observedAt}.` : '';
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: `Current weather in ${data.location}: ${data.temperature}${unit}, ${data.conditions || 'conditions unavailable'}.${feelsLike}${humidity}${wind}${observedAt}`,
-          sources: data.source ? [{ uri: data.source, title: 'Open-Meteo weather data' }] : [],
+          content: `Current weather in ${data.location}: ${data.temperature}${unit}, ${data.conditions || 'conditions unavailable'}.${feelsLike}${humidity}${wind}`,
+          sources: [],
           timestamp: Date.now(),
         };
       } else if (isImageReq) {
@@ -1710,6 +1719,7 @@ export default function App() {
           role: 'assistant',
           content: `Here is the image generated for **"${cleanArtPrompt}"**:`,
           imageUrl,
+          sources: [],
           timestamp: Date.now(),
         };
       } else {
@@ -1740,35 +1750,49 @@ export default function App() {
         let backendSources: Array<{ uri: string; title: string }> = [];
         let replyImageUrl: string | undefined;
 
-        try {
-          // Primary path: Vercel /api/chat using free-tier Gemini Flash
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: backendMessages,
-              systemInstruction: systemInstructions,
-              webSearch: false,
-              model: 'jarvis-turbo',
-              attachments: attachments.map((a) => ({
-                name: a.name,
-                type: a.type,
-                data: a.data,
-              })),
-            }),
-          });
+        if (cachedBackendAvailable !== false) {
+          try {
+            const res = await fetchWithTimeout(
+              '/api/chat',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  messages: backendMessages,
+                  systemInstruction: systemInstructions,
+                  webSearch: false,
+                  model: 'jarvis-turbo',
+                  attachments: attachments.map((a) => ({
+                    name: a.name,
+                    type: a.type,
+                    data: a.data,
+                  })),
+                }),
+              },
+              5000
+            );
 
-          const data = await readJsonResponse<{
-            content?: string;
-            sources?: Array<{ uri: string; title: string }>;
-            imageUrl?: string;
-          }>(res, 'BACKEND_UNAVAILABLE_405');
+            const data = await readJsonResponse<{
+              content?: string;
+              sources?: Array<{ uri: string; title: string }>;
+              imageUrl?: string;
+            }>(res, 'BACKEND_UNAVAILABLE_405');
 
-          replyText = sanitizeNaturalResponse(data.content || 'How can I help you?');
-          backendSources = shouldUseGoogleGrounding ? data.sources || [] : [];
-          replyImageUrl = data.imageUrl;
-        } catch {
-          // Automatic fallback for static preview (405 Not Allowed)
+            cachedBackendAvailable = true;
+            replyText = sanitizeNaturalResponse(data.content || 'How can I help you?');
+            backendSources = shouldUseGoogleGrounding ? data.sources || [] : [];
+            replyImageUrl = data.imageUrl;
+          } catch {
+            cachedBackendAvailable = false;
+            replyText = await synthesizeWithFreeFallbackEngine(
+              cleanHistory,
+              systemInstructions,
+              liveWeb.contextText,
+              liveWeb.sources
+            );
+          }
+        } else {
+          // Instant direct call without wasting time on 405 backend
           replyText = await synthesizeWithFreeFallbackEngine(
             cleanHistory,
             systemInstructions,
@@ -1814,6 +1838,7 @@ export default function App() {
         id: Math.random().toString(36).substring(2, 9),
         role: 'assistant',
         content: `**JARVIS notice:** ${errorText}`,
+        sources: [],
         timestamp: Date.now(),
         isError: true,
       };
@@ -1916,56 +1941,75 @@ export default function App() {
       setVoiceTurns((prev) => [...prev.slice(-14), userTurn]);
 
       try {
-        const shouldSearch = explicitGoogleGroundingRequested(trimmed);
-        const liveWeb = shouldSearch
-          ? await fetchFreeLiveGoogleGrounding(trimmed)
-          : { contextText: '', sources: [] };
+        const instantGreeting = getInstantGreetingReply(trimmed);
+        let reply = instantGreeting || '';
 
-        const systemInstructions = `${buildSystemInstructions(
-          activeProfession,
-          memories
-        )}\nRespond naturally and concisely as if speaking out loud.`;
+        if (!reply) {
+          const shouldSearch = explicitGoogleGroundingRequested(trimmed);
+          const liveWeb = shouldSearch
+            ? await fetchFreeLiveGoogleGrounding(trimmed)
+            : { contextText: '', sources: [] };
 
-        const historyPayload = voiceTurns.slice(-8).map((t) => ({
-          role: t.role,
-          content: t.text,
-        }));
-        historyPayload.push({
-          role: 'user',
-          content: trimmed,
-        });
+          const systemInstructions = `${buildSystemInstructions(
+            activeProfession,
+            memories
+          )}\nRespond naturally and concisely as if speaking out loud.`;
 
-        let reply = '';
-        try {
-          const backendPayload = historyPayload.map((m, idx) =>
-            idx === historyPayload.length - 1 && liveWeb.contextText
-              ? { role: 'user', content: `${liveWeb.contextText}\n\nUser Question: ${m.content}` }
-              : m
-          );
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: backendPayload,
-              systemInstruction: systemInstructions,
-              webSearch: false,
-              model: 'jarvis-turbo',
-              attachments: [],
-            }),
+          const historyPayload = voiceTurns.slice(-6).map((t) => ({
+            role: t.role,
+            content: t.text,
+          }));
+          historyPayload.push({
+            role: 'user',
+            content: trimmed,
           });
 
-          const data = await readJsonResponse<{ content?: string }>(
-            res,
-            'BACKEND_UNAVAILABLE_405'
-          );
-          reply = sanitizeNaturalResponse(data.content || 'Processed.');
-        } catch {
-          reply = await synthesizeWithFreeFallbackEngine(
-            historyPayload,
-            systemInstructions,
-            liveWeb.contextText,
-            liveWeb.sources
-          );
+          if (cachedBackendAvailable !== false) {
+            try {
+              const backendPayload = historyPayload.map((m, idx) =>
+                idx === historyPayload.length - 1 && liveWeb.contextText
+                  ? { role: 'user', content: `${liveWeb.contextText}\n\nUser Question: ${m.content}` }
+                  : m
+              );
+              const res = await fetchWithTimeout(
+                '/api/chat',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    messages: backendPayload,
+                    systemInstruction: systemInstructions,
+                    webSearch: false,
+                    model: 'jarvis-turbo',
+                    attachments: [],
+                  }),
+                },
+                5000
+              );
+
+              const data = await readJsonResponse<{ content?: string }>(
+                res,
+                'BACKEND_UNAVAILABLE_405'
+              );
+              cachedBackendAvailable = true;
+              reply = sanitizeNaturalResponse(data.content || 'Processed.');
+            } catch {
+              cachedBackendAvailable = false;
+              reply = await synthesizeWithFreeFallbackEngine(
+                historyPayload,
+                systemInstructions,
+                liveWeb.contextText,
+                liveWeb.sources
+              );
+            }
+          } else {
+            reply = await synthesizeWithFreeFallbackEngine(
+              historyPayload,
+              systemInstructions,
+              liveWeb.contextText,
+              liveWeb.sources
+            );
+          }
         }
 
         const assistantTurn: VoiceTurn = {
@@ -2653,7 +2697,6 @@ export default function App() {
                   message={msg}
                   onSpeak={handleToggleSpeakMessage}
                   isSpeaking={speakingMessageId === msg.id}
-                  onSelectPrompt={handleSelectPrompt}
                 />
               ))}
 
@@ -2674,19 +2717,15 @@ export default function App() {
           )}
         </div>
 
-        {/* BOTTOM PROMPT INPUT BAR WITH MOBILE SAFE-AREA PADDING */}
+        {/* BOTTOM PROMPT INPUT BAR */}
         <div className="shrink-0 w-full max-w-full jarvis-mobile-safe-bottom bg-[#060b13]">
           <PromptBar
             onSendMessage={handleSendMessage}
             isLoading={isLoading}
-            webSearchEnabled={settings.webSearchEnabled}
-            onToggleWebSearch={() =>
-              setSettings((prev) => ({ ...prev, webSearchEnabled: !prev.webSearchEnabled }))
-            }
-            dualEngineEnabled={settings.dualEngineEnabled}
-            onToggleDualEngine={() =>
-              setSettings((prev) => ({ ...prev, dualEngineEnabled: !prev.dualEngineEnabled }))
-            }
+            webSearchEnabled={false}
+            onToggleWebSearch={() => {}}
+            dualEngineEnabled={false}
+            onToggleDualEngine={() => {}}
             showScrollBottom={showScrollBottom}
             onScrollToBottom={scrollToBottom}
           />
