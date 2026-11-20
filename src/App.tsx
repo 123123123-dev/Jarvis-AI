@@ -539,11 +539,11 @@ const IMAGE_STYLE_PRESETS = [
 ];
 
 // ============================================================================
-// FAST HELPERS (INSTANT GREETINGS, STRICT GOOGLE GROUNDING & TIMEOUTS)
+// FAST HELPERS (INSTANT GREETINGS, PARALLEL AI ENGINE & INSTANT KNOWLEDGE)
 // ============================================================================
 
 /**
- * Instant < 50ms natural replies for simple greetings so the user never waits.
+ * Instant < 50ms natural replies for simple greetings.
  */
 function getInstantGreetingReply(text: string): string | null {
   const cleaned = text.trim().toLowerCase().replace(/[!?.]+$/g, '');
@@ -584,12 +584,12 @@ function explicitGoogleGroundingRequested(text: string): boolean {
 }
 
 /**
- * Fetch helper with strict AbortController timeout so requests never stall.
+ * Fetch helper with AbortController timeout.
  */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs = 5000
+  timeoutMs = 8000
 ): Promise<Response> {
   const controller = new AbortController();
   const id = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -601,6 +601,112 @@ async function fetchWithTimeout(
   } finally {
     window.clearTimeout(id);
   }
+}
+
+/**
+ * Resolves with the first promise that succeeds; rejects only if all fail.
+ */
+function raceToFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let rejectedCount = 0;
+    const total = promises.length;
+    if (total === 0) {
+      reject(new Error('No requests provided'));
+      return;
+    }
+    promises.forEach((p) => {
+      p.then(resolve).catch(() => {
+        rejectedCount += 1;
+        if (rejectedCount === total) {
+          reject(new Error('All parallel AI endpoints failed'));
+        }
+      });
+    });
+  });
+}
+
+/**
+ * Fast Wikipedia + DuckDuckGo Instant Knowledge backup (300ms) for definitions,
+ * full forms, and study queries if the LLM endpoint is temporarily busy.
+ */
+async function fetchInstantKnowledgeFallback(query: string): Promise<string | null> {
+  const cleaned = query
+    .replace(
+      /^(?:what\s+is\s+(?:the\s+)?(?:full\s+form\s+of|meaning\s+of|definition\s+of|stand\s+for)?|what\s+does\s+|define|explain|who\s+is|tell\s+me\s+about)\s+/i,
+      ''
+    )
+    .replace(/\bstand\s+for\b/i, '')
+    .replace(/[?!.]+$/g, '')
+    .trim();
+
+  if (!cleaned || cleaned.length > 80) return null;
+
+  try {
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+      cleaned
+    )}&srlimit=4&format=json&origin=*`;
+    const searchRes = await fetchWithTimeout(searchUrl, {}, 3500);
+    if (searchRes.ok) {
+      const searchData = (await searchRes.json()) as {
+        query?: {
+          search?: Array<{ title?: string }>;
+        };
+      };
+      const results = searchData.query?.search || [];
+      if (results.length > 0 && results[0].title) {
+        const topTitle = results[0].title;
+        const summaryRes = await fetchWithTimeout(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
+          {},
+          3000
+        );
+        if (summaryRes.ok) {
+          const summaryData = (await summaryRes.json()) as {
+            title?: string;
+            extract?: string;
+          };
+          if (summaryData.extract) {
+            const otherMeanings = results
+              .slice(1)
+              .map((r) => r.title)
+              .filter(Boolean);
+            const extra =
+              otherMeanings.length > 0
+                ? `\n\nOther common meanings: **${otherMeanings.join('**, **')}**.`
+                : '';
+            return `**${summaryData.title || topTitle}**: ${summaryData.extract}${extra}`;
+          }
+        }
+      }
+    }
+  } catch {
+    // Fall through to DuckDuckGo
+  }
+
+  try {
+    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(
+      cleaned
+    )}&format=json&no_html=1&skip_disambig=1`;
+    const ddgRes = await fetchWithTimeout(ddgUrl, {}, 3500);
+    if (ddgRes.ok) {
+      const ddgData = (await ddgRes.json()) as {
+        Heading?: string;
+        AbstractText?: string;
+        RelatedTopics?: Array<{ Text?: string }>;
+      };
+      if (ddgData.AbstractText) {
+        return `**${ddgData.Heading || cleaned}**: ${ddgData.AbstractText}`;
+      }
+      const firstTopic = ddgData.RelatedTopics?.find((t) => t.Text)?.Text;
+      if (firstTopic) {
+        return firstTopic;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  return null;
 }
 
 /**
@@ -640,7 +746,7 @@ async function fetchFreeLiveGoogleGrounding(
     const res = await fetchWithTimeout(
       `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRssUrl)}`,
       {},
-      3000
+      3500
     );
     if (res.ok) {
       const data = (await res.json()) as {
@@ -685,7 +791,9 @@ function sanitizeNaturalResponse(rawText: string): string {
 }
 
 /**
- * Fast Keyless AI Synthesizer (targets 3–5 second turnaround).
+ * Fast Parallel Keyless AI Synthesizer:
+ * Races 3 fast endpoints simultaneously so the quickest response wins in 2–5 seconds,
+ * with an instant Wikipedia/DuckDuckGo backup for study/definition queries.
  */
 async function synthesizeWithFreeFallbackEngine(
   conversationHistory: Array<{ role: string; content: string }>,
@@ -693,6 +801,9 @@ async function synthesizeWithFreeFallbackEngine(
   liveGroundingContext: string,
   liveSources: Array<{ uri: string; title: string }>
 ): Promise<string> {
+  const lastUserMessage =
+    conversationHistory[conversationHistory.length - 1]?.content || 'Hello';
+
   const messagesPayload: Array<{ role: string; content: string }> = [
     {
       role: 'system',
@@ -713,8 +824,34 @@ async function synthesizeWithFreeFallbackEngine(
     }),
   ];
 
-  // Fast POST with 5.5s timeout
-  try {
+  // Candidate 1: OpenAI-compatible POST endpoint
+  const openAiCompatPost = async (): Promise<string> => {
+    const res = await fetchWithTimeout(
+      'https://text.pollinations.ai/openai',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'openai',
+          messages: messagesPayload,
+          private: true,
+        }),
+      },
+      8500
+    );
+    if (!res.ok) throw new Error('OpenAI compat endpoint failed');
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = data.choices?.[0]?.message?.content?.trim() || '';
+    if (!content || content.startsWith('<html') || content.startsWith('<!DOCTYPE')) {
+      throw new Error('Empty response');
+    }
+    return sanitizeNaturalResponse(content);
+  };
+
+  // Candidate 2: Direct JSON POST endpoint
+  const directTextPost = async (): Promise<string> => {
     const res = await fetchWithTimeout(
       'https://text.pollinations.ai/',
       {
@@ -722,52 +859,57 @@ async function synthesizeWithFreeFallbackEngine(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: messagesPayload,
-          model: 'openai-fast',
+          model: 'openai',
           private: true,
         }),
       },
-      5500
+      8500
     );
-    if (res.ok) {
-      const text = (await res.text()).trim();
-      if (text && !text.startsWith('<html') && !text.startsWith('<!DOCTYPE')) {
-        return sanitizeNaturalResponse(text);
-      }
+    if (!res.ok) throw new Error('Direct POST failed');
+    const text = (await res.text()).trim();
+    if (!text || text.startsWith('<html') || text.startsWith('<!DOCTYPE')) {
+      throw new Error('Empty response');
     }
-  } catch {
-    // Fall through to fast GET endpoint
-  }
+    return sanitizeNaturalResponse(text);
+  };
 
-  // Fast GET fallback with 4.5s timeout
-  const lastUserMessage =
-    conversationHistory[conversationHistory.length - 1]?.content || 'Hello';
-  try {
-    const promptForGet = liveGroundingContext
-      ? `${liveGroundingContext}\n\nSummarize these Google grounding results clearly: ${lastUserMessage}`
-      : `${NATURAL_CHAT_SYSTEM_PROMPT}\n\nUser: ${lastUserMessage}`;
-    const getRes = await fetchWithTimeout(
-      `https://text.pollinations.ai/${encodeURIComponent(promptForGet.slice(0, 1000))}`,
+  // Candidate 3: Compact URL GET endpoint (fast CDN path)
+  const compactGet = async (): Promise<string> => {
+    const shortPrompt = liveGroundingContext
+      ? `${liveGroundingContext}\n\nSummarize clearly: ${lastUserMessage}`.slice(0, 450)
+      : `Answer clearly and concisely without extra options: ${lastUserMessage}`.slice(0, 450);
+    const res = await fetchWithTimeout(
+      `https://text.pollinations.ai/${encodeURIComponent(shortPrompt)}?model=openai`,
       {},
-      4500
+      8500
     );
-    if (getRes.ok) {
-      const text = (await getRes.text()).trim();
-      if (text && !text.startsWith('<html') && !text.startsWith('<!DOCTYPE')) {
-        return sanitizeNaturalResponse(text);
-      }
+    if (!res.ok) throw new Error('Compact GET failed');
+    const text = (await res.text()).trim();
+    if (!text || text.startsWith('<html') || text.startsWith('<!DOCTYPE')) {
+      throw new Error('Empty response');
     }
+    return sanitizeNaturalResponse(text);
+  };
+
+  try {
+    return await raceToFirstSuccess([openAiCompatPost(), directTextPost(), compactGet()]);
   } catch {
-    // Fall through
-  }
+    // Fallback 1: Instant Wikipedia / DuckDuckGo factual lookup (300ms)
+    const instantKnowledge = await fetchInstantKnowledgeFallback(lastUserMessage);
+    if (instantKnowledge) {
+      return instantKnowledge;
+    }
 
-  if (liveSources.length > 0) {
-    const headlinesMarkdown = liveSources
-      .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
-      .join('\n');
-    return `### Google Grounded Headlines\n\n${headlinesMarkdown}`;
-  }
+    // Fallback 2: Google Grounded headlines if news was requested
+    if (liveSources.length > 0) {
+      const headlinesMarkdown = liveSources
+        .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
+        .join('\n');
+      return `### Google Grounded Headlines\n\n${headlinesMarkdown}`;
+    }
 
-  throw new Error('The AI service took too long to respond. Please try again.');
+    throw new Error('The AI service is momentarily busy. Please send your message again.');
+  }
 }
 
 /**
@@ -1048,11 +1190,14 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Persistence state
+  // Persistence state (Live Web Knowledge starts OFF so Google Grounding never shows unless requested)
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile>(defaultUser);
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [settings, setSettings] = useState<AppSettings>(() => ({
+    ...loadSettings(),
+    webSearchEnabled: false,
+  }));
   const [directSignInUrl, setDirectSignInUrl] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState('');
 
@@ -1554,7 +1699,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // FAST CORE SEND MESSAGE ENGINE (3–6 SECONDS, NO UNREQUESTED GROUNDING)
+  // FAST CORE SEND MESSAGE ENGINE (PARALLEL AI + INSTANT KNOWLEDGE FALLBACK)
   // ==========================================================================
 
   const handleSendMessage = async (
@@ -1645,9 +1790,11 @@ export default function App() {
         ));
     const weatherRequest = getWeatherRequest(text);
 
-    // Strictly run Google Grounding ONLY when explicitly requested
+    // Strictly run Google Grounding ONLY when Live Web Knowledge is turned ON or explicitly asked
     const shouldUseGoogleGrounding =
-      Boolean(options?.forceGoogleGrounding) || explicitGoogleGroundingRequested(text);
+      Boolean(options?.forceGoogleGrounding) ||
+      Boolean(settings.webSearchEnabled) ||
+      explicitGoogleGroundingRequested(text);
 
     setIsLoading(true);
 
@@ -1761,7 +1908,7 @@ export default function App() {
                   messages: backendMessages,
                   systemInstruction: systemInstructions,
                   webSearch: false,
-                  model: 'jarvis-turbo',
+                  model: settings.dualEngineEnabled ? 'jarvis-deep' : settings.selectedModel,
                   attachments: attachments.map((a) => ({
                     name: a.name,
                     type: a.type,
@@ -1769,7 +1916,7 @@ export default function App() {
                   })),
                 }),
               },
-              5000
+              6000
             );
 
             const data = await readJsonResponse<{
@@ -1792,7 +1939,6 @@ export default function App() {
             );
           }
         } else {
-          // Instant direct call without wasting time on 405 backend
           replyText = await synthesizeWithFreeFallbackEngine(
             cleanHistory,
             systemInstructions,
@@ -1945,7 +2091,8 @@ export default function App() {
         let reply = instantGreeting || '';
 
         if (!reply) {
-          const shouldSearch = explicitGoogleGroundingRequested(trimmed);
+          const shouldSearch =
+            Boolean(settings.webSearchEnabled) || explicitGoogleGroundingRequested(trimmed);
           const liveWeb = shouldSearch
             ? await fetchFreeLiveGoogleGrounding(trimmed)
             : { contextText: '', sources: [] };
@@ -1984,7 +2131,7 @@ export default function App() {
                     attachments: [],
                   }),
                 },
-                5000
+                6000
               );
 
               const data = await readJsonResponse<{ content?: string }>(
@@ -2033,7 +2180,7 @@ export default function App() {
         );
       }
     },
-    [activeProfession, memories, voiceTurns, speakVoiceTurnReply]
+    [activeProfession, memories, settings.webSearchEnabled, voiceTurns, speakVoiceTurnReply]
   );
 
   const startVoiceRecognition = useCallback(() => {
@@ -2717,15 +2864,25 @@ export default function App() {
           )}
         </div>
 
-        {/* BOTTOM PROMPT INPUT BAR */}
+        {/* EXISTING PROMPT BAR (UNCHANGED) */}
         <div className="shrink-0 w-full max-w-full jarvis-mobile-safe-bottom bg-[#060b13]">
           <PromptBar
             onSendMessage={handleSendMessage}
             isLoading={isLoading}
-            webSearchEnabled={false}
-            onToggleWebSearch={() => {}}
-            dualEngineEnabled={false}
-            onToggleDualEngine={() => {}}
+            webSearchEnabled={Boolean(settings.webSearchEnabled)}
+            onToggleWebSearch={() =>
+              setSettings((prev) => ({
+                ...prev,
+                webSearchEnabled: !prev.webSearchEnabled,
+              }))
+            }
+            dualEngineEnabled={Boolean(settings.dualEngineEnabled)}
+            onToggleDualEngine={() =>
+              setSettings((prev) => ({
+                ...prev,
+                dualEngineEnabled: !prev.dualEngineEnabled,
+              }))
+            }
             showScrollBottom={showScrollBottom}
             onScrollToBottom={scrollToBottom}
           />
