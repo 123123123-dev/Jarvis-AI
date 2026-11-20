@@ -164,6 +164,14 @@ const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
 
+const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, helpful, and articulate AI assistant.
+Respond naturally, clearly, and directly—just like ChatGPT or Gemini:
+- Match your tone and response length to the user's request.
+- For casual greetings (such as "hi" or "hello"), respond warmly and briefly in 1–2 sentences and ask how you can help.
+- For letters, emails, essays, or creative writing, write clean, natural paragraphs without putting ">" blockquotes on lines and without adding unrequested checklists or links.
+- For acronyms ("full form of..."), definitions, or explanations, give a clear, direct answer using clean headings and standard bullet points.
+- Never output raw HTML tags like <br> or rigid pipe tables unless explicitly asked for a table.`;
+
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
     id: 'general',
@@ -174,7 +182,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Universal intelligence across live current events, science, coding, daily productivity, and reasoning.',
     badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
     systemDirective:
-      'Operate as JARVIS, an omniscient, articulate, real-time AI assistant capable of answering across all human professions with live temporal awareness, factual rigor, and structured clarity.',
+      'Answer clearly, naturally, and accurately like ChatGPT or Gemini across any topic.',
     quickPrompts: [
       'Give me a complete briefing on today’s top global and technology news.',
       'Compare the latest breakthroughs in AI, clean energy, and spaceflight.',
@@ -190,7 +198,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Pathophysiology, differential considerations, diagnostic lab interpretation, and clinical guidelines.',
     badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
     systemDirective:
-      'Operate as a Senior Medical & Clinical Intelligence specialist. Explain pathophysiology, differential considerations, diagnostic criteria, and lab markers using clear clinical structure. Include a concise reminder to consult a licensed healthcare provider.',
+      'Provide clear clinical explanations of pathophysiology, differential considerations, and diagnostic markers. Include a brief reminder to consult a licensed healthcare provider.',
     disclaimer:
       'Clinical Reference Mode: Educational medical information only — not a substitute for professional medical care.',
     quickPrompts: [
@@ -208,7 +216,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Pharmacokinetics (ADME), receptor mechanisms, CYP450 drug interactions, and therapeutic monitoring.',
     badgeColor: 'text-teal-300 border-teal-500/40 bg-teal-500/10',
     systemDirective:
-      'Operate as a Board-Certified Clinical Pharmacologist. Detail mechanisms of action, ADME pharmacokinetics, CYP450 enzyme interactions, contraindications, and adverse effect profiles clearly.',
+      'Explain mechanisms of action, pharmacokinetics, drug interactions, and contraindications clearly and concisely.',
     disclaimer:
       'Pharmacology Reference Mode: Verify all dosing and drug interactions with a licensed pharmacist or physician.',
     quickPrompts: [
@@ -226,7 +234,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Statics, dynamics, FEA stress/strain, fluid mechanics, heat transfer, HVAC, and CAD/CAM.',
     badgeColor: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
     systemDirective:
-      'Operate as a Principal Mechanical & Thermal Systems Engineer. Provide first-principles equations, free-body force breakdowns, material selection criteria, safety factors, and SI/imperial unit conversions.',
+      'Provide clear mechanical engineering calculations, equations, material considerations, and SI/imperial unit clarity.',
     quickPrompts: [
       'Calculate maximum bending stress and deflection for a simply supported steel I-beam.',
       'Compare Rankine, Brayton, and Carnot thermodynamic cycle efficiencies.',
@@ -242,7 +250,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Analog/digital circuits, PCB layout, power electronics, microcontrollers, and control theory.',
     badgeColor: 'text-yellow-300 border-yellow-500/40 bg-yellow-500/10',
     systemDirective:
-      'Operate as a Principal Electrical & Embedded Systems Engineer. Provide circuit analysis, component sizing formulas, buck/boost converter calculations, and microcontroller guidance.',
+      'Provide clear circuit analysis, component sizing formulas, power electronics guidance, and embedded systems design.',
     quickPrompts: [
       'Design a 12V to 3.3V synchronous buck converter circuit with component sizing formulas.',
       'Explain PCB impedance control, ground planes, and EMI mitigation.',
@@ -258,7 +266,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Reinforced concrete, structural steel, seismic load design, foundation engineering, and hydraulics.',
     badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
     systemDirective:
-      'Operate as a Principal Civil & Structural Engineer. Analyze dead/live/seismic loads, reinforced concrete moment capacities, soil bearing capacity, and hydrological drainage design.',
+      'Analyze structural loads, reinforced concrete design, foundation engineering, and hydraulics clearly.',
     quickPrompts: [
       'Explain ACI 318 flexural strength design steps for a reinforced concrete beam.',
       'Compare shallow spread footings vs deep bored pile foundations in soft clay.',
@@ -274,7 +282,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Aerodynamics, orbital mechanics, rocket propulsion (Isp, delta-v), avionics, and composites.',
     badgeColor: 'text-sky-300 border-sky-500/40 bg-sky-500/10',
     systemDirective:
-      'Operate as a Senior Aerospace & Orbital Mechanics Engineer. Use Tsiolkovsky rocket equations, lift/drag polar relationships, Hohmann transfer calculations, and aerospace composite trade-offs.',
+      'Provide clear aerospace engineering explanations covering aerodynamics, orbital mechanics, and propulsion.',
     quickPrompts: [
       'Calculate delta-v using the Tsiolkovsky rocket equation for a two-stage launch vehicle.',
       'Compare LOX/Methane (methalox) vs LOX/RP-1 rocket engine performance.',
@@ -290,7 +298,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Full-stack TypeScript/React, distributed systems, algorithms, databases, and DevOps.',
     badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
     systemDirective:
-      'Operate as a Principal Software & Distributed Systems Architect. Deliver clean, production-grade code, Big-O complexity analysis, database schema optimizations, and resilient microservices architectures.',
+      'Deliver clean, production-grade code, clear explanations, and sound software architecture recommendations.',
     quickPrompts: [
       'Architect a fault-tolerant real-time WebSocket and Redis pub/sub backend.',
       'Review React rendering bottlenecks and propose memoization strategies.',
@@ -306,7 +314,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Threat modeling, OWASP Top 10, cryptography, cloud IAM, and defensive hardening.',
     badgeColor: 'text-rose-300 border-rose-500/40 bg-rose-500/10',
     systemDirective:
-      'Operate as a Principal Defensive Cybersecurity Architect. Focus on threat modeling, OWASP vulnerability remediation, cryptographic best practices, and zero-trust network design.',
+      'Provide defensive cybersecurity guidance, vulnerability remediation, and zero-trust architecture best practices.',
     quickPrompts: [
       'Audit JWT session storage vs HttpOnly cookies against XSS and CSRF attacks.',
       'Design a Zero-Trust IAM architecture for a multi-region cloud deployment.',
@@ -322,7 +330,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Contract structure, intellectual property, compliance frameworks, and statutory analysis.',
     badgeColor: 'text-indigo-300 border-indigo-500/40 bg-indigo-500/10',
     systemDirective:
-      'Operate as a Senior Legal & Regulatory Analyst. Break down contract clauses, liability allocations, IP licensing terms, and compliance requirements clearly.',
+      'Break down contract clauses, compliance obligations, and legal concepts clearly.',
     disclaimer:
       'Legal Analysis Mode: Educational regulatory and contract breakdown; consult qualified counsel for formal advice.',
     quickPrompts: [
@@ -340,7 +348,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Corporate valuation, DCF modeling, macroeconomics, portfolio risk, and financial statements.',
     badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
     systemDirective:
-      'Operate as a Quantitative Financial Analyst & Macroeconomic Strategist. Provide structured DCF frameworks, ratio analysis, interest-rate sensitivity breakdowns, and capital allocation insights.',
+      'Provide clear financial analysis, valuation frameworks, and macroeconomic insights.',
     quickPrompts: [
       'Build a step-by-step Discounted Cash Flow (DCF) valuation framework.',
       'Analyze how central bank interest rate shifts impact tech equities and bonds.',
@@ -356,7 +364,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Quantum mechanics, astrophysics, molecular biology, chemistry, and experimental methodology.',
     badgeColor: 'text-violet-300 border-violet-500/40 bg-violet-500/10',
     systemDirective:
-      'Operate as a Senior Scientific Research Fellow across Physics, Chemistry, and Molecular Biology. Explain complex phenomena from fundamental laws, cite experimental methods, and maintain rigorous precision.',
+      'Explain scientific concepts across physics, chemistry, and biology clearly and rigorously.',
     quickPrompts: [
       'Explain CRISPR-Cas9 base editing versus prime editing mechanisms.',
       'Summarize recent advances in magnetic confinement nuclear fusion.',
@@ -372,7 +380,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Sustainable building design, structural loads, urban planning, acoustics, and HVAC systems.',
     badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
     systemDirective:
-      'Operate as a Senior Architect & Structural Systems Consultant. Address spatial ergonomics, passive solar design, structural load paths, sustainable materials, and building code principles.',
+      'Address architectural design, spatial planning, materials, and sustainable building systems clearly.',
     quickPrompts: [
       'Design a passive-house residential floorplan optimized for hot climates.',
       'Compare mass timber (CLT) vs reinforced concrete for mid-rise structures.',
@@ -388,7 +396,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Go-to-market strategy, unit economics, OKRs, supply chain optimization, and negotiations.',
     badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
     systemDirective:
-      'Operate as an Executive Strategy & Operations Advisor. Deliver actionable GTM roadmaps, CAC/LTV unit economics, competitive moat analysis, and crisp executive memos.',
+      'Deliver practical business strategy, unit economics, and operational recommendations.',
     quickPrompts: [
       'Draft a 90-day Go-To-Market launch plan for an AI SaaS product.',
       'Analyze SaaS unit economics: CAC payback period, Net Dollar Retention, and churn.',
@@ -404,7 +412,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Step-by-step intuitive explanations, exam prep, flashcards, and mental models for any subject.',
     badgeColor: 'text-lime-300 border-lime-500/40 bg-lime-500/10',
     systemDirective:
-      'Operate as a Master Educator. Break down complex subjects from beginner intuition to advanced mastery using clear analogies, worked examples, and active recall check-in questions.',
+      'Teach concepts step-by-step from beginner intuition to deeper mastery with clear examples.',
     quickPrompts: [
       'Teach me Linear Algebra eigenvalues and eigenvectors visually from scratch.',
       'Create a 7-day intensive study syllabus for mastering organic chemistry.',
@@ -420,7 +428,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Screenwriting, visual storytelling, brand identity, world-building, and art direction.',
     badgeColor: 'text-fuchsia-300 border-fuchsia-500/40 bg-fuchsia-500/10',
     systemDirective:
-      'Operate as an award-winning Creative Director and Storyteller. Craft vivid prose, compelling scripts, detailed visual art prompts, and cohesive brand narratives.',
+      'Craft vivid, natural prose, stories, letters, scripts, and creative concepts.',
     quickPrompts: [
       'Write an opening sci-fi scene set aboard an orbital shipyard at dawn.',
       'Generate 5 hyper-detailed cinematic image prompts for a futuristic laboratory.',
@@ -527,47 +535,51 @@ const IMAGE_STYLE_PRESETS = [
 ];
 
 // ============================================================================
-// 100% FREE LIVE WEB SEARCH, KEYLESS AI FALLBACK & FREE IMAGE ENGINE
+// SMART WEB SEARCH DETECTION & 100% FREE LIVE DATA ENGINE
 // ============================================================================
 
-function detectLiveNewsOrCurrentEventIntent(text: string): boolean {
+/**
+ * Only returns true when the user actually asks for live news, current events,
+ * or real-time web facts—never for greetings, letters, definitions, or coding.
+ */
+function needsLiveWebSearch(text: string): boolean {
   const lower = text.toLowerCase().trim();
-  if (!lower) return false;
-  const patterns = [
-    /\btoday(?:'s|s)?\b/,
-    /\bright now\b/,
-    /\bhappening now\b/,
-    /\bcurrent(?:ly)?\b/,
-    /\blatest\b/,
-    /\bbreaking\b/,
+  if (!lower || lower.length < 4) return false;
+
+  // Exclude casual greetings, creative writing, letters, definitions, and code
+  const nonSearchPatterns = [
+    /^(?:hi|hello|hey|yo|greetings|good\s+(?:morning|afternoon|evening)|assalam\s*o?\s*alaikum|salam|how\s+are\s+you|what'?s\s+up|thanks|thank\s+you|ok|okay|bye)[!.?,\s]*$/i,
+    /^(?:write|draft|compose|create)\s+(?:a\s+|an\s+|me\s+a\s+)?(?:letter|email|application|essay|poem|story|speech|paragraph|cover\s+letter|resignation)/i,
+    /^(?:what\s+is\s+the\s+)?full\s+form\s+of\b/i,
+    /^(?:define|meaning\s+of|translate|summarize|rewrite|fix\s+grammar)/i,
+  ];
+  if (nonSearchPatterns.some((pattern) => pattern.test(lower))) {
+    return false;
+  }
+
+  // Trigger live search only for real-time news, live events, prices, or explicit lookups
+  const liveEventPatterns = [
+    /\bbreaking\s+(?:world\s+)?news\b/,
+    /\btoday(?:'s|s)?\s+(?:news|headlines|latest|weather|score|match|price|rate)\b/,
+    /\b(?:latest|recent|current)\s+(?:news|headlines|updates|developments|discoveries|scores)\b/,
+    /\bhappening\s+(?:right\s+)?now\b/,
     /\bnews\b/,
     /\bheadlines?\b/,
-    /\bupdate(?:s)?\b/,
-    /\bthis week\b/,
-    /\bthis month\b/,
-    /\byesterday\b/,
-    /\blive\b/,
-    /\bstock\b/,
-    /\bprice\b/,
-    /\bbitcoin\b/,
-    /\bcrypto\b/,
-    /\bexchange rate\b/,
-    /\bwho won\b/,
-    /\bwhat happened\b/,
-    /\bweather\b/,
-    /\bscore\b/,
-    /\bmatch\b/,
-    /\b2025\b/,
-    /\b2026\b/,
+    /\bstock\s+price\b/,
+    /\b(?:bitcoin|btc|eth|crypto|gold|dollar)\s+(?:price|rate)\b/,
+    /\bexchange\s+rate\b/,
+    /\bwho\s+won\b/,
+    /\blive\s+score\b/,
+    /\bsearch\s+(?:the\s+)?(?:web|google|online)\b/,
   ];
-  return patterns.some((pattern) => pattern.test(lower));
+
+  return liveEventPatterns.some((pattern) => pattern.test(lower));
 }
 
 /**
- * Fetches real-time Google News headlines, DuckDuckGo Instant Answers, and
- * Wikipedia live search results 100% FREE with zero API keys or billing.
+ * Fetches real-time Google News headlines 100% FREE with zero API keys or billing.
  */
-async function fetchFreeLiveGoogleWebResults(
+async function fetchFreeLiveGoogleNews(
   userQuery: string
 ): Promise<{ contextText: string; sources: Array<{ uri: string; title: string }> }> {
   const sources: Array<{ uri: string; title: string }> = [];
@@ -575,7 +587,7 @@ async function fetchFreeLiveGoogleWebResults(
   const seenUrls = new Set<string>();
 
   const addSource = (uri: string, title: string, snippetLine: string) => {
-    if (!uri || seenUrls.has(uri)) return;
+    if (!uri || seenUrls.has(uri) || sources.length >= 6) return;
     seenUrls.add(uri);
     sources.push({ uri, title });
     snippets.push(snippetLine);
@@ -590,14 +602,13 @@ async function fetchFreeLiveGoogleWebResults(
       ''
     )
     .trim()
-    .slice(0, 120);
+    .slice(0, 100);
 
   const googleNewsRssUrl =
     isTopHeadlines || !cleanTopic
       ? 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'
       : `https://news.google.com/rss/search?q=${encodeURIComponent(cleanTopic)}&hl=en-US&gl=US&ceid=US:en`;
 
-  // 1. Primary Google News RSS via rss2json
   let gotGoogleNews = false;
   try {
     const res = await fetch(
@@ -609,12 +620,12 @@ async function fetchFreeLiveGoogleWebResults(
       };
       if (Array.isArray(data.items) && data.items.length > 0) {
         gotGoogleNews = true;
-        for (const item of data.items.slice(0, 8)) {
+        for (const item of data.items.slice(0, 6)) {
           if (item.title && item.link) {
             addSource(
               item.link,
               item.title,
-              `- [Google News | ${item.pubDate || 'Live'}] ${item.title}`
+              `- [${item.pubDate || 'Today'}] ${item.title}`
             );
           }
         }
@@ -624,7 +635,6 @@ async function fetchFreeLiveGoogleWebResults(
     // Fall through to XML proxy
   }
 
-  // 2. Backup Google News XML parser via AllOrigins
   if (!gotGoogleNews) {
     try {
       const xmlRes = await fetch(
@@ -633,72 +643,18 @@ async function fetchFreeLiveGoogleWebResults(
       if (xmlRes.ok) {
         const xmlText = await xmlRes.text();
         const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
-        const items = Array.from(doc.querySelectorAll('item')).slice(0, 8);
+        const items = Array.from(doc.querySelectorAll('item')).slice(0, 6);
         for (const item of items) {
           const title = item.querySelector('title')?.textContent?.trim() || '';
           const link = item.querySelector('link')?.textContent?.trim() || '';
-          const pubDate = item.querySelector('pubDate')?.textContent?.trim() || 'Live';
+          const pubDate = item.querySelector('pubDate')?.textContent?.trim() || 'Today';
           if (title && link) {
-            addSource(link, title, `- [Google News | ${pubDate}] ${title}`);
+            addSource(link, title, `- [${pubDate}] ${title}`);
           }
         }
       }
     } catch {
-      // Continue to DuckDuckGo & Wikipedia
-    }
-  }
-
-  // 3. DuckDuckGo Instant Answer API (Free, zero-key)
-  if (cleanTopic && !isTopHeadlines) {
-    try {
-      const ddgRes = await fetch(
-        `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanTopic)}&format=json&no_html=1&skip_disambig=1`
-      );
-      if (ddgRes.ok) {
-        const ddg = (await ddgRes.json()) as {
-          Heading?: string;
-          AbstractText?: string;
-          AbstractURL?: string;
-          RelatedTopics?: Array<{ Text?: string; FirstURL?: string }>;
-        };
-        if (ddg.AbstractText && ddg.AbstractURL) {
-          addSource(
-            ddg.AbstractURL,
-            ddg.Heading || cleanTopic,
-            `- [Web Summary: ${ddg.Heading || cleanTopic}] ${ddg.AbstractText}`
-          );
-        }
-        for (const topic of (ddg.RelatedTopics || []).slice(0, 3)) {
-          if (topic.Text && topic.FirstURL) {
-            addSource(topic.FirstURL, topic.Text.slice(0, 70), `- [Web Fact] ${topic.Text}`);
-          }
-        }
-      }
-    } catch {
-      // Ignore DDG failure
-    }
-
-    // 4. Wikipedia Live Search API (Free, CORS-enabled)
-    try {
-      const wikiRes = await fetch(
-        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-          cleanTopic
-        )}&srlimit=4&format=json&origin=*`
-      );
-      if (wikiRes.ok) {
-        const wikiData = (await wikiRes.json()) as {
-          query?: { search?: Array<{ title: string; snippet: string }> };
-        };
-        for (const r of wikiData?.query?.search || []) {
-          const cleanSnippet = r.snippet.replace(/<[^>]+>/g, '');
-          const wikiUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(
-            r.title.replace(/\s+/g, '_')
-          )}`;
-          addSource(wikiUrl, `${r.title} - Wikipedia`, `- [Reference: ${r.title}] ${cleanSnippet}`);
-        }
-      }
-    } catch {
-      // Ignore Wikipedia failure
+      // Ignore proxy errors
     }
   }
 
@@ -707,44 +663,61 @@ async function fetchFreeLiveGoogleWebResults(
   }
 
   return {
-    contextText: `[LIVE GOOGLE NEWS & WEB SEARCH RESULTS RETRIEVED RIGHT NOW (${new Date().toLocaleString()}):\n${snippets.join(
+    contextText: `Here are today's live Google News headlines (${new Date().toLocaleDateString()}):\n${snippets.join(
       '\n'
-    )}\nSynthesize an accurate, comprehensive, up-to-date response using these live search results.]`,
+    )}`,
     sources,
   };
 }
 
 /**
- * Free Keyless AI + Live Google News Synthesizer:
- * Runs automatically if `/api/chat` returns 405 Not Allowed (static preview)
- * or if the server backend is unavailable, ensuring zero errors anywhere.
+ * Cleans up any stray HTML tags like <br> so responses always render cleanly.
+ */
+function sanitizeNaturalResponse(rawText: string): string {
+  return rawText
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?p>/gi, '\n')
+    .trim();
+}
+
+/**
+ * Free Keyless AI Synthesizer:
+ * Answers naturally like ChatGPT/Gemini when `/api/chat` returns 405 Not Allowed
+ * in static preview or when running without a paid backend.
  */
 async function synthesizeWithFreeFallbackEngine(
-  userQuery: string,
-  systemContext: string,
-  liveContextText: string,
+  conversationHistory: Array<{ role: string; content: string }>,
+  systemInstructions: string,
+  liveNewsContext: string,
   liveSources: Array<{ uri: string; title: string }>
 ): Promise<string> {
-  const combinedPrompt = liveContextText
-    ? `${liveContextText}\n\nUser Question: ${userQuery}\nProvide a clear, comprehensive, well-structured response.`
-    : userQuery;
+  const messagesPayload: Array<{ role: string; content: string }> = [
+    {
+      role: 'system',
+      content: systemInstructions.slice(0, 1400),
+    },
+    ...conversationHistory.slice(-8).map((msg, idx, arr) => {
+      const isLast = idx === arr.length - 1 && msg.role === 'user';
+      if (isLast && liveNewsContext) {
+        return {
+          role: 'user',
+          content: `${liveNewsContext}\n\nUsing these live headlines, give a clear, natural news briefing answering: ${msg.content}`,
+        };
+      }
+      return {
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content,
+      };
+    }),
+  ];
 
-  // Attempt 1: Keyless Pollinations POST API
+  // Attempt 1: Keyless Pollinations Chat API
   try {
     const res = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: systemContext.slice(0, 1200),
-          },
-          {
-            role: 'user',
-            content: combinedPrompt.slice(0, 3500),
-          },
-        ],
+        messages: messagesPayload,
         model: 'openai',
         private: true,
       }),
@@ -752,7 +725,7 @@ async function synthesizeWithFreeFallbackEngine(
     if (res.ok) {
       const text = (await res.text()).trim();
       if (text && !text.startsWith('<html') && !text.startsWith('<!DOCTYPE')) {
-        return text;
+        return sanitizeNaturalResponse(text);
       }
     }
   } catch {
@@ -760,21 +733,26 @@ async function synthesizeWithFreeFallbackEngine(
   }
 
   // Attempt 2: Keyless Pollinations GET API
+  const lastUserMessage =
+    conversationHistory[conversationHistory.length - 1]?.content || 'Hello';
   try {
+    const promptForGet = liveNewsContext
+      ? `${liveNewsContext}\n\nSummarize these live news headlines clearly: ${lastUserMessage}`
+      : lastUserMessage;
     const getRes = await fetch(
-      `https://text.pollinations.ai/${encodeURIComponent(combinedPrompt.slice(0, 1200))}`
+      `https://text.pollinations.ai/${encodeURIComponent(promptForGet.slice(0, 1200))}`
     );
     if (getRes.ok) {
       const text = (await getRes.text()).trim();
       if (text && !text.startsWith('<html') && !text.startsWith('<!DOCTYPE')) {
-        return text;
+        return sanitizeNaturalResponse(text);
       }
     }
   } catch {
     // Fall through to structured live briefing formatter
   }
 
-  // Attempt 3: Guaranteed Structured Live News & Web Briefing from fetched Google results
+  // Attempt 3: Guaranteed Structured Live News Briefing if headlines were fetched
   if (liveSources.length > 0) {
     const todayLabel = new Date().toLocaleDateString('en-US', {
       weekday: 'long',
@@ -785,7 +763,7 @@ async function synthesizeWithFreeFallbackEngine(
     const headlinesMarkdown = liveSources
       .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
       .join('\n');
-    return `### Live Google News & Web Briefing — ${todayLabel}\n\nHere are the latest verified headlines retrieved live from Google News and the web:\n\n${headlinesMarkdown}`;
+    return `### Top Live Headlines — ${todayLabel}\n\n${headlinesMarkdown}`;
   }
 
   throw new Error(
@@ -828,48 +806,36 @@ async function generateFreePollinationsImage(
   });
 }
 
-function buildTemporalGroundingPrefix(
+function buildSystemInstructions(
   profession: ProfessionProfile,
-  memories: MemoryEntry[],
-  isLiveNewsQuery: boolean
+  memories: MemoryEntry[]
 ): string {
   const now = new Date();
-  const timeZone =
-    typeof Intl !== 'undefined'
-      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time'
-      : 'UTC';
   const formattedDate = now.toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
-  const formattedTime = now.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
 
-  const sections: string[] = [
-    `[JARVIS REAL-TIME CONTEXT: Current Date = ${formattedDate} | Local Time = ${formattedTime} (${timeZone})]`,
-    `[ACTIVE SPECIALIST MODE: ${profession.name} — ${profession.systemDirective}]`,
+  const parts: string[] = [
+    NATURAL_CHAT_SYSTEM_PROMPT,
+    `Current Date: ${formattedDate}.`,
   ];
 
-  if (isLiveNewsQuery) {
-    sections.push(
-      '[REAL-TIME BRIEFING DIRECTIVE: Present the live retrieved search headlines and facts clearly with dates and structured bullet points.]'
-    );
+  if (profession.id !== 'general') {
+    parts.push(`Active Specialist Mode (${profession.name}): ${profession.systemDirective}`);
   }
 
   if (memories.length > 0) {
     const memorySummary = memories
-      .slice(0, 12)
+      .slice(0, 10)
       .map((m) => `- (${m.category}) ${m.content}`)
       .join('\n');
-    sections.push(`[USER PERSISTENT MEMORY & PREFERENCES:\n${memorySummary}]`);
+    parts.push(`User Preferences & Memory:\n${memorySummary}`);
   }
 
-  return sections.join('\n');
+  return parts.join('\n\n');
 }
 
 function evaluateSafeMathExpression(rawExpr: string): number {
@@ -1593,7 +1559,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // CORE SEND MESSAGE ENGINE (WORKS ON BOTH VERCEL & STATIC PREVIEW 100% FREE)
+  // CORE SEND MESSAGE ENGINE (NATURAL CHATGPT/GEMINI STYLE + FREE LIVE NEWS)
   // ==========================================================================
 
   const handleSendMessage = async (
@@ -1617,7 +1583,7 @@ export default function App() {
           text
         ));
     const weatherRequest = getWeatherRequest(text);
-    const isLiveNewsReq = detectLiveNewsOrCurrentEventIntent(text);
+    const isLiveNewsReq = settings.webSearchEnabled && needsLiveWebSearch(text);
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
@@ -1733,26 +1699,27 @@ export default function App() {
           timestamp: Date.now(),
         };
       } else {
-        const shouldSearchWeb = settings.webSearchEnabled || isLiveNewsReq;
-        const liveWeb = shouldSearchWeb
-          ? await fetchFreeLiveGoogleWebResults(text)
+        const liveWeb = isLiveNewsReq
+          ? await fetchFreeLiveGoogleNews(text)
           : { contextText: '', sources: [] };
 
-        const groundingPrefix = buildTemporalGroundingPrefix(
-          activeProfession,
-          memories,
-          isLiveNewsReq
-        );
+        const systemInstructions = buildSystemInstructions(activeProfession, memories);
 
-        const enrichedMessages = activeMessages.map((m, index) => {
-          const isLastUserTurn = index === activeMessages.length - 1 && m.role === 'user';
-          if (!isLastUserTurn) {
-            return { role: m.role, content: m.content };
+        const cleanHistory = activeMessages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+        const backendMessages = cleanHistory.map((m, index) => {
+          const isLastUserTurn = index === cleanHistory.length - 1 && m.role === 'user';
+          if (!isLastUserTurn) return m;
+          if (liveWeb.contextText) {
+            return {
+              role: 'user',
+              content: `${liveWeb.contextText}\n\nUser Question: ${m.content}`,
+            };
           }
-          const combinedContext = liveWeb.contextText
-            ? `${groundingPrefix}\n\n${liveWeb.contextText}\n\nUser Query:\n${m.content}`
-            : `${groundingPrefix}\n\nUser Query:\n${m.content}`;
-          return { role: m.role, content: combinedContext };
+          return m;
         });
 
         let replyText = '';
@@ -1765,7 +1732,8 @@ export default function App() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              messages: enrichedMessages,
+              messages: backendMessages,
+              systemInstruction: systemInstructions,
               webSearch: false,
               model: 'jarvis-turbo',
               attachments: attachments.map((a) => ({
@@ -1782,14 +1750,14 @@ export default function App() {
             imageUrl?: string;
           }>(res, 'BACKEND_UNAVAILABLE_405');
 
-          replyText = data.content || 'Response processed, sir.';
-          backendSources = data.sources || [];
+          replyText = sanitizeNaturalResponse(data.content || 'How can I help you?');
+          backendSources = isLiveNewsReq ? data.sources || [] : [];
           replyImageUrl = data.imageUrl;
         } catch {
-          // Automatic fallback for static preview (405 Not Allowed) or unconfigured backend
+          // Automatic fallback for static preview (405 Not Allowed)
           replyText = await synthesizeWithFreeFallbackEngine(
-            text,
-            groundingPrefix,
+            cleanHistory,
+            systemInstructions,
             liveWeb.contextText,
             liveWeb.sources
           );
@@ -1799,7 +1767,11 @@ export default function App() {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
           content: replyText,
-          sources: liveWeb.sources.length > 0 ? liveWeb.sources : backendSources,
+          sources: isLiveNewsReq
+            ? liveWeb.sources.length > 0
+              ? liveWeb.sources
+              : backendSources
+            : [],
           imageUrl: replyImageUrl,
           timestamp: Date.now(),
         };
@@ -1930,35 +1902,38 @@ export default function App() {
       setVoiceTurns((prev) => [...prev.slice(-14), userTurn]);
 
       try {
-        const isLiveNews = detectLiveNewsOrCurrentEventIntent(trimmed);
-        const liveWeb = await fetchFreeLiveGoogleWebResults(trimmed);
-        const groundingPrefix = buildTemporalGroundingPrefix(
+        const isLiveNews = needsLiveWebSearch(trimmed);
+        const liveWeb = isLiveNews
+          ? await fetchFreeLiveGoogleNews(trimmed)
+          : { contextText: '', sources: [] };
+
+        const systemInstructions = `${buildSystemInstructions(
           activeProfession,
-          memories,
-          isLiveNews
-        );
+          memories
+        )}\nRespond naturally and concisely as if speaking out loud.`;
 
         const historyPayload = voiceTurns.slice(-8).map((t) => ({
           role: t.role,
           content: t.text,
         }));
-
-        const fullPrompt = liveWeb.contextText
-          ? `${groundingPrefix}\n\n${liveWeb.contextText}\n[VOICE MODE: Answer naturally and concisely as if speaking out loud.]\n\nSpoken Input: ${trimmed}`
-          : `${groundingPrefix}\n[VOICE MODE: Answer naturally and concisely as if speaking out loud.]\n\nSpoken Input: ${trimmed}`;
-
         historyPayload.push({
           role: 'user',
-          content: fullPrompt,
+          content: trimmed,
         });
 
         let reply = '';
         try {
+          const backendPayload = historyPayload.map((m, idx) =>
+            idx === historyPayload.length - 1 && liveWeb.contextText
+              ? { role: 'user', content: `${liveWeb.contextText}\n\nUser Question: ${m.content}` }
+              : m
+          );
           const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              messages: historyPayload,
+              messages: backendPayload,
+              systemInstruction: systemInstructions,
               webSearch: false,
               model: 'jarvis-turbo',
               attachments: [],
@@ -1969,11 +1944,11 @@ export default function App() {
             res,
             'BACKEND_UNAVAILABLE_405'
           );
-          reply = data.content || 'Processed, sir.';
+          reply = sanitizeNaturalResponse(data.content || 'Processed.');
         } catch {
           reply = await synthesizeWithFreeFallbackEngine(
-            trimmed,
-            groundingPrefix,
+            historyPayload,
+            systemInstructions,
             liveWeb.contextText,
             liveWeb.sources
           );
@@ -2674,11 +2649,7 @@ export default function App() {
                     <ArcReactorLogo glow={true} size="sm" />
                     <div className="flex items-center gap-2 text-xs md:text-sm text-cyan-300">
                       <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
-                      <span className="font-mono">
-                        {settings.webSearchEnabled
-                          ? `JARVIS (${activeProfession.shortName}) is searching live Google & web...`
-                          : `JARVIS (${activeProfession.shortName}) is thinking...`}
-                      </span>
+                      <span className="font-mono">JARVIS is thinking...</span>
                     </div>
                   </div>
                 </div>
