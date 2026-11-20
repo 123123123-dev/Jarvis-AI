@@ -1,9 +1,9 @@
 /**
-- @license
-- SPDX-License-Identifier: Apache-2.0
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { WelcomeHero } from './components/WelcomeHero';
@@ -14,6 +14,7 @@ import { ShareModal } from './components/ShareModal';
 import { ExportModal } from './components/ExportModal';
 import { ToolsModal } from './components/ToolsModal';
 import { ArcReactorLogo } from './components/ArcReactorLogo';
+import { LiveVoiceStudio, VoiceTurn } from './components/LiveVoiceStudio';
 import {
   Attachment,
   Conversation,
@@ -35,21 +36,24 @@ import {
 import { isImageGenerationPrompt } from './services/imagePrompts';
 import { getWeatherRequest } from './services/weather';
 import {
+  ProfessionId,
+  PROFESSION_PROFILES,
+  ENGINEERING_MATERIALS_DB,
+  CLINICAL_LAB_REFERENCES,
+  MemoryEntry,
+  detectLiveNewsOrCurrentEventIntent,
+  buildTemporalGroundingPrefix,
+  evaluateSafeMathExpression,
+} from './services/jarvisKnowledgeEngine';
+import {
   WifiOff,
   Sparkles,
   Link,
-  Mic,
-  MicOff,
-  Volume2,
-  VolumeX,
   Radio,
   Newspaper,
   Stethoscope,
   Cpu,
-  Scale,
   Briefcase,
-  GraduationCap,
-  Code2,
   Palette,
   Image as ImageIcon,
   Calculator,
@@ -57,66 +61,16 @@ import {
   Monitor,
   Command,
   X,
-  Send,
-  Check,
   ChevronRight,
-  Globe,
   Clock,
-  Activity,
   ShieldAlert,
-  Zap,
   Layers,
-  Sliders,
   Download,
-  Copy,
   Trash2,
-  Plus,
   Search,
   RefreshCw,
   Wrench,
-  BookOpen,
-  TrendingUp,
-  PhoneCall,
-  PhoneOff,
-  Eye,
 } from 'lucide-react';
-
-// ============================================================================
-// JARVIS EXPANDED SUBSYSTEM TYPES & CONSTANTS (INTERNAL TO App.tsx)
-// ============================================================================
-
-type ProfessionId =
-  | 'general'
-  | 'medical'
-  | 'engineering'
-  | 'software'
-  | 'legal'
-  | 'finance'
-  | 'science'
-  | 'cybersecurity'
-  | 'education'
-  | 'architecture'
-  | 'business'
-  | 'creative';
-
-interface ProfessionProfile {
-  id: ProfessionId;
-  name: string;
-  shortName: string;
-  category: string;
-  description: string;
-  badgeColor: string;
-  systemDirective: string;
-  disclaimer?: string;
-  quickPrompts: string[];
-}
-
-interface MemoryEntry {
-  id: string;
-  category: 'Identity' | 'Profession' | 'Preference' | 'Project';
-  content: string;
-  createdAt: number;
-}
 
 interface GeneratedArtItem {
   id: string;
@@ -127,235 +81,9 @@ interface GeneratedArtItem {
   createdAt: number;
 }
 
-interface VoiceTurn {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  timestamp: number;
-}
-
-interface SpeechRecognitionAlternativeLike {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognitionResultLike {
-  isFinal: boolean;
-  length: number;
-  [index: number]: SpeechRecognitionAlternativeLike;
-}
-
-interface SpeechRecognitionEventLike {
-  resultIndex: number;
-  results: {
-    length: number;
-    [index: number]: SpeechRecognitionResultLike;
-  };
-}
-
-interface SpeechRecognitionInstance {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onstart: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-}
-
 const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
-
-const PROFESSION_PROFILES: ProfessionProfile[] = [
-  {
-    id: 'general',
-    name: 'JARVIS Omniscient Core',
-    shortName: 'All-Domain Core',
-    category: 'Universal',
-    description: 'Full-spectrum intelligence across current events, science, coding, daily tasks, and reasoning.',
-    badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
-    systemDirective:
-      'Operate as JARVIS, an omniscient, articulate, real-time AI assistant capable of answering across all human professions with precision, current temporal awareness, and structured clarity.',
-    quickPrompts: [
-      'Give me a complete briefing on today’s top global and technology news.',
-      'Compare the latest breakthroughs in AI, clean energy, and spaceflight.',
-      'Help me plan a high-productivity daily schedule and workflow.',
-    ],
-  },
-  {
-    id: 'medical',
-    name: 'Medical & Clinical Intelligence',
-    shortName: 'Medical & Health',
-    category: 'Healthcare',
-    description: 'Pathophysiology, pharmacology, differential considerations, lab ranges, and clinical literature.',
-    badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
-    systemDirective:
-      'Operate as a senior Medical & Clinical Intelligence specialist. Provide thorough, evidence-based explanations of physiology, differential diagnoses, pharmacology mechanisms, drug interactions, and diagnostic reference ranges using clear clinical structure. Always include a concise reminder to consult a licensed healthcare provider for personal diagnosis or treatment.',
-    disclaimer:
-      'Clinical Reference Mode: Information is educational and not a substitute for professional medical diagnosis or emergency care.',
-    quickPrompts: [
-      'Explain how to interpret a Complete Blood Count (CBC) and metabolic panel.',
-      'What are potential interactions between NSAIDs, ACE inhibitors, and diuretics?',
-      'Outline common causes and red-flag symptoms for acute chest discomfort.',
-    ],
-  },
-  {
-    id: 'engineering',
-    name: 'Multidisciplinary Engineering Suite',
-    shortName: 'Engineering',
-    category: 'STEM',
-    description: 'Mechanical, Electrical, Civil, Aerospace, Chemical, Thermodynamics, and Control Systems.',
-    badgeColor: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
-    systemDirective:
-      'Operate as a Principal Multidisciplinary Engineer (Mechanical, Electrical, Civil, Aerospace, Control Systems). Provide rigorous first-principles equations, SI and imperial unit conversions, material selection criteria, safety factors, circuit analysis, and step-by-step calculations.',
-    quickPrompts: [
-      'Calculate bending stress and deflection for a simply supported steel I-beam.',
-      'Design a 5V to 3.3V buck converter circuit with component sizing formulas.',
-      'Compare lithium-iron-phosphate (LFP) vs solid-state battery thermal runaway thresholds.',
-    ],
-  },
-  {
-    id: 'software',
-    name: 'Principal Software & AI Architect',
-    shortName: 'Software & AI',
-    category: 'Technology',
-    description: 'Full-stack TypeScript/React, distributed systems, algorithms, databases, and DevOps.',
-    badgeColor: 'text-sky-300 border-sky-500/40 bg-sky-500/10',
-    systemDirective:
-      'Operate as a Principal Software & Distributed Systems Architect. Deliver clean, production-grade code, Big-O complexity analysis, database schema optimizations, and resilient microservices architectures.',
-    quickPrompts: [
-      'Architect a fault-tolerant real-time WebSocket and Redis pub/sub backend.',
-      'Review React rendering bottlenecks and propose memoization strategies.',
-      'Write a production-ready rate limiter algorithm using token bucket logic.',
-    ],
-  },
-  {
-    id: 'legal',
-    name: 'Legal & Regulatory Analyst',
-    shortName: 'Legal & Policy',
-    category: 'Law',
-    description: 'Contract structure, intellectual property, compliance frameworks, and statutory analysis.',
-    badgeColor: 'text-indigo-300 border-indigo-500/40 bg-indigo-500/10',
-    systemDirective:
-      'Operate as a Senior Legal & Regulatory Analyst. Break down contract clauses, liability allocations, IP licensing terms, and compliance requirements clearly. Note that output is informational analysis rather than formal legal representation.',
-    disclaimer:
-      'Legal Analysis Mode: Educational regulatory and contract breakdown; consult qualified counsel for formal legal advice.',
-    quickPrompts: [
-      'Explain key clauses to audit in a SaaS Master Services Agreement (MSA).',
-      'Compare patent, copyright, and trade secret protection for AI software.',
-      'Outline GDPR and global data privacy compliance obligations for web apps.',
-    ],
-  },
-  {
-    id: 'finance',
-    name: 'Quantitative Finance & Macro Strategist',
-    shortName: 'Finance & Markets',
-    category: 'Economics',
-    description: 'Corporate valuation, DCF modeling, macroeconomics, portfolio risk, and financial statements.',
-    badgeColor: 'text-teal-300 border-teal-500/40 bg-teal-500/10',
-    systemDirective:
-      'Operate as a Quantitative Financial Analyst & Macroeconomic Strategist. Provide structured DCF frameworks, ratio analysis, interest-rate sensitivity breakdowns, and risk-adjusted capital allocation insights.',
-    quickPrompts: [
-      'Build a step-by-step Discounted Cash Flow (DCF) valuation framework.',
-      'Analyze how central bank interest rate shifts impact tech equities and bonds.',
-      'Explain EBITDA, Free Cash Flow conversion, and working capital dynamics.',
-    ],
-  },
-  {
-    id: 'science',
-    name: 'Scientific Research & Physics Fellow',
-    shortName: 'Physics & Science',
-    category: 'Research',
-    description: 'Quantum mechanics, astrophysics, molecular biology, chemistry, and experimental methodology.',
-    badgeColor: 'text-violet-300 border-violet-500/40 bg-violet-500/10',
-    systemDirective:
-      'Operate as a Senior Scientific Research Fellow across Physics, Chemistry, and Molecular Biology. Explain complex phenomena from fundamental laws, cite experimental methods, and maintain rigorous precision.',
-    quickPrompts: [
-      'Explain CRISPR-Cas9 base editing versus prime editing mechanisms.',
-      'Summarize recent advances in magnetic confinement nuclear fusion.',
-      'Derive the relativistic energy-momentum relation clearly.',
-    ],
-  },
-  {
-    id: 'cybersecurity',
-    name: 'Cybersecurity & Zero-Trust Engineer',
-    shortName: 'Cybersecurity',
-    category: 'Security',
-    description: 'Threat modeling, OWASP Top 10, cryptography, cloud IAM, and defensive hardening.',
-    badgeColor: 'text-rose-300 border-rose-500/40 bg-rose-500/10',
-    systemDirective:
-      'Operate as a Principal Defensive Cybersecurity Architect. Focus on threat modeling, OWASP vulnerability remediation, cryptographic best practices, zero-trust network design, and secure authentication flows.',
-    quickPrompts: [
-      'Audit JWT session storage vs HttpOnly cookies against XSS and CSRF attacks.',
-      'Design a Zero-Trust IAM architecture for a multi-region cloud deployment.',
-      'Explain post-quantum cryptography standards (ML-KEM / CRYSTALS-Kyber).',
-    ],
-  },
-  {
-    id: 'education',
-    name: 'Master Educator & Socratic Tutor',
-    shortName: 'Education & Tutor',
-    category: 'Learning',
-    description: 'Step-by-step intuitive explanations, exam prep, flashcards, and mental models for any subject.',
-    badgeColor: 'text-lime-300 border-lime-500/40 bg-lime-500/10',
-    systemDirective:
-      'Operate as a Master Educator. Break down complex subjects from beginner intuition to advanced mastery using clear analogies, worked examples, and active recall check-in questions.',
-    quickPrompts: [
-      'Teach me Linear Algebra eigenvalues and eigenvectors visually from scratch.',
-      'Create a 7-day intensive study syllabus for mastering organic chemistry.',
-      'Quiz me on world history geopolitics with increasing difficulty.',
-    ],
-  },
-  {
-    id: 'architecture',
-    name: 'Architectural & Structural Designer',
-    shortName: 'Architecture & CAD',
-    category: 'Design',
-    description: 'Sustainable building design, structural loads, urban planning, acoustics, and HVAC systems.',
-    badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
-    systemDirective:
-      'Operate as a Senior Architect & Structural Systems Consultant. Address spatial ergonomics, passive solar design, structural load paths, sustainable materials, and building code principles.',
-    quickPrompts: [
-      'Design a passive-house residential floorplan optimized for hot climates.',
-      'Compare mass timber (CLT) vs reinforced concrete for mid-rise structures.',
-      'Calculate thermal envelope R-values and HVAC tonnage requirements.',
-    ],
-  },
-  {
-    id: 'business',
-    name: 'Executive Strategy & Operations COO',
-    shortName: 'Business & Ops',
-    category: 'Leadership',
-    description: 'Go-to-market strategy, unit economics, OKRs, supply chain optimization, and negotiations.',
-    badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
-    systemDirective:
-      'Operate as an Executive Strategy & Operations Advisor. Deliver actionable GTM roadmaps, CAC/LTV unit economics, competitive moat analysis, and crisp executive memos.',
-    quickPrompts: [
-      'Draft a 90-day Go-To-Market launch plan for an AI SaaS product.',
-      'Analyze SaaS unit economics: CAC payback period, Net Dollar Retention, and churn.',
-      'Prepare a structured negotiation playbook for enterprise vendor contracts.',
-    ],
-  },
-  {
-    id: 'creative',
-    name: 'Creative Director & Narrative Studio',
-    shortName: 'Creative & Media',
-    category: 'Arts',
-    description: 'Screenwriting, visual storytelling, brand identity, world-building, and art direction.',
-    badgeColor: 'text-fuchsia-300 border-fuchsia-500/40 bg-fuchsia-500/10',
-    systemDirective:
-      'Operate as an award-winning Creative Director and Storyteller. Craft vivid prose, compelling scripts, detailed visual art prompts, and cohesive brand narratives.',
-    quickPrompts: [
-      'Write an opening sci-fi scene set aboard an orbital shipyard at dawn.',
-      'Generate 5 hyper-detailed cinematic image prompts for a futuristic laboratory.',
-      'Develop a complete brand voice and visual identity manifesto.',
-    ],
-  },
-];
 
 const NEWS_CATEGORIES = [
   {
@@ -447,219 +175,6 @@ const IMAGE_STYLE_PRESETS = [
   },
 ];
 
-// ============================================================================
-// REAL-TIME INTENT DETECTION & SAFE SCIENTIFIC EXPRESSION ENGINE
-// ============================================================================
-
-function detectLiveNewsOrCurrentEventIntent(text: string): boolean {
-  const lower = text.toLowerCase().trim();
-  if (!lower) return false;
-  const patterns = [
-    /\btoday(?:'s|s)?\b/,
-    /\bright now\b/,
-    /\bhappening now\b/,
-    /\bcurrent(?:ly)?\b/,
-    /\blatest\b/,
-    /\bbreaking\b/,
-    /\bnews\b/,
-    /\bheadlines?\b/,
-    /\bupdate(?:s)?\b/,
-    /\bthis week\b/,
-    /\bthis month\b/,
-    /\byesterday\b/,
-    /\blive\s+(?:score|scores|match|game|price|market|update)/,
-    /\bstock price\b/,
-    /\bbitcoin price\b/,
-    /\bcrypto price\b/,
-    /\bexchange rate\b/,
-    /\bwho won\b/,
-    /\bwhat happened\b/,
-    /\bweather\b/,
-    /\b2025\b/,
-    /\b2026\b/,
-  ];
-  return patterns.some((pattern) => pattern.test(lower));
-}
-
-function buildTemporalGroundingPrefix(
-  profession: ProfessionProfile,
-  memories: MemoryEntry[],
-  isLiveNewsQuery: boolean
-): string {
-  const now = new Date();
-  const timeZone =
-    typeof Intl !== 'undefined'
-      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time'
-      : 'UTC';
-  const formattedDate = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-  const formattedTime = now.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-  const sections: string[] = [
-    `[JARVIS REAL-TIME CONTEXT: Current Date = ${formattedDate} | Local Time = ${formattedTime} (${timeZone})]`,
-    `[ACTIVE SPECIALIST MODE: ${profession.name} — ${profession.systemDirective}]`,
-  ];
-
-  if (isLiveNewsQuery) {
-    sections.push(
-      '[REAL-TIME GROUNDING DIRECTIVE: The user is asking about current events, today’s news, or live real-world information. Prioritize up-to-date live web search results, cite verifiable facts clearly, and explicitly mention dates/timestamps when reporting news.]'
-    );
-  }
-
-  if (memories.length > 0) {
-    const memorySummary = memories
-      .slice(0, 12)
-      .map((m) => `- (${m.category}) ${m.content}`)
-      .join('\n');
-    sections.push(`[USER PERSISTENT MEMORY & PREFERENCES:\n${memorySummary}]`);
-  }
-
-  return sections.join('\n');
-}
-
-// Safe recursive-descent math parser for Engineering & Scientific Workbench (no eval)
-function evaluateSafeMathExpression(rawExpr: string): number {
-  const sanitized = rawExpr
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/π/g, 'pi')
-    .replace(/\*\*/g, '^');
-
-  if (!sanitized) throw new Error('Enter a mathematical expression.');
-  if (!/^[0-9a-z+\-*/^().]+$/.test(sanitized)) {
-    throw new Error('Unsupported characters in expression.');
-  }
-
-  let pos = 0;
-
-  const peek = () => sanitized[pos] || '';
-  const consume = () => sanitized[pos++];
-
-  const parseExpression = (): number => {
-    let value = parseTerm();
-    while (peek() === '+' || peek() === '-') {
-      const op = consume();
-      const right = parseTerm();
-      value = op === '+' ? value + right : value - right;
-    }
-    return value;
-  };
-
-  const parseTerm = (): number => {
-    let value = parsePower();
-    while (peek() === '*' || peek() === '/') {
-      const op = consume();
-      const right = parsePower();
-      if (op === '/') {
-        if (right === 0) throw new Error('Division by zero.');
-        value /= right;
-      } else {
-        value *= right;
-      }
-    }
-    return value;
-  };
-
-  const parsePower = (): number => {
-    let base = parseUnary();
-    if (peek() === '^') {
-      consume();
-      const exponent = parsePower();
-      base = Math.pow(base, exponent);
-    }
-    return base;
-  };
-
-  const parseUnary = (): number => {
-    if (peek() === '+') {
-      consume();
-      return parseUnary();
-    }
-    if (peek() === '-') {
-      consume();
-      return -parseUnary();
-    }
-    return parsePrimary();
-  };
-
-  const parsePrimary = (): number => {
-    if (peek() === '(') {
-      consume();
-      const inside = parseExpression();
-      if (peek() !== ')') throw new Error('Mismatched parentheses.');
-      consume();
-      return inside;
-    }
-
-    if (/[a-z]/.test(peek())) {
-      let ident = '';
-      while (/[a-z]/.test(peek())) {
-        ident += consume();
-      }
-      if (ident === 'pi') return Math.PI;
-      if (ident === 'e') return Math.E;
-
-      if (peek() !== '(') throw new Error(`Expected '(' after function ${ident}.`);
-      consume();
-      const arg = parseExpression();
-      if (peek() !== ')') throw new Error(`Expected ')' after ${ident}(...).`);
-      consume();
-
-      switch (ident) {
-        case 'sin':
-          return Math.sin(arg);
-        case 'cos':
-          return Math.cos(arg);
-        case 'tan':
-          return Math.tan(arg);
-        case 'sqrt':
-          if (arg < 0) throw new Error('Square root of negative number.');
-          return Math.sqrt(arg);
-        case 'log':
-          if (arg <= 0) throw new Error('Logarithm requires positive input.');
-          return Math.log10(arg);
-        case 'ln':
-          if (arg <= 0) throw new Error('Natural log requires positive input.');
-          return Math.log(arg);
-        case 'abs':
-          return Math.abs(arg);
-        default:
-          throw new Error(`Unknown function: ${ident}`);
-      }
-    }
-
-    let numStr = '';
-    while (/[0-9.]/.test(peek())) {
-      numStr += consume();
-    }
-    if (!numStr) throw new Error(`Unexpected token near "${peek()}"`);
-    const parsed = Number(numStr);
-    if (!Number.isFinite(parsed)) throw new Error('Invalid numeric value.');
-    return parsed;
-  };
-
-  const result = parseExpression();
-  if (pos !== sanitized.length) {
-    throw new Error(`Unexpected trailing character "${peek()}"`);
-  }
-  if (!Number.isFinite(result)) {
-    throw new Error('Calculation overflow or undefined result.');
-  }
-  return result;
-}
-
-// ============================================================================
-// EXISTING BACKEND RESPONSE HELPERS (UNMODIFIED)
-// ============================================================================
-
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const rawText = await response.text();
   const trimmed = rawText.trim();
@@ -734,12 +249,8 @@ async function revokeAccountSession(): Promise<void> {
   }
 }
 
-// ============================================================================
-// MAIN JARVIS APPLICATION COMPONENT
-// ============================================================================
-
 export default function App() {
-  // Persistence state (EXISTING - UNCHANGED)
+  // Persistence state
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile>(defaultUser);
@@ -747,7 +258,7 @@ export default function App() {
   const [directSignInUrl, setDirectSignInUrl] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState('');
 
-  // UI state (EXISTING - UNCHANGED)
+  // UI state
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 768
   );
@@ -759,15 +270,13 @@ export default function App() {
   );
   const [aiConfigured, setAiConfigured] = useState(false);
 
-  // Modals state (EXISTING - UNCHANGED)
+  // Modals state
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
 
-  // ==========================================================================
-  // NEW EXPANDED JARVIS CAPABILITY STATES
-  // ==========================================================================
+  // Expanded JARVIS Modular Capability States
   const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
     try {
       const saved = localStorage.getItem(JARVIS_PROFESSION_STORAGE_KEY) as ProfessionId | null;
@@ -800,7 +309,7 @@ export default function App() {
     }
   });
 
-  // Expanded Studio & Overlay Modals
+  // Studio & Overlay Modals
   const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
   const [newsModalOpen, setNewsModalOpen] = useState(false);
   const [professionsModalOpen, setProfessionsModalOpen] = useState(false);
@@ -813,17 +322,6 @@ export default function App() {
   // Live Clock Telemetry
   const [liveClock, setLiveClock] = useState(() => new Date());
 
-  // Live Voice Conversation Engine State
-  const [voiceListening, setVoiceListening] = useState(false);
-  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
-  const [voiceThinking, setVoiceThinking] = useState(false);
-  const [voiceInterimTranscript, setVoiceInterimTranscript] = useState('');
-  const [voiceTurns, setVoiceTurns] = useState<VoiceTurn[]>([]);
-  const [voiceError, setVoiceError] = useState('');
-  const [voiceAutoLoop, setVoiceAutoLoop] = useState(true);
-  const [voiceRate, setVoiceRate] = useState(1.05);
-  const [voiceLang, setVoiceLang] = useState('en-US');
-
   // Image Studio State
   const [studioPrompt, setStudioPrompt] = useState('');
   const [studioStyle, setStudioStyle] = useState(IMAGE_STYLE_PRESETS[0].id);
@@ -832,41 +330,32 @@ export default function App() {
   const [studioError, setStudioError] = useState('');
 
   // Engineering & Medical Workbench State
-  const [workbenchTab, setWorkbenchTab] = useState<'calc' | 'ohms' | 'units' | 'clinical'>('calc');
+  const [workbenchTab, setWorkbenchTab] = useState<
+    'calc' | 'ohms' | 'units' | 'materials' | 'clinical' | 'labs'
+  >('calc');
   const [calcInput, setCalcInput] = useState('sqrt(144) + (25 * 4) / 2');
   const [calcResult, setCalcResult] = useState<string>('62');
   const [calcError, setCalcError] = useState<string>('');
   const [ohmsVoltage, setOhmsVoltage] = useState('12');
   const [ohmsResistance, setOhmsResistance] = useState('470');
-  const [unitCategory, setUnitCategory] = useState<'length' | 'pressure' | 'energy' | 'temp'>('pressure');
+  const [unitCategory, setUnitCategory] = useState<'length' | 'pressure' | 'energy' | 'temp'>(
+    'pressure'
+  );
   const [unitValue, setUnitValue] = useState('101325');
   const [clinicalWeightKg, setClinicalWeightKg] = useState('72');
   const [clinicalHeightCm, setClinicalHeightCm] = useState('176');
   const [clinicalAge, setClinicalAge] = useState('30');
 
-  // Memory Modal Input State
+  // Memory & Profession Filter Inputs
   const [newMemoryCategory, setNewMemoryCategory] = useState<MemoryEntry['category']>('Profession');
   const [newMemoryText, setNewMemoryText] = useState('');
-
-  // Profession Filter State
   const [professionSearch, setProfessionSearch] = useState('');
 
-  // Refs (EXISTING + NEW)
+  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatScrollContainerRef = useRef<HTMLDivElement>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const accountSaveQueue = useRef(Promise.resolve());
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const liveVoiceOpenRef = useRef(false);
-  const voiceAutoLoopRef = useRef(true);
-
-  useEffect(() => {
-    liveVoiceOpenRef.current = liveVoiceOpen;
-  }, [liveVoiceOpen]);
-
-  useEffect(() => {
-    voiceAutoLoopRef.current = voiceAutoLoop;
-  }, [voiceAutoLoop]);
 
   // Persist profession, memory, and art gallery
   useEffect(() => {
@@ -913,10 +402,7 @@ export default function App() {
     [activeProfessionId]
   );
 
-  // ==========================================================================
-  // EXISTING EFFECTS (PORTABLE IMPORT, DIRECT SIGN-IN, HEALTH, SAVE, ONLINE)
-  // ==========================================================================
-
+  // Portable archive restore
   useEffect(() => {
     const nonce = new URLSearchParams(window.location.hash.slice(1)).get('portable-import');
     const archiveWindow = window.parent !== window ? window.parent : window.opener;
@@ -1188,25 +674,7 @@ export default function App() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       setSpeakingMessageId(null);
-      setVoiceSpeaking(false);
     }
-  };
-
-  const pickPreferredJarvisVoice = () => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
-    const voices = window.speechSynthesis.getVoices();
-    return (
-      voices.find(
-        (v) =>
-          v.lang.startsWith('en') &&
-          (v.name.includes('Natural') ||
-            v.name.includes('Google') ||
-            v.name.includes('Daniel') ||
-            v.name.includes('Male'))
-      ) ||
-      voices.find((v) => v.lang.startsWith('en')) ||
-      null
-    );
   };
 
   const handleToggleSpeakMessage = (messageId: string, text: string) => {
@@ -1219,7 +687,6 @@ export default function App() {
 
     stopSpeaking();
 
-    // Clean markdown and citations before speaking
     const cleanText = text
       .replace(/\[.*?\]\(.*?\)/g, '')
       .replace(/!\[.*?\]\(.*?\)/g, '')
@@ -1230,10 +697,20 @@ export default function App() {
     if (!cleanText) return;
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = voiceRate;
+    utterance.rate = 1.05;
     utterance.pitch = 0.95;
 
-    const jarvisVoice = pickPreferredJarvisVoice();
+    const voices = window.speechSynthesis.getVoices();
+    const jarvisVoice =
+      voices.find(
+        (v) =>
+          v.lang.startsWith('en') &&
+          (v.name.includes('Natural') ||
+            v.name.includes('Google') ||
+            v.name.includes('Daniel') ||
+            v.name.includes('Male'))
+      ) || voices.find((v) => v.lang.startsWith('en'));
+
     if (jarvisVoice) {
       utterance.voice = jarvisVoice;
     }
@@ -1246,18 +723,54 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // ==========================================================================
-  // CORE SEND MESSAGE ENGINE (ENHANCED WITH TEMPORAL & PROFESSION GROUNDING)
-  // ==========================================================================
+  // Save Live Voice Studio transcript into active or new chat thread
+  const handleSaveVoiceTranscriptToChat = (turns: VoiceTurn[]) => {
+    if (turns.length === 0) return;
+    const importedMessages: Message[] = turns.map((turn) => ({
+      id: turn.id,
+      role: turn.role,
+      content: turn.text,
+      timestamp: turn.timestamp,
+    }));
 
+    if (activeChatId) {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeChatId
+            ? {
+                ...c,
+                updatedAt: Date.now(),
+                messages: [...c.messages, ...importedMessages],
+              }
+            : c
+        )
+      );
+    } else {
+      const firstUser = turns.find((t) => t.role === 'user');
+      const newConv: Conversation = {
+        id: Math.random().toString(36).substring(2, 9),
+        title: firstUser
+          ? `Voice: ${firstUser.text.slice(0, 28)}...`
+          : 'Live Voice Conversation',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: importedMessages,
+      };
+      setConversations((prev) => [newConv, ...prev]);
+      setActiveChatId(newConv.id);
+    }
+  };
+
+  // Send message with Temporal, Profession & Memory Grounding
   const handleSendMessage = async (
     text: string,
     attachments: Attachment[] = []
   ) => {
     if (!text.trim() && attachments.length === 0) return;
 
-    // Check if prompt is an image generation request
-    const hasImageReference = attachments.some((attachment) => attachment.type.startsWith('image/'));
+    const hasImageReference = attachments.some((attachment) =>
+      attachment.type.startsWith('image/')
+    );
     const isImageReq =
       settings.selectedModel === 'jarvis-art' ||
       isImageGenerationPrompt(text) ||
@@ -1268,7 +781,6 @@ export default function App() {
     const weatherRequest = getWeatherRequest(text);
     const isLiveNewsReq = detectLiveNewsOrCurrentEventIntent(text);
 
-    // Automatically turn on Live Web Knowledge if user asks about today's news / current events
     if (isLiveNewsReq && !settings.webSearchEnabled) {
       setSettings((prev) => ({ ...prev, webSearchEnabled: true }));
     }
@@ -1284,7 +796,6 @@ export default function App() {
     let currentConvId = activeChatId;
     let updatedConversations = [...conversations];
 
-    // If no active chat, create one
     if (!currentConvId) {
       const title =
         text.trim().slice(0, 36) + (text.length > 36 ? '...' : '') ||
@@ -1322,7 +833,6 @@ export default function App() {
           userMessage,
         ];
 
-      // Build temporal + active profession + neural memory grounding for the latest user turn
       const groundingPrefix = buildTemporalGroundingPrefix(
         activeProfession,
         memories,
@@ -1467,7 +977,6 @@ export default function App() {
         })
       );
 
-      // Auto-speak if voice is enabled
       if (settings.voiceEnabled && assistantMessage.content) {
         handleToggleSpeakMessage(assistantMessage.id, assistantMessage.content);
       }
@@ -1506,235 +1015,7 @@ export default function App() {
     handleSendMessage(prompt, []);
   };
 
-  // ==========================================================================
-  // LIVE TWO-WAY VOICE CONVERSATION ENGINE (CHATGPT VOICE STYLE)
-  // ==========================================================================
-
-  const stopVoiceRecognition = useCallback(() => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.onend = null;
-        recognitionRef.current.abort();
-      } catch {
-        // Ignore abort errors
-      }
-      recognitionRef.current = null;
-    }
-    setVoiceListening(false);
-  }, []);
-
-  const speakVoiceTurnReply = useCallback(
-    (replyText: string, onFinished?: () => void) => {
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-        onFinished?.();
-        return;
-      }
-      window.speechSynthesis.cancel();
-
-      const cleanText = replyText
-        .replace(/\[.*?\]\(.*?\)/g, '')
-        .replace(/!\[.*?\]\(.*?\)/g, '')
-        .replace(/[*#`_>-]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      if (!cleanText) {
-        onFinished?.();
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.rate = voiceRate;
-      utterance.pitch = 0.96;
-      utterance.lang = voiceLang;
-
-      const jarvisVoice = pickPreferredJarvisVoice();
-      if (jarvisVoice) utterance.voice = jarvisVoice;
-
-      utterance.onstart = () => setVoiceSpeaking(true);
-      utterance.onend = () => {
-        setVoiceSpeaking(false);
-        onFinished?.();
-      };
-      utterance.onerror = () => {
-        setVoiceSpeaking(false);
-        onFinished?.();
-      };
-
-      activeUtteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
-    },
-    [voiceRate, voiceLang]
-  );
-
-  const processLiveVoiceTurn = useCallback(
-    async (spokenText: string) => {
-      const trimmed = spokenText.trim();
-      if (!trimmed) return;
-
-      setVoiceThinking(true);
-      setVoiceError('');
-      const userTurn: VoiceTurn = {
-        id: Math.random().toString(36).substring(2, 9),
-        role: 'user',
-        text: trimmed,
-        timestamp: Date.now(),
-      };
-      setVoiceTurns((prev) => [...prev.slice(-14), userTurn]);
-
-      try {
-        const isLiveNews = detectLiveNewsOrCurrentEventIntent(trimmed);
-        const groundingPrefix = buildTemporalGroundingPrefix(
-          activeProfession,
-          memories,
-          isLiveNews
-        );
-
-        const historyPayload = voiceTurns.slice(-8).map((t) => ({
-          role: t.role,
-          content: t.text,
-        }));
-
-        historyPayload.push({
-          role: 'user',
-          content: `${groundingPrefix}\n[VOICE CONVERSATION MODE: Respond naturally, clearly, and conversationally as if speaking out loud in real time. Avoid raw markdown tables or heavy code symbols unless requested.]\n\nSpoken Input: ${trimmed}`,
-        });
-
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: historyPayload,
-            webSearch: true,
-            model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
-            attachments: [],
-          }),
-        });
-
-        const data = await readJsonResponse<{ content?: string; error?: string }>(
-          res,
-          'Live Voice API error'
-        );
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Voice response failed.');
-        }
-
-        const reply = data.content || 'I heard you, sir, though no response text was returned.';
-        const assistantTurn: VoiceTurn = {
-          id: Math.random().toString(36).substring(2, 9),
-          role: 'assistant',
-          text: reply,
-          timestamp: Date.now(),
-        };
-        setVoiceTurns((prev) => [...prev.slice(-14), assistantTurn]);
-        setVoiceThinking(false);
-
-        speakVoiceTurnReply(reply, () => {
-          if (liveVoiceOpenRef.current && voiceAutoLoopRef.current) {
-            startVoiceRecognition();
-          }
-        });
-      } catch (err) {
-        setVoiceThinking(false);
-        setVoiceError(err instanceof Error ? err.message : 'Live voice processing failed.');
-      }
-    },
-    [activeProfession, memories, settings.dualEngineEnabled, settings.selectedModel, voiceTurns, speakVoiceTurnReply]
-  );
-
-  const startVoiceRecognition = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const SpeechRecCtor =
-      (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
-        .SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionInstance })
-        .webkitSpeechRecognition;
-
-    if (!SpeechRecCtor) {
-      setVoiceError(
-        'Your browser does not support Web Speech Recognition. Please use Chrome, Edge, or Safari for Live Voice.'
-      );
-      return;
-    }
-
-    stopVoiceRecognition();
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      setVoiceSpeaking(false);
-    }
-
-    const recognition = new SpeechRecCtor();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = voiceLang;
-
-    let finalTranscriptBuffer = '';
-
-    recognition.onstart = () => {
-      setVoiceListening(true);
-      setVoiceError('');
-      setVoiceInterimTranscript('');
-    };
-
-    recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0]?.transcript || '';
-        if (event.results[i].isFinal) {
-          finalTranscriptBuffer += transcript + ' ';
-        } else {
-          interim += transcript;
-        }
-      }
-      setVoiceInterimTranscript((finalTranscriptBuffer + interim).trim());
-    };
-
-    recognition.onerror = (event: { error?: string }) => {
-      setVoiceListening(false);
-      if (event.error && event.error !== 'aborted' && event.error !== 'no-speech') {
-        setVoiceError(`Microphone notice: ${event.error}`);
-      }
-    };
-
-    recognition.onend = () => {
-      setVoiceListening(false);
-      const captured = finalTranscriptBuffer.trim();
-      setVoiceInterimTranscript('');
-      if (captured) {
-        void processLiveVoiceTurn(captured);
-      }
-    };
-
-    recognitionRef.current = recognition;
-    try {
-      recognition.start();
-    } catch {
-      setVoiceError('Unable to access microphone. Check browser mic permissions.');
-    }
-  }, [voiceLang, stopVoiceRecognition, processLiveVoiceTurn]);
-
-  const openLiveVoiceSession = () => {
-    stopSpeaking();
-    setLiveVoiceOpen(true);
-    setVoiceError('');
-    window.setTimeout(() => {
-      startVoiceRecognition();
-    }, 250);
-  };
-
-  const closeLiveVoiceSession = () => {
-    setLiveVoiceOpen(false);
-    stopVoiceRecognition();
-    stopSpeaking();
-    setVoiceThinking(false);
-    setVoiceInterimTranscript('');
-  };
-
-  // ==========================================================================
-  // IMAGE STUDIO GENERATION HANDLER
-  // ==========================================================================
-
+  // Image Studio Generation Handler
   const handleGenerateStudioImage = async () => {
     const cleanPrompt = studioPrompt.trim();
     if (!cleanPrompt || studioGenerating) return;
@@ -1784,10 +1065,7 @@ export default function App() {
     }
   };
 
-  // ==========================================================================
-  // LIVE SCREEN VISION CAPTURE HANDLER
-  // ==========================================================================
-
+  // Live Screen Vision Capture Handler
   const handleCaptureScreenVision = async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
@@ -1830,14 +1108,13 @@ export default function App() {
     }
   };
 
-  // ==========================================================================
-  // ENGINEERING & MEDICAL WORKBENCH COMPUTATIONS
-  // ==========================================================================
-
+  // Engineering & Medical Workbench Computations
   const handleRunScientificCalc = () => {
     try {
       const value = evaluateSafeMathExpression(calcInput);
-      setCalcResult(Number.isInteger(value) ? String(value) : value.toPrecision(10).replace(/\.?0+$/, ''));
+      setCalcResult(
+        Number.isInteger(value) ? String(value) : value.toPrecision(10).replace(/\.?0+$/, '')
+      );
       setCalcError('');
     } catch (err) {
       setCalcError(err instanceof Error ? err.message : 'Invalid expression');
@@ -1922,10 +1199,7 @@ export default function App() {
     };
   }, [clinicalWeightKg, clinicalHeightCm, clinicalAge]);
 
-  // ==========================================================================
-  // MEMORY & COMMAND PALETTE HELPERS
-  // ==========================================================================
-
+  // Memory & Command Palette Helpers
   const handleAddMemory = () => {
     const trimmed = newMemoryText.trim();
     if (!trimmed) return;
@@ -1962,7 +1236,10 @@ export default function App() {
         id: 'voice',
         label: 'Start Live Two-Way Voice Conversation (ChatGPT Voice Mode)',
         shortcut: 'VOICE',
-        action: () => openLiveVoiceSession(),
+        action: () => {
+          stopSpeaking();
+          setLiveVoiceOpen(true);
+        },
       },
       {
         id: 'news',
@@ -2018,9 +1295,9 @@ export default function App() {
     );
   }, [commandActions, commandQuery]);
 
-  // ==========================================================================
-  // RENDER UI
-  // ==========================================================================
+  const isMedicalRole =
+    activeProfession.id === 'medical' || activeProfession.id === 'pharmacology';
+  const isEngineeringRole = activeProfession.id.endsWith('-eng');
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#060b13] text-slate-100 antialiased font-sans">
@@ -2064,15 +1341,15 @@ export default function App() {
           hasMessages={(activeConversation?.messages?.length || 0) > 0}
         />
 
-        {/* ================================================================
-            JARVIS OMNISCIENT COMMAND & TELEMETRY DOCK
-        ================================================================ */}
+        {/* JARVIS OMNISCIENT COMMAND & TELEMETRY DOCK */}
         <div className="bg-[#08101d]/95 border-b border-cyan-500/20 px-3 md:px-4 py-1.5 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* Live Voice Conversation Trigger */}
             <button
               type="button"
-              onClick={openLiveVoiceSession}
+              onClick={() => {
+                stopSpeaking();
+                setLiveVoiceOpen(true);
+              }}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-200 text-xs font-medium transition shadow-sm"
               title="Start ChatGPT-style two-way hands-free voice conversation"
             >
@@ -2080,7 +1357,6 @@ export default function App() {
               <span>Live Voice</span>
             </button>
 
-            {/* Today's News & Live Events Hub */}
             <button
               type="button"
               onClick={() => setNewsModalOpen(true)}
@@ -2091,16 +1367,15 @@ export default function App() {
               <span>Today's News</span>
             </button>
 
-            {/* All Professions Specialist Selector */}
             <button
               type="button"
               onClick={() => setProfessionsModalOpen(true)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition ${activeProfession.badgeColor}`}
-              title="Switch active profession specialist (Medical, Engineering, Law, Finance, Software, etc.)"
+              title="Switch active profession specialist (18 domains)"
             >
-              {activeProfession.id === 'medical' ? (
+              {isMedicalRole ? (
                 <Stethoscope className="w-3.5 h-3.5" />
-              ) : activeProfession.id === 'engineering' ? (
+              ) : isEngineeringRole ? (
                 <Cpu className="w-3.5 h-3.5" />
               ) : (
                 <Briefcase className="w-3.5 h-3.5" />
@@ -2108,7 +1383,6 @@ export default function App() {
               <span>{activeProfession.shortName}</span>
             </button>
 
-            {/* Neural Image Creation Studio */}
             <button
               type="button"
               onClick={() => setImageStudioOpen(true)}
@@ -2119,18 +1393,16 @@ export default function App() {
               <span>Image Studio</span>
             </button>
 
-            {/* Engineering & Medical Workbench */}
             <button
               type="button"
               onClick={() => setWorkbenchOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              title="Engineering Calculator, Ohm's Law, Unit Converter & Clinical BMI/BMR"
+              title="Engineering Materials, Lab References, Ohm's Law & Scientific Calculator"
             >
               <Calculator className="w-3.5 h-3.5 text-emerald-400" />
               <span>Eng & Med Lab</span>
             </button>
 
-            {/* Live Screen Vision */}
             <button
               type="button"
               onClick={() => void handleCaptureScreenVision()}
@@ -2141,7 +1413,6 @@ export default function App() {
               <span>Screen Vision</span>
             </button>
 
-            {/* Neural Memory */}
             <button
               type="button"
               onClick={() => setMemoryModalOpen(true)}
@@ -2153,7 +1424,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Live Date/Time Telemetry & Command Palette Trigger */}
           <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
             <span className="hidden lg:flex items-center gap-1 text-cyan-300/80">
               <Clock className="w-3 h-3" />
@@ -2179,7 +1449,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Active Profession Disclaimer Banner (e.g., Medical or Legal safety notice) */}
+        {/* Active Profession Disclaimer Banner */}
         {activeProfession.disclaimer && (
           <div className="bg-emerald-950/50 border-b border-emerald-500/25 px-4 py-1 flex items-center justify-between text-[11px] text-emerald-200/90">
             <div className="flex items-center gap-2">
@@ -2308,9 +1578,7 @@ export default function App() {
         />
       </div>
 
-      {/* ====================================================================
-          EXISTING MODALS (UNMODIFIED)
-      ==================================================================== */}
+      {/* EXISTING MODALS */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
@@ -2334,178 +1602,18 @@ export default function App() {
         onInsertPrompt={(text) => handleSendMessage(text, [])}
       />
 
-      {/* ====================================================================
-          1. LIVE TWO-WAY VOICE CONVERSATION OVERLAY (CHATGPT VOICE STYLE)
-      ==================================================================== */}
-      {liveVoiceOpen && (
-        <div className="fixed inset-0 z-50 bg-[#040811]/95 backdrop-blur-xl flex flex-col justify-between p-6 text-slate-100">
-          {/* Top Bar */}
-          <div className="flex items-center justify-between max-w-4xl w-full mx-auto">
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-xs font-mono text-cyan-300">
-                <Activity className="w-3.5 h-3.5 animate-pulse" />
-                JARVIS LIVE VOICE • {activeProfession.shortName.toUpperCase()}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <select
-                value={voiceLang}
-                onChange={(e) => setVoiceLang(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200"
-                aria-label="Voice language"
-              >
-                <option value="en-US">English (US)</option>
-                <option value="en-GB">English (UK)</option>
-                <option value="ur-PK">Urdu (Pakistan)</option>
-                <option value="hi-IN">Hindi (India)</option>
-                <option value="ar-SA">Arabic</option>
-                <option value="es-ES">Spanish</option>
-                <option value="fr-FR">French</option>
-              </select>
-              <button
-                type="button"
-                onClick={closeLiveVoiceSession}
-                className="p-2 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300"
-                aria-label="Close Live Voice"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
+      {/* MODULAR LIVE VOICE STUDIO COMPONENT */}
+      <LiveVoiceStudio
+        isOpen={liveVoiceOpen}
+        onClose={() => setLiveVoiceOpen(false)}
+        activeProfession={activeProfession}
+        memories={memories}
+        selectedModel={settings.selectedModel}
+        dualEngineEnabled={settings.dualEngineEnabled}
+        onSaveTranscriptToChat={handleSaveVoiceTranscriptToChat}
+      />
 
-          {/* Center Holographic Reactor Visualizer & Live Transcript */}
-          <div className="flex-1 flex flex-col items-center justify-center max-w-2xl w-full mx-auto text-center gap-6 my-4 overflow-y-auto">
-            <div
-              className={`relative w-44 h-44 rounded-full flex items-center justify-center transition-all duration-500 ${
-                voiceListening
-                  ? 'scale-110 shadow-[0_0_80px_rgba(34,211,238,0.55)] bg-cyan-500/15 border-2 border-cyan-400'
-                  : voiceSpeaking
-                    ? 'scale-105 shadow-[0_0_80px_rgba(59,130,246,0.6)] bg-blue-500/20 border-2 border-blue-400'
-                    : voiceThinking
-                      ? 'animate-pulse bg-violet-500/15 border-2 border-violet-400'
-                      : 'bg-slate-900/80 border border-slate-700'
-              }`}
-            >
-              <ArcReactorLogo glow={voiceListening || voiceSpeaking || voiceThinking} size="lg" />
-            </div>
-
-            <div className="space-y-2">
-              <h2 className="text-xl font-semibold tracking-wide text-cyan-200">
-                {voiceListening
-                  ? 'Listening to you...'
-                  : voiceThinking
-                    ? 'JARVIS is analyzing & searching live data...'
-                    : voiceSpeaking
-                      ? 'JARVIS is speaking...'
-                      : 'Tap microphone to speak'}
-              </h2>
-              {voiceInterimTranscript && (
-                <p className="text-sm text-cyan-300/90 italic max-w-lg mx-auto">
-                  “{voiceInterimTranscript}”
-                </p>
-              )}
-              {voiceError && (
-                <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 inline-block">
-                  {voiceError}
-                </p>
-              )}
-            </div>
-
-            {/* Rolling Voice Conversation Feed */}
-            {voiceTurns.length > 0 && (
-              <div className="w-full max-h-48 overflow-y-auto bg-slate-900/70 border border-slate-800 rounded-xl p-3 text-left space-y-2">
-                {voiceTurns.map((turn) => (
-                  <div
-                    key={turn.id}
-                    className={`text-xs leading-relaxed ${
-                      turn.role === 'user' ? 'text-cyan-300' : 'text-slate-200'
-                    }`}
-                  >
-                    <strong className="uppercase font-mono mr-1.5">
-                      {turn.role === 'user' ? 'You:' : 'JARVIS:'}
-                    </strong>
-                    <span>{turn.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Controls */}
-          <div className="max-w-xl w-full mx-auto flex flex-col items-center gap-4">
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => {
-                  if (voiceListening) {
-                    stopVoiceRecognition();
-                  } else {
-                    startVoiceRecognition();
-                  }
-                }}
-                className={`p-4 rounded-full transition shadow-lg ${
-                  voiceListening
-                    ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
-                    : 'bg-slate-800 text-cyan-300 hover:bg-slate-700 border border-cyan-500/40'
-                }`}
-                title={voiceListening ? 'Pause Listening' : 'Start Listening'}
-              >
-                {voiceListening ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
-              </button>
-
-              {voiceSpeaking && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    stopSpeaking();
-                    if (voiceAutoLoop) startVoiceRecognition();
-                  }}
-                  className="px-4 py-2.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs font-medium hover:bg-amber-500/30"
-                >
-                  Interrupt & Speak
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={closeLiveVoiceSession}
-                className="p-4 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-lg"
-                title="End Live Voice Call"
-              >
-                <PhoneOff className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-slate-400">
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={voiceAutoLoop}
-                  onChange={(e) => setVoiceAutoLoop(e.target.checked)}
-                  className="accent-cyan-400"
-                />
-                <span>Continuous hands-free loop</span>
-              </label>
-              <label className="flex items-center gap-1.5">
-                <span>Speed: {voiceRate.toFixed(2)}x</span>
-                <input
-                  type="range"
-                  min="0.8"
-                  max="1.4"
-                  step="0.05"
-                  value={voiceRate}
-                  onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
-                  className="w-20 accent-cyan-400"
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ====================================================================
-          2. REAL-TIME NEWS & CURRENT EVENTS BRIEFING MODAL
-      ==================================================================== */}
+      {/* REAL-TIME NEWS & CURRENT EVENTS BRIEFING MODAL */}
       {newsModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0b1322] border border-cyan-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5">
@@ -2564,9 +1672,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ====================================================================
-          3. ALL-PROFESSIONS SPECIALIST HUB (MEDICAL, ENGINEERING, LAW, ETC.)
-      ==================================================================== */}
+      {/* ALL-PROFESSIONS SPECIALIST HUB (18 DOMAINS) */}
       {professionsModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0b1322] border border-cyan-500/30 rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col p-6 shadow-2xl">
@@ -2575,11 +1681,11 @@ export default function App() {
                 <Layers className="w-5 h-5 text-cyan-400" />
                 <div>
                   <h3 className="text-base font-semibold text-white">
-                    All-Professions Specialist Matrix
+                    All-Professions Specialist Matrix ({PROFESSION_PROFILES.length} Expert Domains)
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Equip JARVIS with domain-specific reasoning across medicine, engineering, law,
-                    finance, and science
+                    Equip JARVIS with domain-specific reasoning across medicine, pharmacology,
+                    engineering, law, finance, and science
                   </p>
                 </div>
               </div>
@@ -2598,7 +1704,7 @@ export default function App() {
                 type="text"
                 value={professionSearch}
                 onChange={(e) => setProfessionSearch(e.target.value)}
-                placeholder="Search professions (e.g., Medical, Engineering, Software, Finance, Legal)..."
+                placeholder="Search 18 professions (Medical, Pharmacology, Mechanical, Electrical, Civil, Aerospace, Law, Finance)..."
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -2670,9 +1776,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ====================================================================
-          4. JARVIS NEURAL IMAGE CREATION & GALLERY STUDIO MODAL
-      ==================================================================== */}
+      {/* JARVIS NEURAL IMAGE CREATION & GALLERY STUDIO MODAL */}
       {imageStudioOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0b1322] border border-fuchsia-500/30 rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col p-6 shadow-2xl">
@@ -2755,7 +1859,6 @@ export default function App() {
               {studioError && <p className="text-xs text-rose-400">{studioError}</p>}
             </div>
 
-            {/* Studio Gallery */}
             <div className="flex-1 overflow-y-auto pt-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-slate-300">
@@ -2811,12 +1914,10 @@ export default function App() {
         </div>
       )}
 
-      {/* ====================================================================
-          5. ENGINEERING & MEDICAL SCIENTIFIC WORKBENCH MODAL
-      ==================================================================== */}
+      {/* ENGINEERING & MEDICAL SCIENTIFIC WORKBENCH MODAL */}
       {workbenchOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-emerald-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-[#0b1322] border border-emerald-500/30 rounded-2xl max-w-3xl w-full max-h-[88vh] flex flex-col p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
                 <Wrench className="w-5 h-5 text-emerald-400" />
@@ -2825,7 +1926,8 @@ export default function App() {
                     Engineering & Clinical Calculation Workbench
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Instant local scientific evaluator, Ohm's law, unit conversion & clinical metrics
+                    Scientific evaluator, Ohm's law, unit conversions, materials database &
+                    clinical lab ranges
                   </p>
                 </div>
               </div>
@@ -2838,14 +1940,15 @@ export default function App() {
               </button>
             </div>
 
-            {/* Workbench Tabs */}
             <div className="flex flex-wrap gap-1.5">
               {(
                 [
                   { id: 'calc', label: 'Scientific Calculator' },
                   { id: 'ohms', label: "Ohm's Law & Power" },
                   { id: 'units', label: 'Engineering Units' },
+                  { id: 'materials', label: 'Materials DB' },
                   { id: 'clinical', label: 'Medical BMI / BMR' },
+                  { id: 'labs', label: 'Clinical Lab Ranges' },
                 ] as const
               ).map((tab) => (
                 <button
@@ -2863,202 +1966,257 @@ export default function App() {
               ))}
             </div>
 
-            {/* Tab 1: Scientific Calculator */}
-            {workbenchTab === 'calc' && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={calcInput}
-                    onChange={(e) => setCalcInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleRunScientificCalc();
-                    }}
-                    placeholder="e.g., sin(pi/4) * 100 + sqrt(256)"
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-cyan-200"
-                  />
+            <div className="flex-1 overflow-y-auto">
+              {workbenchTab === 'calc' && (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={calcInput}
+                      onChange={(e) => setCalcInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleRunScientificCalc();
+                      }}
+                      placeholder="e.g., sin(pi/4) * 100 + sqrt(256)"
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-cyan-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRunScientificCalc}
+                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-semibold"
+                    >
+                      Compute
+                    </button>
+                  </div>
+                  {calcError ? (
+                    <p className="text-xs text-rose-400">{calcError}</p>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Result:</span>
+                      <span className="text-base font-mono font-bold text-emerald-300">
+                        {calcResult}
+                      </span>
+                    </div>
+                  )}
                   <button
                     type="button"
-                    onClick={handleRunScientificCalc}
-                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-semibold"
+                    onClick={() => {
+                      setWorkbenchOpen(false);
+                      setActiveProfessionId('mechanical-eng');
+                      void handleSendMessage(
+                        `Verify and explain the engineering/mathematical derivation for: ${calcInput} = ${calcResult}`,
+                        []
+                      );
+                    }}
+                    className="text-xs text-cyan-400 hover:underline"
                   >
-                    Compute
+                    → Ask JARVIS Engineering Suite to analyze this calculation
                   </button>
                 </div>
-                {calcError ? (
-                  <p className="text-xs text-rose-400">{calcError}</p>
-                ) : (
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                    <span className="text-xs text-slate-400">Result:</span>
-                    <span className="text-base font-mono font-bold text-emerald-300">
-                      {calcResult}
-                    </span>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setWorkbenchOpen(false);
-                    setActiveProfessionId('engineering');
-                    void handleSendMessage(
-                      `Verify and explain the engineering/mathematical derivation for: ${calcInput} = ${calcResult}`,
-                      []
-                    );
-                  }}
-                  className="text-xs text-cyan-400 hover:underline"
-                >
-                  → Ask JARVIS Engineering Suite to analyze this calculation
-                </button>
-              </div>
-            )}
+              )}
 
-            {/* Tab 2: Ohm's Law */}
-            {workbenchTab === 'ohms' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Voltage (Volts)</label>
-                    <input
-                      type="number"
-                      value={ohmsVoltage}
-                      onChange={(e) => setOhmsVoltage(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                    />
+              {workbenchTab === 'ohms' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        Voltage (Volts)
+                      </label>
+                      <input
+                        type="number"
+                        value={ohmsVoltage}
+                        onChange={(e) => setOhmsVoltage(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">
+                        Resistance (Ohms Ω)
+                      </label>
+                      <input
+                        type="number"
+                        value={ohmsResistance}
+                        onChange={(e) => setOhmsResistance(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">
-                      Resistance (Ohms Ω)
-                    </label>
-                    <input
-                      type="number"
-                      value={ohmsResistance}
-                      onChange={(e) => setOhmsResistance(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                    />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">Current (I)</div>
+                      <div className="text-sm font-mono text-cyan-300 mt-0.5">
+                        {ohmsMetrics.currentAmps}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">Current (mA)</div>
+                      <div className="text-sm font-mono text-cyan-300 mt-0.5">
+                        {ohmsMetrics.currentMa}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">Power Dissipation</div>
+                      <div className="text-sm font-mono text-amber-300 mt-0.5">
+                        {ohmsMetrics.powerWatts}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                    <div className="text-[10px] text-slate-400">Current (I)</div>
-                    <div className="text-sm font-mono text-cyan-300 mt-0.5">
-                      {ohmsMetrics.currentAmps}
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                    <div className="text-[10px] text-slate-400">Current (mA)</div>
-                    <div className="text-sm font-mono text-cyan-300 mt-0.5">
-                      {ohmsMetrics.currentMa}
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                    <div className="text-[10px] text-slate-400">Power Dissipation</div>
-                    <div className="text-sm font-mono text-amber-300 mt-0.5">
-                      {ohmsMetrics.powerWatts}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+              )}
 
-            {/* Tab 3: Engineering Unit Converter */}
-            {workbenchTab === 'units' && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <select
-                    value={unitCategory}
-                    onChange={(e) =>
-                      setUnitCategory(e.target.value as 'length' | 'pressure' | 'energy' | 'temp')
-                    }
-                    className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200"
-                  >
-                    <option value="pressure">Pressure / Stress (Pa base)</option>
-                    <option value="length">Length / Distance (m base)</option>
-                    <option value="energy">Energy / Work (J base)</option>
-                    <option value="temp">Temperature (°C base)</option>
-                  </select>
-                  <input
-                    type="number"
-                    value={unitValue}
-                    onChange={(e) => setUnitValue(e.target.value)}
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                  />
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {unitConversions.map((u) => (
-                    <div
-                      key={u.label}
-                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800"
+              {workbenchTab === 'units' && (
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <select
+                      value={unitCategory}
+                      onChange={(e) =>
+                        setUnitCategory(
+                          e.target.value as 'length' | 'pressure' | 'energy' | 'temp'
+                        )
+                      }
+                      className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200"
                     >
-                      <div className="text-[10px] text-slate-400">{u.label}</div>
-                      <div className="text-xs font-mono text-emerald-300 mt-0.5">{u.value}</div>
+                      <option value="pressure">Pressure / Stress (Pa base)</option>
+                      <option value="length">Length / Distance (m base)</option>
+                      <option value="energy">Energy / Work (J base)</option>
+                      <option value="temp">Temperature (°C base)</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={unitValue}
+                      onChange={(e) => setUnitValue(e.target.value)}
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {unitConversions.map((u) => (
+                      <div
+                        key={u.label}
+                        className="p-2.5 rounded-xl bg-slate-900 border border-slate-800"
+                      >
+                        <div className="text-[10px] text-slate-400">{u.label}</div>
+                        <div className="text-xs font-mono text-emerald-300 mt-0.5">{u.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {workbenchTab === 'materials' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
+                        <th className="py-2 pr-3">Material</th>
+                        <th className="py-2 px-2">Density (kg/m³)</th>
+                        <th className="py-2 px-2">Young's (GPa)</th>
+                        <th className="py-2 px-2">Yield (MPa)</th>
+                        <th className="py-2 pl-2">Thermal (W/m·K)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {ENGINEERING_MATERIALS_DB.map((mat) => (
+                        <tr key={mat.name} className="hover:bg-slate-900/70">
+                          <td className="py-2 pr-3 font-medium text-slate-200">{mat.name}</td>
+                          <td className="py-2 px-2 font-mono text-cyan-300">{mat.densityKgM3}</td>
+                          <td className="py-2 px-2 font-mono text-emerald-300">
+                            {mat.youngsModulusGPa}
+                          </td>
+                          <td className="py-2 px-2 font-mono text-amber-300">
+                            {mat.yieldStrengthMPa}
+                          </td>
+                          <td className="py-2 pl-2 font-mono text-slate-300">
+                            {mat.thermalConductivityWmK}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {workbenchTab === 'clinical' && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Weight (kg)</label>
+                      <input
+                        type="number"
+                        value={clinicalWeightKg}
+                        onChange={(e) => setClinicalWeightKg(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Height (cm)</label>
+                      <input
+                        type="number"
+                        value={clinicalHeightCm}
+                        onChange={(e) => setClinicalHeightCm(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Age (yrs)</label>
+                      <input
+                        type="number"
+                        value={clinicalAge}
+                        onChange={(e) => setClinicalAge(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">Body Mass Index</div>
+                      <div className="text-sm font-mono text-emerald-300 mt-0.5">
+                        {clinicalMetrics.bmi}
+                      </div>
+                      <div className="text-[10px] text-slate-400">{clinicalMetrics.category}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">Est. BMR (Male)</div>
+                      <div className="text-sm font-mono text-cyan-300 mt-0.5">
+                        {clinicalMetrics.bmrMale}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">Est. BMR (Female)</div>
+                      <div className="text-sm font-mono text-cyan-300 mt-0.5">
+                        {clinicalMetrics.bmrFemale}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {workbenchTab === 'labs' && (
+                <div className="space-y-2">
+                  {CLINICAL_LAB_REFERENCES.map((lab) => (
+                    <div
+                      key={lab.abbreviation}
+                      className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div>
+                        <div className="text-xs font-semibold text-slate-100">
+                          {lab.testName}{' '}
+                          <span className="font-mono text-emerald-400">({lab.abbreviation})</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">{lab.clinicalNote}</div>
+                      </div>
+                      <div className="text-xs font-mono text-cyan-300 shrink-0">
+                        {lab.normalRange} {lab.unit}
+                      </div>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Tab 4: Medical BMI / BMR Reference */}
-            {workbenchTab === 'clinical' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Weight (kg)</label>
-                    <input
-                      type="number"
-                      value={clinicalWeightKg}
-                      onChange={(e) => setClinicalWeightKg(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Height (cm)</label>
-                    <input
-                      type="number"
-                      value={clinicalHeightCm}
-                      onChange={(e) => setClinicalHeightCm(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Age (yrs)</label>
-                    <input
-                      type="number"
-                      value={clinicalAge}
-                      onChange={(e) => setClinicalAge(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                    <div className="text-[10px] text-slate-400">Body Mass Index</div>
-                    <div className="text-sm font-mono text-emerald-300 mt-0.5">
-                      {clinicalMetrics.bmi}
-                    </div>
-                    <div className="text-[10px] text-slate-400">{clinicalMetrics.category}</div>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                    <div className="text-[10px] text-slate-400">Est. BMR (Male)</div>
-                    <div className="text-sm font-mono text-cyan-300 mt-0.5">
-                      {clinicalMetrics.bmrMale}
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                    <div className="text-[10px] text-slate-400">Est. BMR (Female)</div>
-                    <div className="text-sm font-mono text-cyan-300 mt-0.5">
-                      {clinicalMetrics.bmrFemale}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* ====================================================================
-          6. JARVIS NEURAL MEMORY & CUSTOM INSTRUCTIONS MODAL
-      ==================================================================== */}
+      {/* JARVIS NEURAL MEMORY & CUSTOM INSTRUCTIONS MODAL */}
       {memoryModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0b1322] border border-violet-500/30 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
@@ -3148,9 +2306,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ====================================================================
-          7. CTRL+P QUICK COMMAND PALETTE
-      ==================================================================== */}
+      {/* CTRL+P QUICK COMMAND PALETTE */}
       {commandPaletteOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center pt-20 p-4">
           <div className="bg-[#0b1322] border border-cyan-500/40 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl">
