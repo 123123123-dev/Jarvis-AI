@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { WelcomeHero } from './components/WelcomeHero';
@@ -14,7 +14,6 @@ import { ShareModal } from './components/ShareModal';
 import { ExportModal } from './components/ExportModal';
 import { ToolsModal } from './components/ToolsModal';
 import { ArcReactorLogo } from './components/ArcReactorLogo';
-import { LiveVoiceStudio, VoiceTurn } from './components/LiveVoiceStudio';
 import {
   Attachment,
   Conversation,
@@ -36,19 +35,12 @@ import {
 import { isImageGenerationPrompt } from './services/imagePrompts';
 import { getWeatherRequest } from './services/weather';
 import {
-  ProfessionId,
-  PROFESSION_PROFILES,
-  ENGINEERING_MATERIALS_DB,
-  CLINICAL_LAB_REFERENCES,
-  MemoryEntry,
-  detectLiveNewsOrCurrentEventIntent,
-  buildTemporalGroundingPrefix,
-  evaluateSafeMathExpression,
-} from './services/jarvisKnowledgeEngine';
-import {
   WifiOff,
   Sparkles,
   Link,
+  Mic,
+  MicOff,
+  Volume2,
   Radio,
   Newspaper,
   Stethoscope,
@@ -61,8 +53,10 @@ import {
   Monitor,
   Command,
   X,
+  Send,
   ChevronRight,
   Clock,
+  Activity,
   ShieldAlert,
   Layers,
   Download,
@@ -70,7 +64,54 @@ import {
   Search,
   RefreshCw,
   Wrench,
+  PhoneOff,
+  KeyRound,
+  Save,
+  LayoutGrid,
+  Share2,
+  FileDown,
 } from 'lucide-react';
+
+// ============================================================================
+// SELF-CONTAINED TYPES & CONSTANTS
+// ============================================================================
+
+type ProfessionId =
+  | 'general'
+  | 'medical'
+  | 'pharmacology'
+  | 'mechanical-eng'
+  | 'electrical-eng'
+  | 'civil-eng'
+  | 'aerospace-eng'
+  | 'software'
+  | 'cybersecurity'
+  | 'legal'
+  | 'finance'
+  | 'science'
+  | 'architecture'
+  | 'business'
+  | 'education'
+  | 'creative';
+
+interface ProfessionProfile {
+  id: ProfessionId;
+  name: string;
+  shortName: string;
+  category: string;
+  description: string;
+  badgeColor: string;
+  systemDirective: string;
+  disclaimer?: string;
+  quickPrompts: string[];
+}
+
+interface MemoryEntry {
+  id: string;
+  category: 'Identity' | 'Profession' | 'Preference' | 'Project';
+  content: string;
+  createdAt: number;
+}
 
 interface GeneratedArtItem {
   id: string;
@@ -81,9 +122,333 @@ interface GeneratedArtItem {
   createdAt: number;
 }
 
+interface VoiceTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: number;
+}
+
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
 const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
+const JARVIS_DIRECT_API_KEY_STORAGE = 'jarvis_client_gemini_key_v1';
+
+const PROFESSION_PROFILES: ProfessionProfile[] = [
+  {
+    id: 'general',
+    name: 'JARVIS Omniscient Core',
+    shortName: 'All-Domain Core',
+    category: 'Universal',
+    description:
+      'Universal intelligence across live current events, science, coding, daily productivity, and reasoning.',
+    badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
+    systemDirective:
+      'Operate as JARVIS, an omniscient, articulate, real-time AI assistant capable of answering across all human professions with live temporal awareness, factual rigor, and structured clarity.',
+    quickPrompts: [
+      'Give me a complete briefing on today’s top global and technology news.',
+      'Compare the latest breakthroughs in AI, clean energy, and spaceflight.',
+      'Help me plan a high-productivity daily schedule and workflow.',
+    ],
+  },
+  {
+    id: 'medical',
+    name: 'Medical & Clinical Intelligence',
+    shortName: 'Medical & Health',
+    category: 'Healthcare',
+    description:
+      'Pathophysiology, differential considerations, diagnostic lab interpretation, and clinical guidelines.',
+    badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
+    systemDirective:
+      'Operate as a Senior Medical & Clinical Intelligence specialist. Explain pathophysiology, differential considerations, diagnostic criteria, and lab markers using clear clinical structure. Always include a concise reminder to consult a licensed healthcare provider for personal diagnosis or treatment.',
+    disclaimer:
+      'Clinical Reference Mode: Educational medical information only — not a substitute for professional medical diagnosis or emergency care.',
+    quickPrompts: [
+      'Explain how to interpret a Complete Blood Count (CBC) and Comprehensive Metabolic Panel.',
+      'Outline common causes and red-flag symptoms for acute chest discomfort.',
+      'Compare diagnostic criteria and first-line management of Type 2 Diabetes.',
+    ],
+  },
+  {
+    id: 'pharmacology',
+    name: 'Clinical Pharmacology & Toxicology',
+    shortName: 'Pharmacology',
+    category: 'Healthcare',
+    description:
+      'Pharmacokinetics (ADME), receptor mechanisms, CYP450 drug interactions, and therapeutic monitoring.',
+    badgeColor: 'text-teal-300 border-teal-500/40 bg-teal-500/10',
+    systemDirective:
+      'Operate as a Board-Certified Clinical Pharmacologist. Detail mechanisms of action, ADME pharmacokinetics, CYP450 enzyme interactions, contraindications, and adverse effect profiles clearly. Remind users to verify dosing with a licensed prescriber or pharmacist.',
+    disclaimer:
+      'Pharmacology Reference Mode: Verify all dosing and drug interactions with a licensed pharmacist or physician.',
+    quickPrompts: [
+      'What are potential interactions between NSAIDs, ACE inhibitors, and diuretics?',
+      'Explain CYP3A4 and CYP2D6 metabolic pathways and major drug interactions.',
+      'Compare beta-blockers by cardioselectivity and clinical indications.',
+    ],
+  },
+  {
+    id: 'mechanical-eng',
+    name: 'Mechanical & Thermodynamics Engineer',
+    shortName: 'Mechanical Eng',
+    category: 'Engineering',
+    description:
+      'Statics, dynamics, FEA stress/strain, fluid mechanics, heat transfer, HVAC, and CAD/CAM.',
+    badgeColor: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
+    systemDirective:
+      'Operate as a Principal Mechanical & Thermal Systems Engineer. Provide first-principles equations, free-body force breakdowns, material selection criteria, safety factors, and SI/imperial unit conversions.',
+    quickPrompts: [
+      'Calculate maximum bending stress and deflection for a simply supported steel I-beam.',
+      'Compare Rankine, Brayton, and Carnot thermodynamic cycle efficiencies.',
+      'Select bearing types and tolerances for a high-RPM precision CNC spindle.',
+    ],
+  },
+  {
+    id: 'electrical-eng',
+    name: 'Electrical, Power & Embedded Engineer',
+    shortName: 'Electrical Eng',
+    category: 'Engineering',
+    description:
+      'Analog/digital circuits, PCB layout, power electronics, microcontrollers, and control theory.',
+    badgeColor: 'text-yellow-300 border-yellow-500/40 bg-yellow-500/10',
+    systemDirective:
+      'Operate as a Principal Electrical & Embedded Systems Engineer. Provide circuit analysis, component sizing formulas, buck/boost converter calculations, and microcontroller guidance.',
+    quickPrompts: [
+      'Design a 12V to 3.3V synchronous buck converter circuit with component sizing formulas.',
+      'Explain PCB impedance control, ground planes, and EMI mitigation.',
+      'Compare PID controller tuning methods (Ziegler-Nichols vs pole placement).',
+    ],
+  },
+  {
+    id: 'civil-eng',
+    name: 'Civil, Structural & Geotechnical Engineer',
+    shortName: 'Civil & Structural',
+    category: 'Engineering',
+    description:
+      'Reinforced concrete, structural steel, seismic load design, foundation engineering, and hydraulics.',
+    badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
+    systemDirective:
+      'Operate as a Principal Civil & Structural Engineer. Analyze dead/live/seismic loads, reinforced concrete moment capacities, soil bearing capacity, and hydrological drainage design.',
+    quickPrompts: [
+      'Explain ACI 318 flexural strength design steps for a reinforced concrete beam.',
+      'Compare shallow spread footings vs deep bored pile foundations in soft clay.',
+      'Calculate Manning’s equation open-channel flow velocity and discharge.',
+    ],
+  },
+  {
+    id: 'aerospace-eng',
+    name: 'Aerospace & Propulsion Systems Engineer',
+    shortName: 'Aerospace Eng',
+    category: 'Engineering',
+    description:
+      'Aerodynamics, orbital mechanics, rocket propulsion (Isp, delta-v), avionics, and composites.',
+    badgeColor: 'text-sky-300 border-sky-500/40 bg-sky-500/10',
+    systemDirective:
+      'Operate as a Senior Aerospace & Orbital Mechanics Engineer. Use Tsiolkovsky rocket equations, lift/drag polar relationships, Hohmann transfer calculations, and aerospace composite trade-offs.',
+    quickPrompts: [
+      'Calculate delta-v using the Tsiolkovsky rocket equation for a two-stage launch vehicle.',
+      'Compare LOX/Methane (methalox) vs LOX/RP-1 rocket engine performance.',
+      'Explain transonic wave drag and supercritical airfoil geometry.',
+    ],
+  },
+  {
+    id: 'software',
+    name: 'Principal Software & AI Architect',
+    shortName: 'Software & AI',
+    category: 'Technology',
+    description:
+      'Full-stack TypeScript/React, distributed systems, algorithms, databases, and DevOps.',
+    badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
+    systemDirective:
+      'Operate as a Principal Software & Distributed Systems Architect. Deliver clean, production-grade code, Big-O complexity analysis, database schema optimizations, and resilient microservices architectures.',
+    quickPrompts: [
+      'Architect a fault-tolerant real-time WebSocket and Redis pub/sub backend.',
+      'Review React rendering bottlenecks and propose memoization strategies.',
+      'Write a production-ready rate limiter algorithm using token bucket logic.',
+    ],
+  },
+  {
+    id: 'cybersecurity',
+    name: 'Cybersecurity & Zero-Trust Engineer',
+    shortName: 'Cybersecurity',
+    category: 'Security',
+    description:
+      'Threat modeling, OWASP Top 10, cryptography, cloud IAM, and defensive hardening.',
+    badgeColor: 'text-rose-300 border-rose-500/40 bg-rose-500/10',
+    systemDirective:
+      'Operate as a Principal Defensive Cybersecurity Architect. Focus on threat modeling, OWASP vulnerability remediation, cryptographic best practices, and zero-trust network design.',
+    quickPrompts: [
+      'Audit JWT session storage vs HttpOnly cookies against XSS and CSRF attacks.',
+      'Design a Zero-Trust IAM architecture for a multi-region cloud deployment.',
+      'Explain post-quantum cryptography standards (ML-KEM / CRYSTALS-Kyber).',
+    ],
+  },
+  {
+    id: 'legal',
+    name: 'Legal & Regulatory Analyst',
+    shortName: 'Legal & Policy',
+    category: 'Law',
+    description:
+      'Contract structure, intellectual property, compliance frameworks, and statutory analysis.',
+    badgeColor: 'text-indigo-300 border-indigo-500/40 bg-indigo-500/10',
+    systemDirective:
+      'Operate as a Senior Legal & Regulatory Analyst. Break down contract clauses, liability allocations, IP licensing terms, and compliance requirements clearly. Note that output is informational analysis rather than formal legal representation.',
+    disclaimer:
+      'Legal Analysis Mode: Educational regulatory and contract breakdown; consult qualified counsel for formal legal advice.',
+    quickPrompts: [
+      'Explain key clauses to audit in a SaaS Master Services Agreement (MSA).',
+      'Compare patent, copyright, and trade secret protection for AI software.',
+      'Outline GDPR and global data privacy compliance obligations for web apps.',
+    ],
+  },
+  {
+    id: 'finance',
+    name: 'Quantitative Finance & Macro Strategist',
+    shortName: 'Finance & Markets',
+    category: 'Economics',
+    description:
+      'Corporate valuation, DCF modeling, macroeconomics, portfolio risk, and financial statements.',
+    badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
+    systemDirective:
+      'Operate as a Quantitative Financial Analyst & Macroeconomic Strategist. Provide structured DCF frameworks, ratio analysis, interest-rate sensitivity breakdowns, and capital allocation insights.',
+    quickPrompts: [
+      'Build a step-by-step Discounted Cash Flow (DCF) valuation framework.',
+      'Analyze how central bank interest rate shifts impact tech equities and bonds.',
+      'Explain EBITDA, Free Cash Flow conversion, and working capital dynamics.',
+    ],
+  },
+  {
+    id: 'science',
+    name: 'Scientific Research & Physics Fellow',
+    shortName: 'Physics & Science',
+    category: 'Research',
+    description:
+      'Quantum mechanics, astrophysics, molecular biology, chemistry, and experimental methodology.',
+    badgeColor: 'text-violet-300 border-violet-500/40 bg-violet-500/10',
+    systemDirective:
+      'Operate as a Senior Scientific Research Fellow across Physics, Chemistry, and Molecular Biology. Explain complex phenomena from fundamental laws, cite experimental methods, and maintain rigorous precision.',
+    quickPrompts: [
+      'Explain CRISPR-Cas9 base editing versus prime editing mechanisms.',
+      'Summarize recent advances in magnetic confinement nuclear fusion.',
+      'Derive the relativistic energy-momentum relation clearly.',
+    ],
+  },
+  {
+    id: 'architecture',
+    name: 'Architectural & Structural Designer',
+    shortName: 'Architecture & CAD',
+    category: 'Design',
+    description:
+      'Sustainable building design, structural loads, urban planning, acoustics, and HVAC systems.',
+    badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
+    systemDirective:
+      'Operate as a Senior Architect & Structural Systems Consultant. Address spatial ergonomics, passive solar design, structural load paths, sustainable materials, and building code principles.',
+    quickPrompts: [
+      'Design a passive-house residential floorplan optimized for hot climates.',
+      'Compare mass timber (CLT) vs reinforced concrete for mid-rise structures.',
+      'Calculate thermal envelope R-values and HVAC tonnage requirements.',
+    ],
+  },
+  {
+    id: 'business',
+    name: 'Executive Strategy & Operations COO',
+    shortName: 'Business & Ops',
+    category: 'Leadership',
+    description:
+      'Go-to-market strategy, unit economics, OKRs, supply chain optimization, and negotiations.',
+    badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
+    systemDirective:
+      'Operate as an Executive Strategy & Operations Advisor. Deliver actionable GTM roadmaps, CAC/LTV unit economics, competitive moat analysis, and crisp executive memos.',
+    quickPrompts: [
+      'Draft a 90-day Go-To-Market launch plan for an AI SaaS product.',
+      'Analyze SaaS unit economics: CAC payback period, Net Dollar Retention, and churn.',
+      'Prepare a structured negotiation playbook for enterprise vendor contracts.',
+    ],
+  },
+  {
+    id: 'education',
+    name: 'Master Educator & Socratic Tutor',
+    shortName: 'Education & Tutor',
+    category: 'Learning',
+    description:
+      'Step-by-step intuitive explanations, exam prep, flashcards, and mental models for any subject.',
+    badgeColor: 'text-lime-300 border-lime-500/40 bg-lime-500/10',
+    systemDirective:
+      'Operate as a Master Educator. Break down complex subjects from beginner intuition to advanced mastery using clear analogies, worked examples, and active recall check-in questions.',
+    quickPrompts: [
+      'Teach me Linear Algebra eigenvalues and eigenvectors visually from scratch.',
+      'Create a 7-day intensive study syllabus for mastering organic chemistry.',
+      'Quiz me on world history geopolitics with increasing difficulty.',
+    ],
+  },
+  {
+    id: 'creative',
+    name: 'Creative Director & Narrative Studio',
+    shortName: 'Creative & Media',
+    category: 'Arts',
+    description:
+      'Screenwriting, visual storytelling, brand identity, world-building, and art direction.',
+    badgeColor: 'text-fuchsia-300 border-fuchsia-500/40 bg-fuchsia-500/10',
+    systemDirective:
+      'Operate as an award-winning Creative Director and Storyteller. Craft vivid prose, compelling scripts, detailed visual art prompts, and cohesive brand narratives.',
+    quickPrompts: [
+      'Write an opening sci-fi scene set aboard an orbital shipyard at dawn.',
+      'Generate 5 hyper-detailed cinematic image prompts for a futuristic laboratory.',
+      'Develop a complete brand voice and visual identity manifesto.',
+    ],
+  },
+];
+
+const ENGINEERING_MATERIALS_DB = [
+  { name: 'Structural Steel (ASTM A36)', density: 7850, youngsGPa: 200, yieldMPa: 250, thermalWmK: 50 },
+  { name: 'Aerospace Aluminum (7075-T6)', density: 2810, youngsGPa: 71.7, yieldMPa: 503, thermalWmK: 130 },
+  { name: 'Titanium Alloy (Ti-6Al-4V)', density: 4430, youngsGPa: 113.8, yieldMPa: 880, thermalWmK: 6.7 },
+  { name: 'Carbon Fiber Epoxy (UD)', density: 1600, youngsGPa: 135, yieldMPa: 1500, thermalWmK: 5.0 },
+  { name: 'Reinforced Concrete', density: 2400, youngsGPa: 30, yieldMPa: 40, thermalWmK: 1.7 },
+  { name: 'Pure Copper (C11000)', density: 8940, youngsGPa: 117, yieldMPa: 69, thermalWmK: 398 },
+];
+
+const CLINICAL_LAB_REFERENCES = [
+  { test: 'Hemoglobin (Hgb)', range: '13.5–17.5 (M) / 12.0–15.5 (F) g/dL', note: 'Oxygen-carrying capacity & anemia screening.' },
+  { test: 'White Blood Cells (WBC)', range: '4.5–11.0 ×10³/µL', note: 'Infection, inflammation, and immune status.' },
+  { test: 'Platelets (PLT)', range: '150–450 ×10³/µL', note: 'Primary hemostasis and blood clotting.' },
+  { test: 'Fasting Blood Glucose', range: '70–99 mg/dL', note: '≥126 mg/dL diagnostic threshold for diabetes.' },
+  { test: 'HbA1c', range: '< 5.7%', note: '2–3 month average glycemic control.' },
+  { test: 'Serum Creatinine', range: '0.7–1.3 (M) / 0.6–1.1 (F) mg/dL', note: 'Renal filtration biomarker (eGFR).' },
+  { test: 'TSH (Thyroid)', range: '0.4–4.0 mIU/L', note: 'Primary hypothyroidism / hyperthyroidism screen.' },
+];
 
 const NEWS_CATEGORIES = [
   {
@@ -161,19 +526,280 @@ const IMAGE_STYLE_PRESETS = [
     suffix:
       'high-budget theatrical anime key visual, vibrant lighting, expressive linework, Makoto Shinkai inspired sky and reflections',
   },
-  {
-    id: 'logo',
-    label: 'Minimalist Vector Emblem',
-    suffix:
-      'clean minimalist geometric vector logo design, centered emblem, crisp edges, modern brand identity on solid dark background',
-  },
-  {
-    id: 'oil-painting',
-    label: 'Classical Fine Art',
-    suffix:
-      'museum-quality classical oil painting on canvas, rich chiaroscuro lighting, visible expressive brushwork, timeless composition',
-  },
 ];
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function detectLiveNewsOrCurrentEventIntent(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  if (!lower) return false;
+  const patterns = [
+    /\btoday(?:'s|s)?\b/,
+    /\bright now\b/,
+    /\bhappening now\b/,
+    /\bcurrent(?:ly)?\b/,
+    /\blatest\b/,
+    /\bbreaking\b/,
+    /\bnews\b/,
+    /\bheadlines?\b/,
+    /\bupdate(?:s)?\b/,
+    /\bthis week\b/,
+    /\bthis month\b/,
+    /\byesterday\b/,
+    /\blive\s+(?:score|scores|match|game|price|market|update)/,
+    /\bstock price\b/,
+    /\bbitcoin price\b/,
+    /\bcrypto price\b/,
+    /\bexchange rate\b/,
+    /\bwho won\b/,
+    /\bwhat happened\b/,
+    /\bweather\b/,
+    /\b2025\b/,
+    /\b2026\b/,
+  ];
+  return patterns.some((pattern) => pattern.test(lower));
+}
+
+function buildTemporalGroundingPrefix(
+  profession: ProfessionProfile,
+  memories: MemoryEntry[],
+  isLiveNewsQuery: boolean
+): string {
+  const now = new Date();
+  const timeZone =
+    typeof Intl !== 'undefined'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time'
+      : 'UTC';
+  const formattedDate = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const formattedTime = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  const sections: string[] = [
+    `[JARVIS REAL-TIME CONTEXT: Current Date = ${formattedDate} | Local Time = ${formattedTime} (${timeZone})]`,
+    `[ACTIVE SPECIALIST MODE: ${profession.name} — ${profession.systemDirective}]`,
+  ];
+
+  if (isLiveNewsQuery) {
+    sections.push(
+      '[REAL-TIME GROUNDING DIRECTIVE: The user is asking about current events, today’s news, or live real-world information. Prioritize up-to-date live web search results, cite verifiable facts clearly, and explicitly mention dates when reporting news.]'
+    );
+  }
+
+  if (memories.length > 0) {
+    const memorySummary = memories
+      .slice(0, 12)
+      .map((m) => `- (${m.category}) ${m.content}`)
+      .join('\n');
+    sections.push(`[USER PERSISTENT MEMORY & PREFERENCES:\n${memorySummary}]`);
+  }
+
+  return sections.join('\n');
+}
+
+function evaluateSafeMathExpression(rawExpr: string): number {
+  const sanitized = rawExpr
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/π/g, 'pi')
+    .replace(/\*\*/g, '^');
+
+  if (!sanitized) throw new Error('Enter a mathematical expression.');
+  if (!/^[0-9a-z+\-*/^().]+$/.test(sanitized)) {
+    throw new Error('Unsupported characters in expression.');
+  }
+
+  let pos = 0;
+  const peek = () => sanitized[pos] || '';
+  const consume = () => sanitized[pos++];
+
+  const parseExpression = (): number => {
+    let value = parseTerm();
+    while (peek() === '+' || peek() === '-') {
+      const op = consume();
+      const right = parseTerm();
+      value = op === '+' ? value + right : value - right;
+    }
+    return value;
+  };
+
+  const parseTerm = (): number => {
+    let value = parsePower();
+    while (peek() === '*' || peek() === '/') {
+      const op = consume();
+      const right = parsePower();
+      if (op === '/') {
+        if (right === 0) throw new Error('Division by zero.');
+        value /= right;
+      } else {
+        value *= right;
+      }
+    }
+    return value;
+  };
+
+  const parsePower = (): number => {
+    let base = parseUnary();
+    if (peek() === '^') {
+      consume();
+      const exponent = parsePower();
+      base = Math.pow(base, exponent);
+    }
+    return base;
+  };
+
+  const parseUnary = (): number => {
+    if (peek() === '+') {
+      consume();
+      return parseUnary();
+    }
+    if (peek() === '-') {
+      consume();
+      return -parseUnary();
+    }
+    return parsePrimary();
+  };
+
+  const parsePrimary = (): number => {
+    if (peek() === '(') {
+      consume();
+      const inside = parseExpression();
+      if (peek() !== ')') throw new Error('Mismatched parentheses.');
+      consume();
+      return inside;
+    }
+
+    if (/[a-z]/.test(peek())) {
+      let ident = '';
+      while (/[a-z]/.test(peek())) {
+        ident += consume();
+      }
+      if (ident === 'pi') return Math.PI;
+      if (ident === 'e') return Math.E;
+
+      if (peek() !== '(') throw new Error(`Expected '(' after function ${ident}.`);
+      consume();
+      const arg = parseExpression();
+      if (peek() !== ')') throw new Error(`Expected ')' after ${ident}(...).`);
+      consume();
+
+      switch (ident) {
+        case 'sin':
+          return Math.sin(arg);
+        case 'cos':
+          return Math.cos(arg);
+        case 'tan':
+          return Math.tan(arg);
+        case 'sqrt':
+          if (arg < 0) throw new Error('Square root of negative number.');
+          return Math.sqrt(arg);
+        case 'log':
+          if (arg <= 0) throw new Error('Logarithm requires positive input.');
+          return Math.log10(arg);
+        case 'ln':
+          if (arg <= 0) throw new Error('Natural log requires positive input.');
+          return Math.log(arg);
+        case 'abs':
+          return Math.abs(arg);
+        default:
+          throw new Error(`Unknown function: ${ident}`);
+      }
+    }
+
+    let numStr = '';
+    while (/[0-9.]/.test(peek())) {
+      numStr += consume();
+    }
+    if (!numStr) throw new Error(`Unexpected token near "${peek()}"`);
+    const parsed = Number(numStr);
+    if (!Number.isFinite(parsed)) throw new Error('Invalid numeric value.');
+    return parsed;
+  };
+
+  const result = parseExpression();
+  if (pos !== sanitized.length) {
+    throw new Error(`Unexpected trailing character "${peek()}"`);
+  }
+  if (!Number.isFinite(result)) {
+    throw new Error('Calculation overflow or undefined result.');
+  }
+  return result;
+}
+
+async function callDirectGeminiFallback(
+  apiKey: string,
+  messages: Array<{ role: string; content: string }>,
+  useWebSearch: boolean,
+  attachments: Attachment[]
+): Promise<{ content: string; sources: Array<{ uri: string; title: string }> }> {
+  const contents = messages.map((m, idx) => {
+    const parts: Array<Record<string, unknown>> = [{ text: m.content }];
+    if (idx === messages.length - 1 && attachments.length > 0) {
+      for (const att of attachments) {
+        if (att.data && att.data.includes(',')) {
+          const base64Data = att.data.split(',')[1];
+          parts.push({
+            inlineData: {
+              mimeType: att.type || 'image/png',
+              data: base64Data,
+            },
+          });
+        }
+      }
+    }
+    return {
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts,
+    };
+  });
+
+  const payload: Record<string, unknown> = {
+    contents,
+    ...(useWebSearch ? { tools: [{ google_search: {} }] } : {}),
+  };
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error?.message || `Gemini API error (${res.status})`);
+  }
+
+  const candidate = data?.candidates?.[0];
+  const text =
+    candidate?.content?.parts
+      ?.map((p: { text?: string }) => p.text || '')
+      .join('') || 'Processed, sir.';
+
+  const chunks = candidate?.groundingMetadata?.groundingChunks || [];
+  const sources: Array<{ uri: string; title: string }> = [];
+  for (const ch of chunks) {
+    if (ch?.web?.uri) {
+      sources.push({
+        uri: ch.web.uri,
+        title: ch.web.title || ch.web.uri,
+      });
+    }
+  }
+
+  return { content: text, sources };
+}
 
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const rawText = await response.text();
@@ -188,6 +814,12 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
   const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
 
   if (!response.ok) {
+    if (response.status === 405 || trimmed.includes('405 Not Allowed')) {
+      throw new Error(
+        'STATIC_HOST_405: This URL is static hosting (GitHub Pages) which does not run /api/chat. Open your Vercel deployment URL or tap "Direct API Key" to connect directly.'
+      );
+    }
+
     try {
       const parsed = JSON.parse(trimmed) as { error?: string; message?: string };
       const errorMessage =
@@ -249,7 +881,25 @@ async function revokeAccountSession(): Promise<void> {
   }
 }
 
+// ============================================================================
+// MAIN APP COMPONENT
+// ============================================================================
+
 export default function App() {
+  // Responsive mobile detection (< 768px = Mobile Phone; >= 768px = Laptop/Chromebook/MacBook)
+  const [isMobileView, setIsMobileView] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobileView(mobile);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Persistence state
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -258,7 +908,7 @@ export default function App() {
   const [directSignInUrl, setDirectSignInUrl] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState('');
 
-  // UI state
+  // UI state (Sidebar open by default on Laptop/Chromebook/MacBook, closed on Mobile)
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 768
   );
@@ -275,8 +925,20 @@ export default function App() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
+  const [mobileToolsDrawerOpen, setMobileToolsDrawerOpen] = useState(false);
 
-  // Expanded JARVIS Modular Capability States
+  // Client-side Gemini API key fallback
+  const [directApiKey, setDirectApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem(JARVIS_DIRECT_API_KEY_STORAGE) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+
+  // Expanded JARVIS Capability States
   const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
     try {
       const saved = localStorage.getItem(JARVIS_PROFESSION_STORAGE_KEY) as ProfessionId | null;
@@ -322,6 +984,18 @@ export default function App() {
   // Live Clock Telemetry
   const [liveClock, setLiveClock] = useState(() => new Date());
 
+  // Live Voice Conversation Engine State
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const [voiceThinking, setVoiceThinking] = useState(false);
+  const [voiceInterimTranscript, setVoiceInterimTranscript] = useState('');
+  const [voiceTypedInput, setVoiceTypedInput] = useState('');
+  const [voiceTurns, setVoiceTurns] = useState<VoiceTurn[]>([]);
+  const [voiceError, setVoiceError] = useState('');
+  const [voiceAutoLoop, setVoiceAutoLoop] = useState(true);
+  const [voiceRate, setVoiceRate] = useState(1.05);
+  const [voiceLang, setVoiceLang] = useState('en-US');
+
   // Image Studio State
   const [studioPrompt, setStudioPrompt] = useState('');
   const [studioStyle, setStudioStyle] = useState(IMAGE_STYLE_PRESETS[0].id);
@@ -356,8 +1030,18 @@ export default function App() {
   const chatScrollContainerRef = useRef<HTMLDivElement>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const accountSaveQueue = useRef(Promise.resolve());
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const liveVoiceOpenRef = useRef(false);
+  const voiceAutoLoopRef = useRef(true);
 
-  // Persist profession, memory, and art gallery
+  useEffect(() => {
+    liveVoiceOpenRef.current = liveVoiceOpen;
+  }, [liveVoiceOpen]);
+
+  useEffect(() => {
+    voiceAutoLoopRef.current = voiceAutoLoop;
+  }, [voiceAutoLoop]);
+
   useEffect(() => {
     try {
       localStorage.setItem(JARVIS_PROFESSION_STORAGE_KEY, activeProfessionId);
@@ -382,7 +1066,6 @@ export default function App() {
     }
   }, [artGallery]);
 
-  // Live 1-second clock update for real-time HUD
   useEffect(() => {
     const timer = window.setInterval(() => {
       setLiveClock(new Date());
@@ -390,7 +1073,6 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // Active conversation & active profession
   const activeConversation =
     conversations.find((c) => c.id === activeChatId) || null;
   const isWelcomeScreen = !activeConversation || activeConversation.messages.length === 0;
@@ -441,7 +1123,7 @@ export default function App() {
     return () => window.removeEventListener('message', handlePortableRestore);
   }, []);
 
-  // Redeem a reusable account link; ordinary tabs still start as guests.
+  // Direct link redemption
   useEffect(() => {
     const linkToken = getDirectSignInTokenFromUrl();
     if (!linkToken) return;
@@ -491,6 +1173,7 @@ export default function App() {
     };
   }, []);
 
+  // Check backend /api/health OR direct client API key
   useEffect(() => {
     let active = true;
     fetch('/api/health')
@@ -498,17 +1181,17 @@ export default function App() {
         readJsonResponse<{ aiConfigured?: boolean }>(response, 'The health check response was invalid.')
       )
       .then((health) => {
-        if (active) setAiConfigured(Boolean(health.aiConfigured));
+        if (active) setAiConfigured(Boolean(health.aiConfigured) || Boolean(directApiKey));
       })
       .catch(() => {
-        if (active) setAiConfigured(false);
+        if (active) setAiConfigured(Boolean(directApiKey));
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [directApiKey]);
 
-  // Only authenticated conversations are persisted.
+  // Save authenticated conversations
   useEffect(() => {
     if (user.isGuest) return;
 
@@ -524,7 +1207,6 @@ export default function App() {
       .catch((error) => console.error('Unable to save account conversations:', error));
   }, [conversations, user]);
 
-  // Save settings
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
@@ -577,7 +1259,6 @@ export default function App() {
     }
   };
 
-  // Online / Offline listener
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -591,7 +1272,6 @@ export default function App() {
     };
   }, []);
 
-  // Keyboard shortcuts: Ctrl+K (New Chat), Ctrl+P (Command Palette), Escape (Close Overlays)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -607,13 +1287,14 @@ export default function App() {
         setImageStudioOpen(false);
         setWorkbenchOpen(false);
         setMemoryModalOpen(false);
+        setApiKeyModalOpen(false);
+        setMobileToolsDrawerOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Auto-scroll to bottom of chat
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -622,7 +1303,6 @@ export default function App() {
     scrollToBottom();
   }, [activeConversation?.messages]);
 
-  // Scroll detection for floating scroll-to-bottom button
   const handleScroll = () => {
     if (!chatScrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } =
@@ -631,19 +1311,22 @@ export default function App() {
     setShowScrollBottom(isUp);
   };
 
-  // Create new conversation
   const handleNewChat = () => {
     stopSpeaking();
     setActiveChatId(null);
+    if (isMobileView) {
+      setSidebarOpen(false);
+    }
   };
 
-  // Select existing conversation
   const handleSelectChat = (id: string) => {
     stopSpeaking();
     setActiveChatId(id);
+    if (isMobileView) {
+      setSidebarOpen(false);
+    }
   };
 
-  // Delete conversation
   const handleDeleteChat = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setConversations((prev) => prev.filter((c) => c.id !== id));
@@ -652,7 +1335,6 @@ export default function App() {
     }
   };
 
-  // Clear all conversations
   const handleClearAll = () => {
     if (window.confirm('Are you sure you want to clear all conversation history?')) {
       stopSpeaking();
@@ -661,7 +1343,6 @@ export default function App() {
     }
   };
 
-  // Pin / unpin conversation
   const handleTogglePin = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setConversations((prev) =>
@@ -669,12 +1350,29 @@ export default function App() {
     );
   };
 
-  // Voice speech synthesis for specific message
   const stopSpeaking = () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       setSpeakingMessageId(null);
+      setVoiceSpeaking(false);
     }
+  };
+
+  const pickPreferredJarvisVoice = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    return (
+      voices.find(
+        (v) =>
+          v.lang.startsWith('en') &&
+          (v.name.includes('Natural') ||
+            v.name.includes('Google') ||
+            v.name.includes('Daniel') ||
+            v.name.includes('Male'))
+      ) ||
+      voices.find((v) => v.lang.startsWith('en')) ||
+      null
+    );
   };
 
   const handleToggleSpeakMessage = (messageId: string, text: string) => {
@@ -697,20 +1395,10 @@ export default function App() {
     if (!cleanText) return;
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.05;
+    utterance.rate = voiceRate;
     utterance.pitch = 0.95;
 
-    const voices = window.speechSynthesis.getVoices();
-    const jarvisVoice =
-      voices.find(
-        (v) =>
-          v.lang.startsWith('en') &&
-          (v.name.includes('Natural') ||
-            v.name.includes('Google') ||
-            v.name.includes('Daniel') ||
-            v.name.includes('Male'))
-      ) || voices.find((v) => v.lang.startsWith('en'));
-
+    const jarvisVoice = pickPreferredJarvisVoice();
     if (jarvisVoice) {
       utterance.voice = jarvisVoice;
     }
@@ -723,50 +1411,19 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Save Live Voice Studio transcript into active or new chat thread
-  const handleSaveVoiceTranscriptToChat = (turns: VoiceTurn[]) => {
-    if (turns.length === 0) return;
-    const importedMessages: Message[] = turns.map((turn) => ({
-      id: turn.id,
-      role: turn.role,
-      content: turn.text,
-      timestamp: turn.timestamp,
-    }));
+  // ==========================================================================
+  // CORE SEND MESSAGE ENGINE
+  // ==========================================================================
 
-    if (activeChatId) {
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === activeChatId
-            ? {
-                ...c,
-                updatedAt: Date.now(),
-                messages: [...c.messages, ...importedMessages],
-              }
-            : c
-        )
-      );
-    } else {
-      const firstUser = turns.find((t) => t.role === 'user');
-      const newConv: Conversation = {
-        id: Math.random().toString(36).substring(2, 9),
-        title: firstUser
-          ? `Voice: ${firstUser.text.slice(0, 28)}...`
-          : 'Live Voice Conversation',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        messages: importedMessages,
-      };
-      setConversations((prev) => [newConv, ...prev]);
-      setActiveChatId(newConv.id);
-    }
-  };
-
-  // Send message with Temporal, Profession & Memory Grounding
   const handleSendMessage = async (
     text: string,
     attachments: Attachment[] = []
   ) => {
     if (!text.trim() && attachments.length === 0) return;
+
+    if (isMobileView && sidebarOpen) {
+      setSidebarOpen(false);
+    }
 
     const hasImageReference = attachments.some((attachment) =>
       attachment.type.startsWith('image/')
@@ -847,73 +1504,29 @@ export default function App() {
         };
       });
 
-      let endpoint = '/api/chat';
-      let body: Record<string, unknown> = {
-        messages: enrichedMessages,
-        webSearch: settings.webSearchEnabled || isLiveNewsReq,
-        model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
-        attachments: attachments.map((a) => ({
-          name: a.name,
-          type: a.type,
-          data: a.data,
-        })),
-      };
+      let assistantMessage: Message;
 
-      if (isImageReq) {
-        endpoint = '/api/generate-image';
-        body = {
-          prompt: text || 'Create an artistic interpretation of the attached image.',
-          aspectRatio: '1:1',
-          attachments: attachments
-            .filter((attachment) => attachment.type.startsWith('image/'))
-            .map((attachment) => ({
-              name: attachment.name,
-              type: attachment.type,
-              data: attachment.data,
-            })),
-        };
-      } else if (weatherRequest) {
+      if (weatherRequest) {
         const parameters = new URLSearchParams({
           location: weatherRequest.location,
           temperatureUnit: weatherRequest.temperatureUnit,
         });
-        endpoint = `/api/weather?${parameters.toString()}`;
-      }
+        const res = await fetch(`/api/weather?${parameters.toString()}`);
+        const data = await readJsonResponse<{
+          location?: string;
+          temperature?: number;
+          temperatureUnit?: string;
+          feelsLike?: number;
+          humidity?: number;
+          windSpeed?: number;
+          windSpeedUnit?: string;
+          conditions?: string;
+          observedAt?: string;
+          source?: string;
+        }>(res, 'Weather lookup failed.');
 
-      const res = endpoint.startsWith('/api/weather?')
-        ? await fetch(endpoint)
-        : await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-
-      const data = await readJsonResponse<{
-        error?: string;
-        content?: string;
-        prompt?: string;
-        imageUrl?: string;
-        sources?: Array<{ uri: string; title: string }>;
-        location?: string;
-        temperature?: number;
-        temperatureUnit?: string;
-        feelsLike?: number;
-        humidity?: number;
-        windSpeed?: number;
-        windSpeedUnit?: string;
-        conditions?: string;
-        observedAt?: string;
-        source?: string;
-      }>(res, `JARVIS API error (${res.status}): ${res.statusText}`);
-
-      if (!res.ok) {
-        throw new Error(data.error || `JARVIS API error (${res.status}): ${res.statusText}`);
-      }
-
-      let assistantMessage: Message;
-      if (endpoint.startsWith('/api/weather?')) {
         if (typeof data.temperature !== 'number' || !data.location) {
-          throw new Error('The weather service returned an incomplete response. Please try again.');
+          throw new Error('The weather service returned an incomplete response.');
         }
         const unit = data.temperatureUnit || '°C';
         const feelsLike =
@@ -932,7 +1545,28 @@ export default function App() {
           sources: data.source ? [{ uri: data.source, title: 'Open-Meteo weather data' }] : [],
           timestamp: Date.now(),
         };
-      } else if (endpoint === '/api/generate-image') {
+      } else if (isImageReq) {
+        const res = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: text || 'Create an artistic interpretation of the attached image.',
+            aspectRatio: '1:1',
+            attachments: attachments
+              .filter((attachment) => attachment.type.startsWith('image/'))
+              .map((attachment) => ({
+                name: attachment.name,
+                type: attachment.type,
+                data: attachment.data,
+              })),
+          }),
+        });
+
+        const data = await readJsonResponse<{
+          prompt?: string;
+          imageUrl?: string;
+        }>(res, 'Image generation failed.');
+
         if (data.imageUrl) {
           setArtGallery((prev) => [
             {
@@ -946,20 +1580,70 @@ export default function App() {
             ...prev,
           ]);
         }
+
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: `Here is the artwork generated for **"${data.prompt}"**:\n\n*Synthesized with JARVIS Neural Studio.*`,
+          content: `Here is the artwork generated for **"${data.prompt || text}"**:\n\n*Synthesized with JARVIS Neural Studio.*`,
           imageUrl: data.imageUrl,
           timestamp: Date.now(),
         };
       } else {
+        let usedDirectClient = false;
+        let chatContent = '';
+        let chatSources: Array<{ uri: string; title: string }> = [];
+        let chatImageUrl: string | undefined;
+
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: enrichedMessages,
+              webSearch: settings.webSearchEnabled || isLiveNewsReq,
+              model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
+              attachments: attachments.map((a) => ({
+                name: a.name,
+                type: a.type,
+                data: a.data,
+              })),
+            }),
+          });
+
+          const data = await readJsonResponse<{
+            content?: string;
+            sources?: Array<{ uri: string; title: string }>;
+            imageUrl?: string;
+          }>(res, `JARVIS API error (${res.status}): ${res.statusText}`);
+
+          chatContent = data.content || 'Response processed, sir.';
+          chatSources = data.sources || [];
+          chatImageUrl = data.imageUrl;
+        } catch (backendErr) {
+          const msg = backendErr instanceof Error ? backendErr.message : '';
+          if (msg.startsWith('STATIC_HOST_405') && directApiKey.trim()) {
+            const fallback = await callDirectGeminiFallback(
+              directApiKey.trim(),
+              enrichedMessages,
+              settings.webSearchEnabled || isLiveNewsReq,
+              attachments
+            );
+            chatContent = fallback.content;
+            chatSources = fallback.sources;
+            usedDirectClient = true;
+          } else {
+            throw backendErr;
+          }
+        }
+
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: data.content || 'Response processed, sir.',
-          sources: data.sources || [],
-          imageUrl: data.imageUrl,
+          content: usedDirectClient
+            ? `${chatContent}\n\n---\n*Connected via Direct Gemini Client Mode*`
+            : chatContent,
+          sources: chatSources,
+          imageUrl: chatImageUrl,
           timestamp: Date.now(),
         };
       }
@@ -983,12 +1667,15 @@ export default function App() {
     } catch (err) {
       console.error('Error contacting JARVIS backend:', err);
       const errorText = err instanceof Error ? err.message : 'The request failed.';
+      const is405 = errorText.startsWith('STATIC_HOST_405');
       const errorMessage: Message = {
         id: Math.random().toString(36).substring(2, 9),
         role: 'assistant',
-        content: errorText.includes('not configured')
-          ? `**Setup required:** ${errorText}\n\nAdd GEMINI_API_KEY to the server's untracked .env file and restart the server.`
-          : `**JARVIS could not answer:** ${errorText}`,
+        content: is405
+          ? `**Static Hosting Notice:** This URL is static hosting and cannot run \`/api/chat\`.\n\n**Fix:** Open your **Vercel** URL or tap **Direct API Key** in Tools to enter your \`GEMINI_API_KEY\`.`
+          : errorText.includes('not configured')
+            ? `**Setup required:** ${errorText}\n\nAdd GEMINI_API_KEY to the server's .env file and restart.`
+            : `**JARVIS could not answer:** ${errorText}`,
         timestamp: Date.now(),
         isError: true,
       };
@@ -1010,9 +1697,293 @@ export default function App() {
     }
   };
 
-  // Quick prompt selection from Welcome Hero
   const handleSelectPrompt = (prompt: string) => {
     handleSendMessage(prompt, []);
+  };
+
+  // ==========================================================================
+  // LIVE TWO-WAY VOICE CONVERSATION ENGINE
+  // ==========================================================================
+
+  const stopVoiceRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+      } catch {
+        // Ignore abort errors
+      }
+      recognitionRef.current = null;
+    }
+    setVoiceListening(false);
+  }, []);
+
+  const speakVoiceTurnReply = useCallback(
+    (replyText: string, onFinished?: () => void) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        onFinished?.();
+        return;
+      }
+      window.speechSynthesis.cancel();
+
+      const cleanText = replyText
+        .replace(/\[.*?\]\(.*?\)/g, '')
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        .replace(/[*#`_>-]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) {
+        onFinished?.();
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = voiceRate;
+      utterance.pitch = 0.96;
+      utterance.lang = voiceLang;
+
+      const jarvisVoice = pickPreferredJarvisVoice();
+      if (jarvisVoice) utterance.voice = jarvisVoice;
+
+      utterance.onstart = () => setVoiceSpeaking(true);
+      utterance.onend = () => {
+        setVoiceSpeaking(false);
+        onFinished?.();
+      };
+      utterance.onerror = () => {
+        setVoiceSpeaking(false);
+        onFinished?.();
+      };
+
+      activeUtteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+    },
+    [voiceRate, voiceLang]
+  );
+
+  const processLiveVoiceTurn = useCallback(
+    async (spokenText: string) => {
+      const trimmed = spokenText.trim();
+      if (!trimmed) return;
+
+      setVoiceThinking(true);
+      setVoiceError('');
+      const userTurn: VoiceTurn = {
+        id: Math.random().toString(36).substring(2, 9),
+        role: 'user',
+        text: trimmed,
+        timestamp: Date.now(),
+      };
+      setVoiceTurns((prev) => [...prev.slice(-14), userTurn]);
+
+      try {
+        const isLiveNews = detectLiveNewsOrCurrentEventIntent(trimmed);
+        const groundingPrefix = buildTemporalGroundingPrefix(
+          activeProfession,
+          memories,
+          isLiveNews
+        );
+
+        const historyPayload = voiceTurns.slice(-8).map((t) => ({
+          role: t.role,
+          content: t.text,
+        }));
+
+        historyPayload.push({
+          role: 'user',
+          content: `${groundingPrefix}\n[VOICE CONVERSATION MODE: Respond naturally, clearly, and conversationally as if speaking out loud in real time.]\n\nSpoken Input: ${trimmed}`,
+        });
+
+        let reply = '';
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: historyPayload,
+              webSearch: true,
+              model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
+              attachments: [],
+            }),
+          });
+
+          const data = await readJsonResponse<{ content?: string }>(res, 'Live Voice API error');
+          reply = data.content || 'Processed, sir.';
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '';
+          if (msg.startsWith('STATIC_HOST_405') && directApiKey.trim()) {
+            const fallback = await callDirectGeminiFallback(
+              directApiKey.trim(),
+              historyPayload,
+              true,
+              []
+            );
+            reply = fallback.content;
+          } else {
+            throw err;
+          }
+        }
+
+        const assistantTurn: VoiceTurn = {
+          id: Math.random().toString(36).substring(2, 9),
+          role: 'assistant',
+          text: reply,
+          timestamp: Date.now(),
+        };
+        setVoiceTurns((prev) => [...prev.slice(-14), assistantTurn]);
+        setVoiceThinking(false);
+
+        speakVoiceTurnReply(reply, () => {
+          if (liveVoiceOpenRef.current && voiceAutoLoopRef.current) {
+            startVoiceRecognition();
+          }
+        });
+      } catch (err) {
+        setVoiceThinking(false);
+        setVoiceError(
+          err instanceof Error
+            ? err.message.replace('STATIC_HOST_405: ', '')
+            : 'Live voice processing failed.'
+        );
+      }
+    },
+    [
+      activeProfession,
+      memories,
+      settings.dualEngineEnabled,
+      settings.selectedModel,
+      voiceTurns,
+      directApiKey,
+      speakVoiceTurnReply,
+    ]
+  );
+
+  const startVoiceRecognition = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecCtor =
+      (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
+        .SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionInstance })
+        .webkitSpeechRecognition;
+
+    if (!SpeechRecCtor) {
+      setVoiceError(
+        'Speech Recognition is not supported in this browser. Type below to talk with JARVIS aloud.'
+      );
+      return;
+    }
+
+    stopVoiceRecognition();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setVoiceSpeaking(false);
+    }
+
+    const recognition = new SpeechRecCtor();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = voiceLang;
+
+    let finalTranscriptBuffer = '';
+
+    recognition.onstart = () => {
+      setVoiceListening(true);
+      setVoiceError('');
+      setVoiceInterimTranscript('');
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0]?.transcript || '';
+        if (event.results[i].isFinal) {
+          finalTranscriptBuffer += transcript + ' ';
+        } else {
+          interim += transcript;
+        }
+      }
+      setVoiceInterimTranscript((finalTranscriptBuffer + interim).trim());
+    };
+
+    recognition.onerror = (event: { error?: string }) => {
+      setVoiceListening(false);
+      if (event.error && event.error !== 'aborted' && event.error !== 'no-speech') {
+        setVoiceError(`Microphone notice: ${event.error}`);
+      }
+    };
+
+    recognition.onend = () => {
+      setVoiceListening(false);
+      const captured = finalTranscriptBuffer.trim();
+      setVoiceInterimTranscript('');
+      if (captured) {
+        void processLiveVoiceTurn(captured);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      setVoiceError('Unable to access microphone. Check browser mic permissions.');
+    }
+  }, [voiceLang, stopVoiceRecognition, processLiveVoiceTurn]);
+
+  const openLiveVoiceSession = () => {
+    stopSpeaking();
+    setMobileToolsDrawerOpen(false);
+    setLiveVoiceOpen(true);
+    setVoiceError('');
+    window.setTimeout(() => {
+      startVoiceRecognition();
+    }, 250);
+  };
+
+  const closeLiveVoiceSession = () => {
+    setLiveVoiceOpen(false);
+    stopVoiceRecognition();
+    stopSpeaking();
+    setVoiceThinking(false);
+    setVoiceInterimTranscript('');
+  };
+
+  const handleSaveVoiceTranscriptToChat = () => {
+    if (voiceTurns.length === 0) return;
+    const importedMessages: Message[] = voiceTurns.map((turn) => ({
+      id: turn.id,
+      role: turn.role,
+      content: turn.text,
+      timestamp: turn.timestamp,
+    }));
+
+    if (activeChatId) {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeChatId
+            ? {
+                ...c,
+                updatedAt: Date.now(),
+                messages: [...c.messages, ...importedMessages],
+              }
+            : c
+        )
+      );
+    } else {
+      const firstUser = voiceTurns.find((t) => t.role === 'user');
+      const newConv: Conversation = {
+        id: Math.random().toString(36).substring(2, 9),
+        title: firstUser
+          ? `Voice: ${firstUser.text.slice(0, 28)}...`
+          : 'Live Voice Conversation',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: importedMessages,
+      };
+      setConversations((prev) => [newConv, ...prev]);
+      setActiveChatId(newConv.id);
+    }
+    closeLiveVoiceSession();
   };
 
   // Image Studio Generation Handler
@@ -1041,11 +2012,10 @@ export default function App() {
       const data = await readJsonResponse<{
         imageUrl?: string;
         prompt?: string;
-        error?: string;
       }>(res, 'Image generation failed.');
 
-      if (!res.ok || !data.imageUrl) {
-        throw new Error(data.error || 'No image URL was returned by JARVIS Neural Studio.');
+      if (!data.imageUrl) {
+        throw new Error('No image URL was returned by JARVIS Neural Studio.');
       }
 
       const newArt: GeneratedArtItem = {
@@ -1059,7 +2029,12 @@ export default function App() {
 
       setArtGallery((prev) => [newArt, ...prev]);
     } catch (err) {
-      setStudioError(err instanceof Error ? err.message : 'Could not synthesize image.');
+      const msg = err instanceof Error ? err.message : 'Could not synthesize image.';
+      setStudioError(
+        msg.startsWith('STATIC_HOST_405')
+          ? 'Image generation requires your Vercel backend server URL.'
+          : msg
+      );
     } finally {
       setStudioGenerating(false);
     }
@@ -1067,9 +2042,10 @@ export default function App() {
 
   // Live Screen Vision Capture Handler
   const handleCaptureScreenVision = async () => {
+    setMobileToolsDrawerOpen(false);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        setAccountNotice('Screen capture is not supported in this browser.');
+        setAccountNotice('Screen capture is not supported in this mobile browser. Use the paperclip icon in chat to upload a screenshot.');
         return;
       }
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -1108,7 +2084,7 @@ export default function App() {
     }
   };
 
-  // Engineering & Medical Workbench Computations
+  // Workbench Computations
   const handleRunScientificCalc = () => {
     try {
       const value = evaluateSafeMathExpression(calcInput);
@@ -1199,7 +2175,6 @@ export default function App() {
     };
   }, [clinicalWeightKg, clinicalHeightCm, clinicalAge]);
 
-  // Memory & Command Palette Helpers
   const handleAddMemory = () => {
     const trimmed = newMemoryText.trim();
     if (!trimmed) return;
@@ -1236,10 +2211,7 @@ export default function App() {
         id: 'voice',
         label: 'Start Live Two-Way Voice Conversation (ChatGPT Voice Mode)',
         shortcut: 'VOICE',
-        action: () => {
-          stopSpeaking();
-          setLiveVoiceOpen(true);
-        },
+        action: () => openLiveVoiceSession(),
       },
       {
         id: 'news',
@@ -1278,13 +2250,22 @@ export default function App() {
         action: () => setMemoryModalOpen(true),
       },
       {
+        id: 'api-key',
+        label: 'Configure Direct Gemini API Key (For GitHub Pages Static Hosting)',
+        shortcut: 'KEY',
+        action: () => {
+          setApiKeyInput(directApiKey);
+          setApiKeyModalOpen(true);
+        },
+      },
+      {
         id: 'new-chat',
         label: 'Start New Conversation Session',
         shortcut: 'Ctrl+K',
         action: () => handleNewChat(),
       },
     ],
-    []
+    [directApiKey]
   );
 
   const filteredCommands = useMemo(() => {
@@ -1300,7 +2281,7 @@ export default function App() {
   const isEngineeringRole = activeProfession.id.endsWith('-eng');
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#060b13] text-slate-100 antialiased font-sans">
+    <div className="flex h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-[#060b13] text-slate-100 antialiased font-sans">
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -1319,7 +2300,7 @@ export default function App() {
         onShare={() => setShareModalOpen(true)}
       />
 
-      <div className="flex-1 flex flex-col h-full min-w-0 relative">
+      <div className="flex-1 flex flex-col h-[100dvh] min-w-0 max-w-full overflow-hidden relative">
         <Header
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
           isSidebarOpen={sidebarOpen}
@@ -1341,15 +2322,61 @@ export default function App() {
           hasMessages={(activeConversation?.messages?.length || 0) > 0}
         />
 
-        {/* JARVIS OMNISCIENT COMMAND & TELEMETRY DOCK */}
-        <div className="bg-[#08101d]/95 border-b border-cyan-500/20 px-3 md:px-4 py-1.5 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
+        {/* ==================================================================== */}
+        {/* MOBILE PHONE COMPACT ACTION BAR (< 768px ONLY)                       */}
+        {/* ==================================================================== */}
+        <div className="flex md:hidden bg-[#08101d]/95 border-b border-cyan-500/25 px-2 py-1.5 items-center justify-between gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={openLiveVoiceSession}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 border border-cyan-400/40 text-cyan-200 text-[11px] font-medium active:scale-95 transition"
+          >
+            <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse shrink-0" />
+            <span className="truncate">Voice</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setNewsModalOpen(true)}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-slate-900 border border-slate-700/80 text-slate-200 text-[11px] font-medium active:scale-95 transition"
+          >
+            <Newspaper className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="truncate">News</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setProfessionsModalOpen(true)}
+            className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border text-[11px] font-medium active:scale-95 transition ${activeProfession.badgeColor}`}
+          >
+            {isMedicalRole ? (
+              <Stethoscope className="w-3.5 h-3.5 shrink-0" />
+            ) : isEngineeringRole ? (
+              <Cpu className="w-3.5 h-3.5 shrink-0" />
+            ) : (
+              <Briefcase className="w-3.5 h-3.5 shrink-0" />
+            )}
+            <span className="truncate">{activeProfession.shortName}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobileToolsDrawerOpen(true)}
+            className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg bg-slate-900 border border-cyan-500/35 text-cyan-300 text-[11px] font-medium active:scale-95 transition shrink-0"
+          >
+            <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+            <span>Tools</span>
+          </button>
+        </div>
+
+        {/* ==================================================================== */}
+        {/* LAPTOP / CHROMEBOOK / MACBOOK FULL COMMAND DOCK (>= 768px ONLY)      */}
+        {/* ==================================================================== */}
+        <div className="hidden md:flex bg-[#08101d]/95 border-b border-cyan-500/20 px-4 py-1.5 items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={() => {
-                stopSpeaking();
-                setLiveVoiceOpen(true);
-              }}
+              onClick={openLiveVoiceSession}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-200 text-xs font-medium transition shadow-sm"
               title="Start ChatGPT-style two-way hands-free voice conversation"
             >
@@ -1371,7 +2398,7 @@ export default function App() {
               type="button"
               onClick={() => setProfessionsModalOpen(true)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition ${activeProfession.badgeColor}`}
-              title="Switch active profession specialist (18 domains)"
+              title="Switch active profession specialist (16 domains)"
             >
               {isMedicalRole ? (
                 <Stethoscope className="w-3.5 h-3.5" />
@@ -1406,7 +2433,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => void handleCaptureScreenVision()}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
               title="Capture a live screenshot and send to JARVIS Vision"
             >
               <Monitor className="w-3.5 h-3.5 text-sky-400" />
@@ -1416,16 +2443,33 @@ export default function App() {
             <button
               type="button"
               onClick={() => setMemoryModalOpen(true)}
-              className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
               title="Manage persistent JARVIS memory & user preferences"
             >
               <Brain className="w-3.5 h-3.5 text-violet-400" />
               <span>Memory ({memories.length})</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setApiKeyInput(directApiKey);
+                setApiKeyModalOpen(true);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition ${
+                directApiKey
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-500/15 border-amber-500/40 text-amber-200 hover:bg-amber-500/25'
+              }`}
+              title="Configure Direct Gemini API Key for static GitHub Pages hosting"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>{directApiKey ? 'Direct Key Active' : 'Direct API Key'}</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
-            <span className="hidden lg:flex items-center gap-1 text-cyan-300/80">
+            <span className="hidden xl:flex items-center gap-1 text-cyan-300/80">
               <Clock className="w-3 h-3" />
               {liveClock.toLocaleDateString('en-US', {
                 month: 'short',
@@ -1451,28 +2495,27 @@ export default function App() {
 
         {/* Active Profession Disclaimer Banner */}
         {activeProfession.disclaimer && (
-          <div className="bg-emerald-950/50 border-b border-emerald-500/25 px-4 py-1 flex items-center justify-between text-[11px] text-emerald-200/90">
-            <div className="flex items-center gap-2">
+          <div className="bg-emerald-950/50 border-b border-emerald-500/25 px-3 md:px-4 py-1 flex items-center justify-between text-[11px] text-emerald-200/90 shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0">
               <ShieldAlert className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>{activeProfession.disclaimer}</span>
+              <span className="truncate md:whitespace-normal">{activeProfession.disclaimer}</span>
             </div>
             <button
               type="button"
               onClick={() => setActiveProfessionId('general')}
               className="text-emerald-300 hover:text-white underline ml-2 shrink-0"
             >
-              Reset to Core
+              Reset
             </button>
           </div>
         )}
 
         {!isOnline && (
-          <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-300">
+          <div className="bg-amber-500/20 border-b border-amber-500/30 px-3 md:px-4 py-1.5 flex items-center justify-between text-xs text-amber-300 shrink-0">
             <div className="flex items-center gap-2">
               <WifiOff className="w-4 h-4 shrink-0" />
               <span>
-                <strong>Offline:</strong> Guest chats are not saved and AI replies require an
-                internet connection. Account changes may not sync.
+                <strong>Offline:</strong> AI replies require an internet connection.
               </span>
             </div>
           </div>
@@ -1481,13 +2524,13 @@ export default function App() {
         {accountNotice && (
           <div
             role="status"
-            className="bg-slate-900 border-b border-slate-700 px-4 py-2 flex items-center justify-between gap-3 text-xs text-slate-300"
+            className="bg-slate-900 border-b border-slate-700 px-3 md:px-4 py-2 flex items-center justify-between gap-3 text-xs text-slate-300 shrink-0"
           >
-            <span>{accountNotice}</span>
+            <span className="line-clamp-2">{accountNotice}</span>
             <button
               type="button"
               onClick={() => setAccountNotice('')}
-              className="text-slate-400 hover:text-white"
+              className="text-slate-400 hover:text-white shrink-0"
               aria-label="Dismiss account notice"
             >
               Dismiss
@@ -1496,30 +2539,26 @@ export default function App() {
         )}
 
         {!user.isGuest && (
-          <div className="bg-cyan-950/80 border-b border-cyan-500/30 px-4 py-2 flex flex-col md:flex-row md:items-center justify-between gap-2 text-xs text-cyan-300">
-            <div className="flex items-start gap-2 min-w-0">
-              <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
-              <div>
-                <p>
-                  <strong>Signed in:</strong> conversations are saved to your account.
-                </p>
-                <p className="text-[10px] text-cyan-200/70">
-                  Your reusable sign-in URL is in the sidebar. Keep it private.
-                </p>
-              </div>
+          <div className="bg-cyan-950/80 border-b border-cyan-500/30 px-3 md:px-4 py-1.5 flex items-center justify-between gap-2 text-xs text-cyan-300 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <p className="truncate">
+                <strong>Signed in:</strong> conversations are saved to your account.
+              </p>
             </div>
           </div>
         )}
 
+        {/* MAIN CHAT & WELCOME VIEWPORT */}
         <div
           ref={chatScrollContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto flex flex-col relative"
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col relative"
           style={
             isWelcomeScreen
               ? {
                   backgroundImage:
-                    "linear-gradient(rgba(6, 11, 19, 0.28), rgba(6, 11, 19, 0.55)), url('/jarvis-welcome-bg.png')",
+                    "linear-gradient(rgba(6, 11, 19, 0.28), rgba(6, 11, 19, 0.55)), url('./jarvis-welcome-bg.png')",
                   backgroundPosition: 'center',
                   backgroundRepeat: 'no-repeat',
                   backgroundSize: 'cover',
@@ -1530,7 +2569,7 @@ export default function App() {
           {isWelcomeScreen ? (
             <WelcomeHero onSelectPrompt={handleSelectPrompt} />
           ) : (
-            <div className="flex-1 py-4 space-y-1">
+            <div className="flex-1 py-3 md:py-4 space-y-1 w-full max-w-full overflow-x-hidden">
               {activeConversation.messages.map((msg) => (
                 <MessageItem
                   key={msg.id}
@@ -1542,15 +2581,15 @@ export default function App() {
               ))}
 
               {isLoading && (
-                <div className="py-4 px-3 md:px-6 bg-slate-900/30 border-y border-slate-800/40">
+                <div className="py-3 md:py-4 px-3 md:px-6 bg-slate-900/30 border-y border-slate-800/40">
                   <div className="max-w-4xl mx-auto flex gap-3 md:gap-4 items-center">
                     <ArcReactorLogo glow={true} size="sm" />
                     <div className="flex items-center gap-2 text-xs md:text-sm text-cyan-300">
-                      <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
+                      <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
                       <span className="font-mono">
                         {settings.webSearchEnabled
-                          ? `JARVIS (${activeProfession.shortName}) is accessing real-time web knowledge...`
-                          : `JARVIS (${activeProfession.shortName}) is preparing a response...`}
+                          ? `JARVIS (${activeProfession.shortName}) is searching live web...`
+                          : `JARVIS (${activeProfession.shortName}) is thinking...`}
                       </span>
                     </div>
                   </div>
@@ -1562,21 +2601,180 @@ export default function App() {
           )}
         </div>
 
-        <PromptBar
-          onSendMessage={handleSendMessage}
-          isLoading={isLoading}
-          webSearchEnabled={settings.webSearchEnabled}
-          onToggleWebSearch={() =>
-            setSettings((prev) => ({ ...prev, webSearchEnabled: !prev.webSearchEnabled }))
-          }
-          dualEngineEnabled={settings.dualEngineEnabled}
-          onToggleDualEngine={() =>
-            setSettings((prev) => ({ ...prev, dualEngineEnabled: !prev.dualEngineEnabled }))
-          }
-          showScrollBottom={showScrollBottom}
-          onScrollToBottom={scrollToBottom}
-        />
+        {/* BOTTOM PROMPT INPUT BAR WITH MOBILE SAFE-AREA PADDING */}
+        <div className="shrink-0 w-full max-w-full jarvis-mobile-safe-bottom bg-[#060b13]">
+          <PromptBar
+            onSendMessage={handleSendMessage}
+            isLoading={isLoading}
+            webSearchEnabled={settings.webSearchEnabled}
+            onToggleWebSearch={() =>
+              setSettings((prev) => ({ ...prev, webSearchEnabled: !prev.webSearchEnabled }))
+            }
+            dualEngineEnabled={settings.dualEngineEnabled}
+            onToggleDualEngine={() =>
+              setSettings((prev) => ({ ...prev, dualEngineEnabled: !prev.dualEngineEnabled }))
+            }
+            showScrollBottom={showScrollBottom}
+            onScrollToBottom={scrollToBottom}
+          />
+        </div>
       </div>
+
+      {/* MOBILE FULL-SCREEN TOOLS DRAWER (< 768px) */}
+      {mobileToolsDrawerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end md:hidden">
+          <div className="bg-[#0b1322] border-t border-cyan-500/40 rounded-t-3xl p-5 space-y-4 max-h-[85dvh] overflow-y-auto jarvis-mobile-safe-bottom">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <LayoutGrid className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-base font-semibold text-white">JARVIS Mobile Command Suite</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileToolsDrawerOpen(false)}
+                className="p-2 rounded-full bg-slate-800 text-slate-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  openLiveVoiceSession();
+                }}
+                className="p-3.5 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex flex-col items-start gap-1.5 text-left"
+              >
+                <Radio className="w-5 h-5 text-cyan-400" />
+                <span className="text-xs font-semibold text-white">Live Voice Chat</span>
+                <span className="text-[10px] text-cyan-200/80">Hands-free two-way talk</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setNewsModalOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <Newspaper className="w-5 h-5 text-amber-400" />
+                <span className="text-xs font-semibold text-white">Today's News</span>
+                <span className="text-[10px] text-slate-400">Live global briefings</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setProfessionsModalOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <Briefcase className="w-5 h-5 text-emerald-400" />
+                <span className="text-xs font-semibold text-white">16 Professions</span>
+                <span className="text-[10px] text-slate-400">{activeProfession.shortName}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setImageStudioOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <ImageIcon className="w-5 h-5 text-fuchsia-400" />
+                <span className="text-xs font-semibold text-white">Image Studio</span>
+                <span className="text-[10px] text-slate-400">Create AI art & renders</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setWorkbenchOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <Calculator className="w-5 h-5 text-emerald-400" />
+                <span className="text-xs font-semibold text-white">Eng & Med Lab</span>
+                <span className="text-[10px] text-slate-400">Calc, Ohm's, BMI & Labs</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setMemoryModalOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <Brain className="w-5 h-5 text-violet-400" />
+                <span className="text-xs font-semibold text-white">Neural Memory</span>
+                <span className="text-[10px] text-slate-400">{memories.length} saved notes</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setApiKeyInput(directApiKey);
+                  setApiKeyModalOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <KeyRound className="w-5 h-5 text-amber-400" />
+                <span className="text-xs font-semibold text-white">Direct API Key</span>
+                <span className="text-[10px] text-slate-400">
+                  {directApiKey ? 'Connected' : 'Configure key'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setToolsModalOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <Wrench className="w-5 h-5 text-sky-400" />
+                <span className="text-xs font-semibold text-white">Prompt Templates</span>
+                <span className="text-[10px] text-slate-400">Quick power prompts</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setExportModalOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <FileDown className="w-5 h-5 text-cyan-400" />
+                <span className="text-xs font-semibold text-white">Export Chat</span>
+                <span className="text-[10px] text-slate-400">Download transcript</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileToolsDrawerOpen(false);
+                  setShareModalOpen(true);
+                }}
+                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+              >
+                <Share2 className="w-5 h-5 text-indigo-400" />
+                <span className="text-xs font-semibold text-white">Share Chat</span>
+                <span className="text-[10px] text-slate-400">Share conversation</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* EXISTING MODALS */}
       <AuthModal
@@ -1602,30 +2800,217 @@ export default function App() {
         onInsertPrompt={(text) => handleSendMessage(text, [])}
       />
 
-      {/* MODULAR LIVE VOICE STUDIO COMPONENT */}
-      <LiveVoiceStudio
-        isOpen={liveVoiceOpen}
-        onClose={() => setLiveVoiceOpen(false)}
-        activeProfession={activeProfession}
-        memories={memories}
-        selectedModel={settings.selectedModel}
-        dualEngineEnabled={settings.dualEngineEnabled}
-        onSaveTranscriptToChat={handleSaveVoiceTranscriptToChat}
-      />
+      {/* LIVE TWO-WAY VOICE CONVERSATION OVERLAY (FULL SCREEN ON MOBILE & DESKTOP) */}
+      {liveVoiceOpen && (
+        <div className="fixed inset-0 z-50 h-[100dvh] w-full bg-[#040811]/95 backdrop-blur-xl flex flex-col justify-between p-4 md:p-6 text-slate-100 jarvis-mobile-safe-bottom">
+          <div className="flex flex-wrap items-center justify-between gap-2 max-w-4xl w-full mx-auto">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-xs font-mono text-cyan-300">
+              <Activity className="w-3.5 h-3.5 animate-pulse" />
+              JARVIS LIVE VOICE • {activeProfession.shortName.toUpperCase()}
+            </span>
+            <div className="flex items-center gap-2">
+              {voiceTurns.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSaveVoiceTranscriptToChat}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-medium"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save</span>
+                </button>
+              )}
+              <select
+                value={voiceLang}
+                onChange={(e) => setVoiceLang(e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200"
+              >
+                <option value="en-US">English (US)</option>
+                <option value="en-GB">English (UK)</option>
+                <option value="ur-PK">Urdu</option>
+                <option value="hi-IN">Hindi</option>
+                <option value="ar-SA">Arabic</option>
+                <option value="es-ES">Spanish</option>
+                <option value="fr-FR">French</option>
+              </select>
+              <button
+                type="button"
+                onClick={closeLiveVoiceSession}
+                className="p-2 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
 
-      {/* REAL-TIME NEWS & CURRENT EVENTS BRIEFING MODAL */}
+          <div className="flex-1 flex flex-col items-center justify-center max-w-2xl w-full mx-auto text-center gap-4 my-3 overflow-y-auto">
+            <div
+              className={`relative w-32 h-32 sm:w-40 sm:h-40 rounded-full flex items-center justify-center transition-all duration-500 ${
+                voiceListening
+                  ? 'scale-105 shadow-[0_0_80px_rgba(34,211,238,0.55)] bg-cyan-500/15 border-2 border-cyan-400'
+                  : voiceSpeaking
+                    ? 'scale-105 shadow-[0_0_80px_rgba(59,130,246,0.6)] bg-blue-500/20 border-2 border-blue-400'
+                    : voiceThinking
+                      ? 'animate-pulse bg-violet-500/15 border-2 border-violet-400'
+                      : 'bg-slate-900/80 border border-slate-700'
+              }`}
+            >
+              <ArcReactorLogo glow={voiceListening || voiceSpeaking || voiceThinking} size="lg" />
+            </div>
+
+            <div className="space-y-1.5 px-2">
+              <h2 className="text-base sm:text-xl font-semibold text-cyan-200 flex items-center justify-center gap-2">
+                {voiceSpeaking && <Volume2 className="w-5 h-5 text-blue-400 animate-pulse" />}
+                <span>
+                  {voiceListening
+                    ? 'Listening — Speak naturally...'
+                    : voiceThinking
+                      ? 'JARVIS is analyzing...'
+                      : voiceSpeaking
+                        ? 'JARVIS is speaking...'
+                        : 'Tap microphone or type below'}
+                </span>
+              </h2>
+              {voiceInterimTranscript && (
+                <p className="text-sm text-cyan-300 italic max-w-lg mx-auto">
+                  “{voiceInterimTranscript}”
+                </p>
+              )}
+              {voiceError && (
+                <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 inline-block">
+                  {voiceError}
+                </p>
+              )}
+            </div>
+
+            {voiceTurns.length > 0 && (
+              <div className="w-full max-h-40 overflow-y-auto bg-slate-900/75 border border-slate-800 rounded-xl p-3 text-left space-y-2">
+                {voiceTurns.map((turn) => (
+                  <div
+                    key={turn.id}
+                    className={`text-xs leading-relaxed ${
+                      turn.role === 'user' ? 'text-cyan-300' : 'text-slate-200'
+                    }`}
+                  >
+                    <strong className="uppercase font-mono mr-1.5">
+                      {turn.role === 'user' ? 'You:' : 'JARVIS:'}
+                    </strong>
+                    <span>{turn.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="max-w-xl w-full mx-auto flex flex-col items-center gap-3">
+            <div className="w-full flex gap-2">
+              <input
+                type="text"
+                value={voiceTypedInput}
+                onChange={(e) => setVoiceTypedInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && voiceTypedInput.trim()) {
+                    const msg = voiceTypedInput;
+                    setVoiceTypedInput('');
+                    void processLiveVoiceTurn(msg);
+                  }
+                }}
+                placeholder="Type a message for JARVIS to answer aloud..."
+                className="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!voiceTypedInput.trim()) return;
+                  const msg = voiceTypedInput;
+                  setVoiceTypedInput('');
+                  void processLiveVoiceTurn(msg);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (voiceListening) {
+                    stopVoiceRecognition();
+                  } else {
+                    startVoiceRecognition();
+                  }
+                }}
+                className={`p-4 rounded-full transition shadow-lg ${
+                  voiceListening
+                    ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
+                    : 'bg-slate-800 text-cyan-300 hover:bg-slate-700 border border-cyan-500/40'
+                }`}
+              >
+                {voiceListening ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
+              </button>
+
+              {voiceSpeaking && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopSpeaking();
+                    if (voiceAutoLoop) startVoiceRecognition();
+                  }}
+                  className="px-4 py-2.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs font-medium hover:bg-amber-500/30"
+                >
+                  Interrupt & Speak
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={closeLiveVoiceSession}
+                className="p-4 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-lg"
+              >
+                <PhoneOff className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-slate-400">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={voiceAutoLoop}
+                  onChange={(e) => setVoiceAutoLoop(e.target.checked)}
+                  className="accent-cyan-400"
+                />
+                <span>Hands-free loop</span>
+              </label>
+              <label className="flex items-center gap-1.5">
+                <span>Speed: {voiceRate.toFixed(2)}x</span>
+                <input
+                  type="range"
+                  min="0.8"
+                  max="1.4"
+                  step="0.05"
+                  value={voiceRate}
+                  onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
+                  className="w-20 accent-cyan-400"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REAL-TIME NEWS MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
       {newsModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-cyan-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#0b1322] border-0 sm:border border-cyan-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-2xl p-5 sm:p-6 shadow-2xl flex flex-col justify-between sm:block space-y-5 overflow-y-auto jarvis-mobile-safe-bottom">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Newspaper className="w-5 h-5 text-amber-400" />
+                <Newspaper className="w-5 h-5 text-amber-400 shrink-0" />
                 <div>
                   <h3 className="text-base font-semibold text-white">
-                    JARVIS Real-Time News & Global Intelligence
+                    JARVIS Real-Time News & Briefings
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Live grounded briefings for{' '}
                     {liveClock.toLocaleDateString('en-US', {
                       weekday: 'long',
                       month: 'long',
@@ -1638,13 +3023,13 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setNewsModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 my-auto">
               {NEWS_CATEGORIES.map((cat) => (
                 <button
                   key={cat.id}
@@ -1654,7 +3039,7 @@ export default function App() {
                     setSettings((prev) => ({ ...prev, webSearchEnabled: true }));
                     void handleSendMessage(cat.prompt, []);
                   }}
-                  className="flex items-center justify-between p-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 text-left transition group"
+                  className="flex items-center justify-between p-4 sm:p-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 text-left transition group"
                 >
                   <div>
                     <div className="text-sm font-medium text-slate-100 group-hover:text-cyan-300">
@@ -1672,39 +3057,39 @@ export default function App() {
         </div>
       )}
 
-      {/* ALL-PROFESSIONS SPECIALIST HUB (18 DOMAINS) */}
+      {/* ALL-PROFESSIONS SPECIALIST MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
       {professionsModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-cyan-500/30 rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#0b1322] border-0 sm:border border-cyan-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[88vh] flex flex-col p-4 sm:p-6 shadow-2xl jarvis-mobile-safe-bottom">
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <Layers className="w-5 h-5 text-cyan-400" />
+                <Layers className="w-5 h-5 text-cyan-400 shrink-0" />
                 <div>
                   <h3 className="text-base font-semibold text-white">
-                    All-Professions Specialist Matrix ({PROFESSION_PROFILES.length} Expert Domains)
+                    Specialist Matrix ({PROFESSION_PROFILES.length} Domains)
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    Equip JARVIS with domain-specific reasoning across medicine, pharmacology,
-                    engineering, law, finance, and science
+                  <p className="text-xs text-slate-400 hidden sm:block">
+                    Equip JARVIS with domain-specific reasoning across medicine, engineering, law,
+                    finance, and science
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setProfessionsModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="my-3 relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
                 type="text"
                 value={professionSearch}
                 onChange={(e) => setProfessionSearch(e.target.value)}
-                placeholder="Search 18 professions (Medical, Pharmacology, Mechanical, Electrical, Civil, Aerospace, Law, Finance)..."
+                placeholder="Search Medical, Pharmacology, Mechanical, Electrical, Civil, Law..."
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -1725,7 +3110,7 @@ export default function App() {
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-semibold text-white">{prof.name}</span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full border ${prof.badgeColor}`}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${prof.badgeColor}`}
                         >
                           {prof.category}
                         </span>
@@ -1759,7 +3144,7 @@ export default function App() {
                           setActiveProfessionId(prof.id);
                           setProfessionsModalOpen(false);
                         }}
-                        className={`w-full py-1.5 rounded-lg text-xs font-medium transition ${
+                        className={`w-full py-2 rounded-lg text-xs font-medium transition ${
                           isSelected
                             ? 'bg-cyan-500 text-slate-950'
                             : 'bg-slate-800 hover:bg-cyan-500/20 text-slate-200 border border-slate-700'
@@ -1776,18 +3161,18 @@ export default function App() {
         </div>
       )}
 
-      {/* JARVIS NEURAL IMAGE CREATION & GALLERY STUDIO MODAL */}
+      {/* IMAGE CREATION STUDIO MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
       {imageStudioOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-fuchsia-500/30 rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#0b1322] border-0 sm:border border-fuchsia-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col p-4 sm:p-6 shadow-2xl jarvis-mobile-safe-bottom">
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <Palette className="w-5 h-5 text-fuchsia-400" />
+                <Palette className="w-5 h-5 text-fuchsia-400 shrink-0" />
                 <div>
                   <h3 className="text-base font-semibold text-white">
-                    JARVIS Neural Image Creation & Blueprint Studio
+                    JARVIS Neural Image Studio
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-400 hidden sm:block">
                     Synthesize photorealistic artwork, engineering schematics, and medical renders
                   </p>
                 </div>
@@ -1795,18 +3180,18 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setImageStudioOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="py-4 space-y-3 border-b border-slate-800">
+            <div className="py-3 sm:py-4 space-y-3 border-b border-slate-800">
               <textarea
                 rows={2}
                 value={studioPrompt}
                 onChange={(e) => setStudioPrompt(e.target.value)}
-                placeholder="Describe the image, medical diagram, architectural render, or sci-fi concept you want JARVIS to create..."
+                placeholder="Describe the image, medical diagram, architectural render, or sci-fi concept..."
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-fuchsia-400"
               />
 
@@ -1814,7 +3199,7 @@ export default function App() {
                 <select
                   value={studioStyle}
                   onChange={(e) => setStudioStyle(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200"
+                  className="flex-1 sm:flex-none bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200"
                 >
                   {IMAGE_STYLE_PRESETS.map((st) => (
                     <option key={st.id} value={st.id}>
@@ -1828,10 +3213,10 @@ export default function App() {
                   onChange={(e) =>
                     setStudioAspectRatio(e.target.value as '1:1' | '16:9' | '9:16' | '4:3')
                   }
-                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200"
+                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200"
                 >
                   <option value="1:1">1:1 Square</option>
-                  <option value="16:9">16:9 Widescreen</option>
+                  <option value="16:9">16:9 Wide</option>
                   <option value="9:16">9:16 Portrait</option>
                   <option value="4:3">4:3 Standard</option>
                 </select>
@@ -1840,7 +3225,7 @@ export default function App() {
                   type="button"
                   disabled={studioGenerating || !studioPrompt.trim()}
                   onClick={() => void handleGenerateStudioImage()}
-                  className="ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-gradient-to-r from-fuchsia-600 to-cyan-600 hover:from-fuchsia-500 hover:to-cyan-500 disabled:opacity-50 text-white text-xs font-semibold shadow"
+                  className="w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-fuchsia-600 to-cyan-600 hover:from-fuchsia-500 hover:to-cyan-500 disabled:opacity-50 text-white text-xs font-semibold shadow"
                 >
                   {studioGenerating ? (
                     <>
@@ -1914,18 +3299,18 @@ export default function App() {
         </div>
       )}
 
-      {/* ENGINEERING & MEDICAL SCIENTIFIC WORKBENCH MODAL */}
+      {/* ENGINEERING & MEDICAL WORKBENCH MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
       {workbenchOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-emerald-500/30 rounded-2xl max-w-3xl w-full max-h-[88vh] flex flex-col p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#0b1322] border-0 sm:border border-emerald-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-3xl sm:max-h-[88vh] flex flex-col p-4 sm:p-6 shadow-2xl space-y-4 jarvis-mobile-safe-bottom">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <Wrench className="w-5 h-5 text-emerald-400" />
+                <Wrench className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div>
                   <h3 className="text-base font-semibold text-white">
-                    Engineering & Clinical Calculation Workbench
+                    Engineering & Clinical Workbench
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-400 hidden sm:block">
                     Scientific evaluator, Ohm's law, unit conversions, materials database &
                     clinical lab ranges
                   </p>
@@ -1934,7 +3319,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setWorkbenchOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1943,12 +3328,12 @@ export default function App() {
             <div className="flex flex-wrap gap-1.5">
               {(
                 [
-                  { id: 'calc', label: 'Scientific Calculator' },
-                  { id: 'ohms', label: "Ohm's Law & Power" },
-                  { id: 'units', label: 'Engineering Units' },
+                  { id: 'calc', label: 'Scientific Calc' },
+                  { id: 'ohms', label: "Ohm's Law" },
+                  { id: 'units', label: 'Eng Units' },
                   { id: 'materials', label: 'Materials DB' },
-                  { id: 'clinical', label: 'Medical BMI / BMR' },
-                  { id: 'labs', label: 'Clinical Lab Ranges' },
+                  { id: 'clinical', label: 'BMI / BMR' },
+                  { id: 'labs', label: 'Lab Ranges' },
                 ] as const
               ).map((tab) => (
                 <button
@@ -1969,7 +3354,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto">
               {workbenchTab === 'calc' && (
                 <div className="space-y-3">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       value={calcInput}
@@ -2041,7 +3426,7 @@ export default function App() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
                       <div className="text-[10px] text-slate-400">Current (I)</div>
                       <div className="text-sm font-mono text-cyan-300 mt-0.5">
@@ -2066,7 +3451,7 @@ export default function App() {
 
               {workbenchTab === 'units' && (
                 <div className="space-y-3">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <select
                       value={unitCategory}
                       onChange={(e) =>
@@ -2108,26 +3493,22 @@ export default function App() {
                     <thead>
                       <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
                         <th className="py-2 pr-3">Material</th>
-                        <th className="py-2 px-2">Density (kg/m³)</th>
+                        <th className="py-2 px-2">Density</th>
                         <th className="py-2 px-2">Young's (GPa)</th>
                         <th className="py-2 px-2">Yield (MPa)</th>
-                        <th className="py-2 pl-2">Thermal (W/m·K)</th>
+                        <th className="py-2 pl-2">Thermal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
                       {ENGINEERING_MATERIALS_DB.map((mat) => (
                         <tr key={mat.name} className="hover:bg-slate-900/70">
                           <td className="py-2 pr-3 font-medium text-slate-200">{mat.name}</td>
-                          <td className="py-2 px-2 font-mono text-cyan-300">{mat.densityKgM3}</td>
+                          <td className="py-2 px-2 font-mono text-cyan-300">{mat.density}</td>
                           <td className="py-2 px-2 font-mono text-emerald-300">
-                            {mat.youngsModulusGPa}
+                            {mat.youngsGPa}
                           </td>
-                          <td className="py-2 px-2 font-mono text-amber-300">
-                            {mat.yieldStrengthMPa}
-                          </td>
-                          <td className="py-2 pl-2 font-mono text-slate-300">
-                            {mat.thermalConductivityWmK}
-                          </td>
+                          <td className="py-2 px-2 font-mono text-amber-300">{mat.yieldMPa}</td>
+                          <td className="py-2 pl-2 font-mono text-slate-300">{mat.thermalWmK}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2166,7 +3547,7 @@ export default function App() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
                       <div className="text-[10px] text-slate-400">Body Mass Index</div>
                       <div className="text-sm font-mono text-emerald-300 mt-0.5">
@@ -2194,19 +3575,14 @@ export default function App() {
                 <div className="space-y-2">
                   {CLINICAL_LAB_REFERENCES.map((lab) => (
                     <div
-                      key={lab.abbreviation}
+                      key={lab.test}
                       className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                     >
                       <div>
-                        <div className="text-xs font-semibold text-slate-100">
-                          {lab.testName}{' '}
-                          <span className="font-mono text-emerald-400">({lab.abbreviation})</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400">{lab.clinicalNote}</div>
+                        <div className="text-xs font-semibold text-slate-100">{lab.test}</div>
+                        <div className="text-[11px] text-slate-400">{lab.note}</div>
                       </div>
-                      <div className="text-xs font-mono text-cyan-300 shrink-0">
-                        {lab.normalRange} {lab.unit}
-                      </div>
+                      <div className="text-xs font-mono text-cyan-300 shrink-0">{lab.range}</div>
                     </div>
                   ))}
                 </div>
@@ -2216,13 +3592,13 @@ export default function App() {
         </div>
       )}
 
-      {/* JARVIS NEURAL MEMORY & CUSTOM INSTRUCTIONS MODAL */}
+      {/* JARVIS PERSISTENT NEURAL MEMORY MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
       {memoryModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-violet-500/30 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#0b1322] border-0 sm:border border-violet-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-xl p-4 sm:p-6 shadow-2xl flex flex-col space-y-4 jarvis-mobile-safe-bottom">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <Brain className="w-5 h-5 text-violet-400" />
+                <Brain className="w-5 h-5 text-violet-400 shrink-0" />
                 <div>
                   <h3 className="text-base font-semibold text-white">
                     JARVIS Persistent Neural Memory
@@ -2235,13 +3611,13 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setMemoryModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <select
                 value={newMemoryCategory}
                 onChange={(e) =>
@@ -2261,22 +3637,22 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleAddMemory();
                 }}
-                placeholder="e.g., I am a civil engineer based in Lahore; use SI units."
+                placeholder="e.g., I am an engineer in Lahore; use SI units."
                 className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
               />
               <button
                 type="button"
                 onClick={handleAddMemory}
-                className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium"
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium"
               >
                 Save
               </button>
             </div>
 
-            <div className="max-h-60 overflow-y-auto space-y-2">
+            <div className="flex-1 sm:max-h-60 overflow-y-auto space-y-2">
               {memories.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-6">
-                  No neural memories saved yet. Add your role, city, or response preferences above.
+                  No neural memories saved yet. Add your role, city, or preferences above.
                 </p>
               ) : (
                 memories.map((mem) => (
@@ -2294,7 +3670,6 @@ export default function App() {
                       type="button"
                       onClick={() => handleDeleteMemory(mem.id)}
                       className="text-slate-500 hover:text-rose-400 p-1"
-                      aria-label="Delete memory"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -2306,9 +3681,74 @@ export default function App() {
         </div>
       )}
 
+      {/* DIRECT GEMINI API KEY MODAL (FULL SCREEN ON MOBILE, CARD ON LAPTOP/MAC) */}
+      {apiKeyModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#0b1322] border-0 sm:border border-amber-500/40 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-md p-5 sm:p-6 shadow-2xl flex flex-col justify-center space-y-4 jarvis-mobile-safe-bottom">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-semibold text-white">
+                  Direct Gemini API Key
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setApiKeyModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Save your Gemini API key locally in your browser so JARVIS can answer and search live
+              Google news directly even on static GitHub Pages URLs.
+            </p>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white font-mono"
+            />
+            <div className="flex items-center justify-end gap-2">
+              {directApiKey && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem(JARVIS_DIRECT_API_KEY_STORAGE);
+                    setDirectApiKey('');
+                    setApiKeyInput('');
+                    setApiKeyModalOpen(false);
+                  }}
+                  className="px-3 py-2 rounded-lg bg-rose-500/20 text-rose-300 text-xs"
+                >
+                  Remove Key
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const trimmed = apiKeyInput.trim();
+                  if (trimmed) {
+                    localStorage.setItem(JARVIS_DIRECT_API_KEY_STORAGE, trimmed);
+                    setDirectApiKey(trimmed);
+                    setAiConfigured(true);
+                  }
+                  setApiKeyModalOpen(false);
+                }}
+                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs"
+              >
+                Save Key
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CTRL+P QUICK COMMAND PALETTE */}
       {commandPaletteOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center pt-20 p-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center pt-12 sm:pt-20 p-3 sm:p-4">
           <div className="bg-[#0b1322] border border-cyan-500/40 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800">
               <Command className="w-4 h-4 text-cyan-400" />
