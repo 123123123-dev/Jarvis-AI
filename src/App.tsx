@@ -72,7 +72,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// SELF-CONTAINED TYPES & CONSTANTS
+// TYPES & CONSTANTS
 // ============================================================================
 
 type ProfessionId =
@@ -190,9 +190,9 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Pathophysiology, differential considerations, diagnostic lab interpretation, and clinical guidelines.',
     badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
     systemDirective:
-      'Operate as a Senior Medical & Clinical Intelligence specialist. Explain pathophysiology, differential considerations, diagnostic criteria, and lab markers using clear clinical structure. Always include a concise reminder to consult a licensed healthcare provider for personal diagnosis or treatment.',
+      'Operate as a Senior Medical & Clinical Intelligence specialist. Explain pathophysiology, differential considerations, diagnostic criteria, and lab markers using clear clinical structure. Include a concise reminder to consult a licensed healthcare provider.',
     disclaimer:
-      'Clinical Reference Mode: Educational medical information only — not a substitute for professional medical diagnosis or emergency care.',
+      'Clinical Reference Mode: Educational medical information only — not a substitute for professional medical care.',
     quickPrompts: [
       'Explain how to interpret a Complete Blood Count (CBC) and Comprehensive Metabolic Panel.',
       'Outline common causes and red-flag symptoms for acute chest discomfort.',
@@ -208,7 +208,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Pharmacokinetics (ADME), receptor mechanisms, CYP450 drug interactions, and therapeutic monitoring.',
     badgeColor: 'text-teal-300 border-teal-500/40 bg-teal-500/10',
     systemDirective:
-      'Operate as a Board-Certified Clinical Pharmacologist. Detail mechanisms of action, ADME pharmacokinetics, CYP450 enzyme interactions, contraindications, and adverse effect profiles clearly. Remind users to verify dosing with a licensed prescriber or pharmacist.',
+      'Operate as a Board-Certified Clinical Pharmacologist. Detail mechanisms of action, ADME pharmacokinetics, CYP450 enzyme interactions, contraindications, and adverse effect profiles clearly.',
     disclaimer:
       'Pharmacology Reference Mode: Verify all dosing and drug interactions with a licensed pharmacist or physician.',
     quickPrompts: [
@@ -322,9 +322,9 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Contract structure, intellectual property, compliance frameworks, and statutory analysis.',
     badgeColor: 'text-indigo-300 border-indigo-500/40 bg-indigo-500/10',
     systemDirective:
-      'Operate as a Senior Legal & Regulatory Analyst. Break down contract clauses, liability allocations, IP licensing terms, and compliance requirements clearly. Note that output is informational analysis rather than formal legal representation.',
+      'Operate as a Senior Legal & Regulatory Analyst. Break down contract clauses, liability allocations, IP licensing terms, and compliance requirements clearly.',
     disclaimer:
-      'Legal Analysis Mode: Educational regulatory and contract breakdown; consult qualified counsel for formal legal advice.',
+      'Legal Analysis Mode: Educational regulatory and contract breakdown; consult qualified counsel for formal advice.',
     quickPrompts: [
       'Explain key clauses to audit in a SaaS Master Services Agreement (MSA).',
       'Compare patent, copyright, and trade secret protection for AI software.',
@@ -452,38 +452,44 @@ const NEWS_CATEGORIES = [
   {
     id: 'breaking',
     label: 'Top World & Breaking News',
+    query: 'breaking world news headlines today',
     prompt:
-      'Search the live web and give me a comprehensive, well-structured briefing of the biggest breaking world news and major headlines happening right now today.',
+      'Give me a comprehensive, well-structured briefing of the biggest breaking world news and major headlines happening right now today.',
   },
   {
     id: 'ai-tech',
     label: 'AI, Robotics & Tech',
+    query: 'artificial intelligence technology breakthroughs news today',
     prompt:
-      'Search the live web for today’s latest artificial intelligence, robotics, semiconductor, and major tech industry news and breakthroughs.',
+      'Give me today’s latest artificial intelligence, robotics, semiconductor, and major tech industry news and breakthroughs.',
   },
   {
     id: 'markets',
     label: 'Global Markets & Economy',
+    query: 'global stock market economy business news today',
     prompt:
-      'Search the live web for today’s stock market movements, macroeconomic news, central bank updates, and major business headlines.',
+      'Give me today’s stock market movements, macroeconomic news, central bank updates, and major business headlines.',
   },
   {
     id: 'science-space',
     label: 'Science, Space & Energy',
+    query: 'science space exploration clean energy discoveries today',
     prompt:
-      'Search the live web for the latest scientific discoveries, space exploration missions, and clean energy breakthroughs happening now.',
+      'Give me the latest scientific discoveries, space exploration missions, and clean energy breakthroughs happening now.',
   },
   {
     id: 'medical-news',
     label: 'Medicine & Biotech Updates',
+    query: 'medical research biotech health breakthroughs today',
     prompt:
-      'Search the live web for the latest medical research breakthroughs, clinical trial milestones, and global public health news today.',
+      'Give me the latest medical research breakthroughs, clinical trial milestones, and global public health news today.',
   },
   {
     id: 'sports',
     label: 'Live Sports & Tournaments',
+    query: 'live sports scores cricket football headlines today',
     prompt:
-      'Search the live web for today’s major sports scores, ongoing tournaments, and top athletic headlines worldwide.',
+      'Give me today’s major sports scores, ongoing tournaments, and top athletic headlines worldwide.',
   },
 ];
 
@@ -492,42 +498,42 @@ const IMAGE_STYLE_PRESETS = [
     id: 'cinematic',
     label: 'Cinematic Photoreal 8K',
     suffix:
-      'photorealistic, 8k ultra-detailed, dramatic volumetric lighting, shot on 35mm lens, shallow depth of field, masterwork photography',
+      'photorealistic, 8k ultra-detailed, dramatic volumetric lighting, shot on 35mm lens, masterwork photography',
   },
   {
     id: 'blueprint',
     label: 'JARVIS Holographic Blueprint',
     suffix:
-      'futuristic cyan and gold holographic CAD schematic blueprint on dark obsidian background, crisp technical vector lines, aerospace engineering HUD',
+      'futuristic cyan and gold holographic CAD schematic blueprint on dark obsidian background, crisp technical vector lines',
   },
   {
     id: 'medical-3d',
     label: '3D Medical Illustration',
     suffix:
-      'high-precision 3D anatomical and cellular scientific visualization, studio subsurface scattering, clean medical textbook render, ultra sharp',
+      'high-precision 3D anatomical and cellular scientific visualization, studio lighting, clean medical textbook render',
   },
   {
     id: 'concept-art',
     label: 'Sci-Fi Concept Art',
     suffix:
-      'epic futuristic concept art, atmospheric perspective, intricate mechanical detail, matte painting, Unreal Engine 5 cinematic render',
+      'epic futuristic concept art, atmospheric perspective, intricate mechanical detail, Unreal Engine 5 cinematic render',
   },
   {
     id: 'architecture',
     label: 'Architectural Render',
     suffix:
-      'modern luxury architectural visualization, golden hour natural sunlight, glass and concrete textures, V-Ray photorealistic exterior render',
+      'modern luxury architectural visualization, golden hour sunlight, glass and concrete textures, V-Ray photorealistic render',
   },
   {
     id: 'anime',
     label: 'Studio Anime Illustration',
     suffix:
-      'high-budget theatrical anime key visual, vibrant lighting, expressive linework, Makoto Shinkai inspired sky and reflections',
+      'high-budget theatrical anime key visual, vibrant lighting, expressive linework, cinematic sky and reflections',
   },
 ];
 
 // ============================================================================
-// HELPER FUNCTIONS
+// 100% FREE LIVE WEB SEARCH & FREE IMAGE GENERATION ENGINES
 // ============================================================================
 
 function detectLiveNewsOrCurrentEventIntent(text: string): boolean {
@@ -546,18 +552,223 @@ function detectLiveNewsOrCurrentEventIntent(text: string): boolean {
     /\bthis week\b/,
     /\bthis month\b/,
     /\byesterday\b/,
-    /\blive\s+(?:score|scores|match|game|price|market|update)/,
-    /\bstock price\b/,
-    /\bbitcoin price\b/,
-    /\bcrypto price\b/,
+    /\blive\b/,
+    /\bstock\b/,
+    /\bprice\b/,
+    /\bbitcoin\b/,
+    /\bcrypto\b/,
     /\bexchange rate\b/,
     /\bwho won\b/,
     /\bwhat happened\b/,
     /\bweather\b/,
+    /\bscore\b/,
+    /\bmatch\b/,
     /\b2025\b/,
     /\b2026\b/,
   ];
   return patterns.some((pattern) => pattern.test(lower));
+}
+
+/**
+ * Fetches real-time Google News headlines, DuckDuckGo Instant Answers, and
+ * Wikipedia live search results 100% FREE with zero API keys or billing.
+ */
+async function fetchFreeLiveGoogleWebResults(
+  userQuery: string
+): Promise<{ contextText: string; sources: Array<{ uri: string; title: string }> }> {
+  const sources: Array<{ uri: string; title: string }> = [];
+  const snippets: string[] = [];
+  const seenUrls = new Set<string>();
+
+  const addSource = (uri: string, title: string, snippetLine: string) => {
+    if (!uri || seenUrls.has(uri)) return;
+    seenUrls.add(uri);
+    sources.push({ uri, title });
+    snippets.push(snippetLine);
+  };
+
+  const isTopHeadlines =
+    /breaking world news|top world|major headlines happening right now/i.test(userQuery);
+
+  const cleanTopic = userQuery
+    .replace(
+      /give me a comprehensive, well-structured briefing of|give me today['’]s|give me the|search the live web (?:and give me|for)|happening right now today\.?/gi,
+      ''
+    )
+    .trim()
+    .slice(0, 120);
+
+  const googleNewsRssUrl =
+    isTopHeadlines || !cleanTopic
+      ? 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en'
+      : `https://news.google.com/rss/search?q=${encodeURIComponent(cleanTopic)}&hl=en-US&gl=US&ceid=US:en`;
+
+  // 1. Primary Google News RSS via rss2json
+  let gotGoogleNews = false;
+  try {
+    const res = await fetch(
+      `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleNewsRssUrl)}`
+    );
+    if (res.ok) {
+      const data = (await res.json()) as {
+        items?: Array<{ title?: string; pubDate?: string; link?: string }>;
+      };
+      if (Array.isArray(data.items) && data.items.length > 0) {
+        gotGoogleNews = true;
+        for (const item of data.items.slice(0, 8)) {
+          if (item.title && item.link) {
+            addSource(
+              item.link,
+              item.title,
+              `- [Google News | ${item.pubDate || 'Live'}] ${item.title}`
+            );
+          }
+        }
+      }
+    }
+  } catch {
+    // Fall through to XML proxy
+  }
+
+  // 2. Backup Google News XML parser via AllOrigins (if rss2json rate-limits)
+  if (!gotGoogleNews) {
+    try {
+      const xmlRes = await fetch(
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(googleNewsRssUrl)}`
+      );
+      if (xmlRes.ok) {
+        const xmlText = await xmlRes.text();
+        const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+        const items = Array.from(doc.querySelectorAll('item')).slice(0, 8);
+        for (const item of items) {
+          const title = item.querySelector('title')?.textContent?.trim() || '';
+          const link = item.querySelector('link')?.textContent?.trim() || '';
+          const pubDate = item.querySelector('pubDate')?.textContent?.trim() || 'Live';
+          if (title && link) {
+            addSource(link, title, `- [Google News | ${pubDate}] ${title}`);
+          }
+        }
+      }
+    } catch {
+      // Continue to DuckDuckGo & Wikipedia
+    }
+  }
+
+  // 3. DuckDuckGo Instant Answer API (Free, zero-key)
+  if (cleanTopic && !isTopHeadlines) {
+    try {
+      const ddgRes = await fetch(
+        `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanTopic)}&format=json&no_html=1&skip_disambig=1`
+      );
+      if (ddgRes.ok) {
+        const ddg = (await ddgRes.json()) as {
+          Heading?: string;
+          AbstractText?: string;
+          AbstractURL?: string;
+          RelatedTopics?: Array<{ Text?: string; FirstURL?: string }>;
+        };
+        if (ddg.AbstractText && ddg.AbstractURL) {
+          addSource(
+            ddg.AbstractURL,
+            ddg.Heading || cleanTopic,
+            `- [Web Summary: ${ddg.Heading || cleanTopic}] ${ddg.AbstractText}`
+          );
+        }
+        for (const topic of (ddg.RelatedTopics || []).slice(0, 3)) {
+          if (topic.Text && topic.FirstURL) {
+            addSource(topic.FirstURL, topic.Text.slice(0, 70), `- [Web Fact] ${topic.Text}`);
+          }
+        }
+      }
+    } catch {
+      // Ignore DDG failure
+    }
+
+    // 4. Wikipedia Live Search API (Free, CORS-enabled)
+    try {
+      const wikiRes = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+          cleanTopic
+        )}&srlimit=4&format=json&origin=*`
+      );
+      if (wikiRes.ok) {
+        const wikiData = (await wikiRes.json()) as {
+          query?: { search?: Array<{ title: string; snippet: string }> };
+        };
+        for (const r of wikiData?.query?.search || []) {
+          const cleanSnippet = r.snippet.replace(/<[^>]+>/g, '');
+          const wikiUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(
+            r.title.replace(/\s+/g, '_')
+          )}`;
+          addSource(wikiUrl, `${r.title} - Wikipedia`, `- [Reference: ${r.title}] ${cleanSnippet}`);
+        }
+      }
+    } catch {
+      // Ignore Wikipedia failure
+    }
+  }
+
+  if (snippets.length === 0) {
+    return { contextText: '', sources: [] };
+  }
+
+  return {
+    contextText: `[LIVE GOOGLE NEWS & WEB SEARCH RESULTS RETRIEVED RIGHT NOW (${new Date().toLocaleString()}):\n${snippets.join(
+      '\n'
+    )}\nSynthesize an accurate, comprehensive, up-to-date response using these live search results.]`,
+    sources,
+  };
+}
+
+/**
+ * Generates an image 100% FREE with zero API key or billing via Pollinations AI,
+ * preloading the image in the browser to ensure clean delivery.
+ */
+async function generateFreePollinationsImage(
+  prompt: string,
+  aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' = '1:1'
+): Promise<string> {
+  const dimensions: Record<'1:1' | '16:9' | '9:16' | '4:3', { w: number; h: number }> = {
+    '1:1': { w: 1024, h: 1024 },
+    '16:9': { w: 1280, h: 720 },
+    '9:16': { w: 720, h: 1280 },
+    '4:3': { w: 1024, h: 768 },
+  };
+  const { w, h } = dimensions[aspectRatio];
+  const seed = Math.floor(Math.random() * 999999);
+  const encoded = encodeURIComponent(prompt.slice(0, 450));
+
+  const candidateUrls = [
+    `https://image.pollinations.ai/prompt/${encoded}?width=${w}&height=${h}&nologo=true&seed=${seed}`,
+    `https://gen.pollinations.ai/image/${encoded}?width=${w}&height=${h}&nologo=true&seed=${seed}`,
+  ];
+
+  const loadImage = (url: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const img = new window.Image();
+      const timeout = window.setTimeout(() => {
+        reject(new Error('Image generation timed out.'));
+      }, 35000);
+      img.onload = () => {
+        window.clearTimeout(timeout);
+        resolve(url);
+      };
+      img.onerror = () => {
+        window.clearTimeout(timeout);
+        reject(new Error('Image endpoint unavailable.'));
+      };
+      img.src = url;
+    });
+
+  for (const url of candidateUrls) {
+    try {
+      return await loadImage(url);
+    } catch {
+      // Try next free endpoint
+    }
+  }
+
+  return candidateUrls[0];
 }
 
 function buildTemporalGroundingPrefix(
@@ -589,7 +800,7 @@ function buildTemporalGroundingPrefix(
 
   if (isLiveNewsQuery) {
     sections.push(
-      '[REAL-TIME GROUNDING DIRECTIVE: The user is asking about current events, today’s news, or live real-world information. Prioritize up-to-date live web search results, cite verifiable facts clearly, and explicitly mention dates when reporting news.]'
+      '[REAL-TIME BRIEFING DIRECTIVE: Present the live retrieved search headlines and facts clearly with dates and structured bullet points.]'
     );
   }
 
@@ -746,12 +957,6 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
   const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
 
   if (!response.ok) {
-    if (response.status === 405 || trimmed.includes('405 Not Allowed')) {
-      throw new Error(
-        'This preview URL does not run backend API routes. Open https://jarvis-ai-wine-seven.vercel.app/ to connect to your live JARVIS server.'
-      );
-    }
-
     try {
       const parsed = JSON.parse(trimmed) as { error?: string; message?: string };
       const errorMessage =
@@ -838,7 +1043,7 @@ export default function App() {
   const [directSignInUrl, setDirectSignInUrl] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState('');
 
-  // UI state (Sidebar open by default on Laptop/Chromebook/MacBook, closed on Mobile)
+  // UI state
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 768
   );
@@ -1171,10 +1376,9 @@ export default function App() {
     if (!directSignInUrl) return;
     try {
       await navigator.clipboard.writeText(directSignInUrl);
-      setAccountNotice('Reusable account link copied. It stays active until sign-out or your next sign-in.');
-    } catch (error) {
-      console.error('Unable to copy direct sign-in link:', error);
-      setAccountNotice('Could not copy the sign-in link. Check clipboard permissions and try again.');
+      setAccountNotice('Reusable account link copied.');
+    } catch {
+      setAccountNotice('Could not copy the sign-in link.');
     }
   };
 
@@ -1330,7 +1534,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // CORE SEND MESSAGE ENGINE
+  // CORE SEND MESSAGE ENGINE (100% FREE LIVE GOOGLE SEARCH & FREE IMAGE GEN)
   // ==========================================================================
 
   const handleSendMessage = async (
@@ -1355,10 +1559,6 @@ export default function App() {
         ));
     const weatherRequest = getWeatherRequest(text);
     const isLiveNewsReq = detectLiveNewsOrCurrentEventIntent(text);
-
-    if (isLiveNewsReq && !settings.webSearchEnabled) {
-      setSettings((prev) => ({ ...prev, webSearchEnabled: true }));
-    }
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 9),
@@ -1408,20 +1608,6 @@ export default function App() {
           userMessage,
         ];
 
-      const groundingPrefix = buildTemporalGroundingPrefix(
-        activeProfession,
-        memories,
-        isLiveNewsReq
-      );
-
-      const enrichedMessages = activeMessages.map((m, index) => {
-        const isLastUserTurn = index === activeMessages.length - 1 && m.role === 'user';
-        return {
-          role: m.role,
-          content: isLastUserTurn ? `${groundingPrefix}\n\nUser Query:\n${m.content}` : m.content,
-        };
-      });
-
       let assistantMessage: Message;
 
       if (weatherRequest) {
@@ -1464,56 +1650,62 @@ export default function App() {
           timestamp: Date.now(),
         };
       } else if (isImageReq) {
-        const res = await fetch('/api/generate-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: text || 'Create an artistic interpretation of the attached image.',
+        // 100% Free Image Synthesis (no billing required)
+        const cleanArtPrompt =
+          text.trim() || 'Futuristic arc reactor core glowing in dark laboratory, 8k';
+        const imageUrl = await generateFreePollinationsImage(cleanArtPrompt, '1:1');
+
+        setArtGallery((prev) => [
+          {
+            id: Math.random().toString(36).substring(2, 9),
+            prompt: cleanArtPrompt,
+            style: 'Free Neural Studio',
             aspectRatio: '1:1',
-            attachments: attachments
-              .filter((attachment) => attachment.type.startsWith('image/'))
-              .map((attachment) => ({
-                name: attachment.name,
-                type: attachment.type,
-                data: attachment.data,
-              })),
-          }),
-        });
-
-        const data = await readJsonResponse<{
-          prompt?: string;
-          imageUrl?: string;
-        }>(res, 'Image generation failed.');
-
-        if (data.imageUrl) {
-          setArtGallery((prev) => [
-            {
-              id: Math.random().toString(36).substring(2, 9),
-              prompt: data.prompt || text,
-              style: 'Auto Studio',
-              aspectRatio: '1:1',
-              imageUrl: data.imageUrl!,
-              createdAt: Date.now(),
-            },
-            ...prev,
-          ]);
-        }
+            imageUrl,
+            createdAt: Date.now(),
+          },
+          ...prev,
+        ]);
 
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: `Here is the artwork generated for **"${data.prompt || text}"**:\n\n*Synthesized with JARVIS Neural Studio.*`,
-          imageUrl: data.imageUrl,
+          content: `Here is the image generated for **"${cleanArtPrompt}"**:`,
+          imageUrl,
           timestamp: Date.now(),
         };
       } else {
+        const shouldSearchWeb = settings.webSearchEnabled || isLiveNewsReq;
+        const liveWeb = shouldSearchWeb
+          ? await fetchFreeLiveGoogleWebResults(text)
+          : { contextText: '', sources: [] };
+
+        const groundingPrefix = buildTemporalGroundingPrefix(
+          activeProfession,
+          memories,
+          isLiveNewsReq
+        );
+
+        const enrichedMessages = activeMessages.map((m, index) => {
+          const isLastUserTurn = index === activeMessages.length - 1 && m.role === 'user';
+          if (!isLastUserTurn) {
+            return { role: m.role, content: m.content };
+          }
+          const combinedContext = liveWeb.contextText
+            ? `${groundingPrefix}\n\n${liveWeb.contextText}\n\nUser Query:\n${m.content}`
+            : `${groundingPrefix}\n\nUser Query:\n${m.content}`;
+          return { role: m.role, content: combinedContext };
+        });
+
+        // Always use free-tier Flash model ('jarvis-turbo') with webSearch: false
+        // because live Google News & Web search results are already injected above!
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: enrichedMessages,
-            webSearch: settings.webSearchEnabled || isLiveNewsReq,
-            model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
+            webSearch: false,
+            model: 'jarvis-turbo',
             attachments: attachments.map((a) => ({
               name: a.name,
               type: a.type,
@@ -1532,7 +1724,8 @@ export default function App() {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
           content: data.content || 'Response processed, sir.',
-          sources: data.sources || [],
+          sources:
+            liveWeb.sources.length > 0 ? liveWeb.sources : data.sources || [],
           imageUrl: data.imageUrl,
           timestamp: Date.now(),
         };
@@ -1560,9 +1753,7 @@ export default function App() {
       const errorMessage: Message = {
         id: Math.random().toString(36).substring(2, 9),
         role: 'assistant',
-        content: errorText.includes('not configured')
-          ? `**Setup required:** ${errorText}\n\nEnsure GEMINI_API_KEY is configured in your Vercel project Environment Variables.`
-          : `**JARVIS could not answer:** ${errorText}`,
+        content: `**JARVIS notice:** ${errorText}`,
         timestamp: Date.now(),
         isError: true,
       };
@@ -1666,6 +1857,7 @@ export default function App() {
 
       try {
         const isLiveNews = detectLiveNewsOrCurrentEventIntent(trimmed);
+        const liveWeb = await fetchFreeLiveGoogleWebResults(trimmed);
         const groundingPrefix = buildTemporalGroundingPrefix(
           activeProfession,
           memories,
@@ -1677,9 +1869,13 @@ export default function App() {
           content: t.text,
         }));
 
+        const fullPrompt = liveWeb.contextText
+          ? `${groundingPrefix}\n\n${liveWeb.contextText}\n[VOICE MODE: Answer naturally and concisely as if speaking out loud.]\n\nSpoken Input: ${trimmed}`
+          : `${groundingPrefix}\n[VOICE MODE: Answer naturally and concisely as if speaking out loud.]\n\nSpoken Input: ${trimmed}`;
+
         historyPayload.push({
           role: 'user',
-          content: `${groundingPrefix}\n[VOICE CONVERSATION MODE: Respond naturally, clearly, and conversationally as if speaking out loud in real time.]\n\nSpoken Input: ${trimmed}`,
+          content: fullPrompt,
         });
 
         const res = await fetch('/api/chat', {
@@ -1687,8 +1883,8 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: historyPayload,
-            webSearch: true,
-            model: settings.dualEngineEnabled ? 'jarvis-pro' : settings.selectedModel,
+            webSearch: false,
+            model: 'jarvis-turbo',
             attachments: [],
           }),
         });
@@ -1717,14 +1913,7 @@ export default function App() {
         );
       }
     },
-    [
-      activeProfession,
-      memories,
-      settings.dualEngineEnabled,
-      settings.selectedModel,
-      voiceTurns,
-      speakVoiceTurnReply,
-    ]
+    [activeProfession, memories, voiceTurns, speakVoiceTurnReply]
   );
 
   const startVoiceRecognition = useCallback(() => {
@@ -1854,7 +2043,10 @@ export default function App() {
     closeLiveVoiceSession();
   };
 
-  // Image Studio Generation Handler
+  // ==========================================================================
+  // 100% FREE IMAGE STUDIO GENERATION HANDLER
+  // ==========================================================================
+
   const handleGenerateStudioImage = async () => {
     const cleanPrompt = studioPrompt.trim();
     if (!cleanPrompt || studioGenerating) return;
@@ -1867,31 +2059,14 @@ export default function App() {
     setStudioError('');
 
     try {
-      const res = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: fullPrompt,
-          aspectRatio: studioAspectRatio,
-          attachments: [],
-        }),
-      });
-
-      const data = await readJsonResponse<{
-        imageUrl?: string;
-        prompt?: string;
-      }>(res, 'Image generation failed.');
-
-      if (!data.imageUrl) {
-        throw new Error('No image URL was returned by JARVIS Neural Studio.');
-      }
+      const imageUrl = await generateFreePollinationsImage(fullPrompt, studioAspectRatio);
 
       const newArt: GeneratedArtItem = {
         id: Math.random().toString(36).substring(2, 9),
         prompt: cleanPrompt,
         style: preset.label,
         aspectRatio: studioAspectRatio,
-        imageUrl: data.imageUrl,
+        imageUrl,
         createdAt: Date.now(),
       };
 
@@ -1908,7 +2083,9 @@ export default function App() {
     setMobileToolsDrawerOpen(false);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        setAccountNotice('Screen capture is not supported in this mobile browser. Use the paperclip icon in chat to upload a screenshot.');
+        setAccountNotice(
+          'Screen capture is not supported in this mobile browser. Use the paperclip icon in chat to upload a screenshot.'
+        );
         return;
       }
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -2072,7 +2249,7 @@ export default function App() {
     () => [
       {
         id: 'voice',
-        label: 'Start Live Two-Way Voice Conversation (ChatGPT Voice Mode)',
+        label: 'Start Live Two-Way Voice Conversation',
         shortcut: 'VOICE',
         action: () => openLiveVoiceSession(),
       },
@@ -2084,13 +2261,13 @@ export default function App() {
       },
       {
         id: 'professions',
-        label: 'Switch Specialist Profession (Medical, Engineering, Law, Finance...)',
+        label: 'Switch Specialist Profession (16 Domains)',
         shortcut: 'PRO',
         action: () => setProfessionsModalOpen(true),
       },
       {
         id: 'image-studio',
-        label: 'Open JARVIS Neural Image Creation & Gallery Studio',
+        label: 'Open JARVIS Free Neural Image Studio',
         shortcut: 'ART',
         action: () => setImageStudioOpen(true),
       },
@@ -2108,7 +2285,7 @@ export default function App() {
       },
       {
         id: 'memory',
-        label: 'Manage JARVIS Persistent Neural Memory & Preferences',
+        label: 'Manage JARVIS Persistent Neural Memory',
         shortcut: 'MEM',
         action: () => setMemoryModalOpen(true),
       },
@@ -2228,7 +2405,6 @@ export default function App() {
               type="button"
               onClick={openLiveVoiceSession}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-200 text-xs font-medium transition shadow-sm"
-              title="Start two-way hands-free voice conversation"
             >
               <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
               <span>Live Voice</span>
@@ -2238,7 +2414,6 @@ export default function App() {
               type="button"
               onClick={() => setNewsModalOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              title="Real-time breaking news and live world briefings"
             >
               <Newspaper className="w-3.5 h-3.5 text-amber-400" />
               <span>Today's News</span>
@@ -2248,7 +2423,6 @@ export default function App() {
               type="button"
               onClick={() => setProfessionsModalOpen(true)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition ${activeProfession.badgeColor}`}
-              title="Switch active profession specialist (16 domains)"
             >
               {isMedicalRole ? (
                 <Stethoscope className="w-3.5 h-3.5" />
@@ -2264,7 +2438,6 @@ export default function App() {
               type="button"
               onClick={() => setImageStudioOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              title="Open JARVIS Neural Image Creation & Gallery Studio"
             >
               <ImageIcon className="w-3.5 h-3.5 text-fuchsia-400" />
               <span>Image Studio</span>
@@ -2274,7 +2447,6 @@ export default function App() {
               type="button"
               onClick={() => setWorkbenchOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              title="Engineering Materials, Lab References, Ohm's Law & Scientific Calculator"
             >
               <Calculator className="w-3.5 h-3.5 text-emerald-400" />
               <span>Eng & Med Lab</span>
@@ -2284,7 +2456,6 @@ export default function App() {
               type="button"
               onClick={() => void handleCaptureScreenVision()}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              title="Capture a live screenshot and send to JARVIS Vision"
             >
               <Monitor className="w-3.5 h-3.5 text-sky-400" />
               <span>Screen Vision</span>
@@ -2294,7 +2465,6 @@ export default function App() {
               type="button"
               onClick={() => setMemoryModalOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              title="Manage persistent JARVIS memory & user preferences"
             >
               <Brain className="w-3.5 h-3.5 text-violet-400" />
               <span>Memory ({memories.length})</span>
@@ -2318,7 +2488,6 @@ export default function App() {
               type="button"
               onClick={() => setCommandPaletteOpen(true)}
               className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
-              title="Open Command Palette (Ctrl+P)"
             >
               <Command className="w-3 h-3 text-cyan-400" />
               <span>Ctrl+P</span>
@@ -2364,7 +2533,6 @@ export default function App() {
               type="button"
               onClick={() => setAccountNotice('')}
               className="text-slate-400 hover:text-white shrink-0"
-              aria-label="Dismiss account notice"
             >
               Dismiss
             </button>
@@ -2421,7 +2589,7 @@ export default function App() {
                       <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
                       <span className="font-mono">
                         {settings.webSearchEnabled
-                          ? `JARVIS (${activeProfession.shortName}) is searching live web...`
+                          ? `JARVIS (${activeProfession.shortName}) is searching live Google & web...`
                           : `JARVIS (${activeProfession.shortName}) is thinking...`}
                       </span>
                     </div>
@@ -2495,7 +2663,7 @@ export default function App() {
               >
                 <Newspaper className="w-5 h-5 text-amber-400" />
                 <span className="text-xs font-semibold text-white">Today's News</span>
-                <span className="text-[10px] text-slate-400">Live global briefings</span>
+                <span className="text-[10px] text-slate-400">Live Google briefings</span>
               </button>
 
               <button
@@ -2521,7 +2689,7 @@ export default function App() {
               >
                 <ImageIcon className="w-5 h-5 text-fuchsia-400" />
                 <span className="text-xs font-semibold text-white">Image Studio</span>
-                <span className="text-[10px] text-slate-400">Create AI art & renders</span>
+                <span className="text-[10px] text-slate-400">Free AI art & renders</span>
               </button>
 
               <button
@@ -2863,7 +3031,7 @@ export default function App() {
                       {cat.label}
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
-                      Live web search + verified headlines
+                      Live Google News + verified headlines
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-cyan-400 shrink-0" />
@@ -2978,7 +3146,7 @@ export default function App() {
         </div>
       )}
 
-      {/* IMAGE CREATION STUDIO MODAL */}
+      {/* 100% FREE IMAGE CREATION STUDIO MODAL */}
       {imageStudioOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4">
           <div className="bg-[#0b1322] border-0 sm:border border-fuchsia-500/30 rounded-none sm:rounded-2xl w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col p-4 sm:p-6 shadow-2xl jarvis-mobile-safe-bottom">
@@ -2987,7 +3155,7 @@ export default function App() {
                 <Palette className="w-5 h-5 text-fuchsia-400 shrink-0" />
                 <div>
                   <h3 className="text-base font-semibold text-white">
-                    JARVIS Neural Image Studio
+                    JARVIS Neural Image Studio (Free Unlimited)
                   </h3>
                   <p className="text-xs text-slate-400 hidden sm:block">
                     Synthesize photorealistic artwork, engineering schematics, and medical renders
@@ -3008,7 +3176,7 @@ export default function App() {
                 rows={2}
                 value={studioPrompt}
                 onChange={(e) => setStudioPrompt(e.target.value)}
-                placeholder="Describe the image, medical diagram, architectural render, or sci-fi concept..."
+                placeholder="Describe the image, car, medical diagram, architectural render, or sci-fi concept..."
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-fuchsia-400"
               />
 
@@ -3099,11 +3267,13 @@ export default function App() {
                           <span>{item.style}</span>
                           <a
                             href={item.imageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             download={`jarvis-art-${item.id}.png`}
                             className="flex items-center gap-1 text-cyan-400 hover:underline"
                           >
                             <Download className="w-3 h-3" />
-                            <span>Save</span>
+                            <span>Open / Save</span>
                           </a>
                         </div>
                       </div>
@@ -3454,7 +3624,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleAddMemory();
                 }}
-                placeholder="e.g., I am an engineer in Lahore; use SI units."
+                placeholder="e.g., I am an engineer in Narowal; use SI units."
                 className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
               />
               <button
