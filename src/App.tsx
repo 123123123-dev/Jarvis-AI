@@ -184,14 +184,16 @@ const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
 
 let cachedBackendAvailable: boolean | null = null;
 
-const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, accurate, and helpful AI assistant like ChatGPT and Gemini.
+const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, accurate, and helpful AI assistant.
 Core rules:
-1. Multi-Answer & Single-Answer Control:
-   - Whenever a user asks a question that has multiple valid answers, meanings, or full forms (such as abbreviations/acronyms like DHA, ATM, SIM, PIN, CSS, or multi-meaning terms), ALWAYS list ALL major well-known answers clearly in a numbered list with brief descriptions — UNLESS the user explicitly says to only give one answer (e.g., "only say one answer", "just one", "give me one answer", "only 1").
-   - If the user explicitly asks for ONLY ONE answer, give strictly 1 clear, accurate answer.
-   - If the user subsequently asks for MORE answers or ALL possible answers (e.g., "give me all possible answers", "tell me more answers", "more answers", "what else", "other meanings", "show all"), look at the previous question in the conversation history and list ALL remaining / all possible answers to that previous question. NEVER define the word "answer" itself.
-2. Conversation Context Awareness: Always read the full conversation history before answering. Determine whether the user's latest message is a follow-up/refinement to the previous message (for example: "about housing", "give me all possible answers", "tell me more answers", "make it shorter", "explain the second one") or a completely new topic.
-3. Letter & Application Writing: When asked to write a letter or application, include every specific detail the user asked for in clean, polite standard format with bold placeholders (**[Your Address]**, **[Date]**, **Dear Dad,**, **With love,**, **[Your Name]**).
+1. Single Standard/Formal Response by Default:
+   - For general questions and all writing tasks (letters, applications, emails, essays, messages), provide ONLY ONE clean, direct answer in a standard, formal tone.
+   - NEVER output multiple styles, versions, or variations (do NOT offer "cute text", "friendly email", "humorous note", etc.) unless the user explicitly asks to change the style (e.g., "make it friendly", "make it casual", "make it shorter", "give another version").
+2. Multi-Answer Questions ("full form of...", "types of...", "kinds of...", "meanings of..."):
+   - ONLY when a question asks for full forms, meanings, or types/kinds/categories (e.g., "full form of DHA", "types of energy", "kinds of nouns"), list ALL major answers/types clearly in a numbered list — UNLESS the user explicitly says "only say one answer" (or "just one", "only 1").
+   - If the user says "only say one answer", give strictly ONE answer.
+   - If the user subsequently asks for "more answers" or "all possible answers", look at the previous question in conversation history and list ALL remaining / all possible answers for that topic. Never define the word "answer".
+3. Conversation Context Awareness: Always read the full conversation history before answering to know if the latest message modifies a previous answer (e.g., "make it friendly", "tell me more answers") or starts a new topic.
 4. Clean Formatting: Answer only what is asked without tacking on unrequested menus or raw HTML tags like <br>.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
@@ -204,7 +206,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Universal intelligence across study help, writing, coding, science, and live news.',
     badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
     systemDirective:
-      'Answer clearly, accurately, and completely across any topic while tracking conversation context.',
+      'Answer clearly, accurately, and directly in a standard formal tone unless asked to change style.',
     quickPrompts: [
       'Give me a briefing on today’s top global and technology news from Google grounding.',
       'Explain photosynthesis in simple terms for a high school student.',
@@ -735,7 +737,7 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
 };
 
 // ============================================================================
-// CONTEXT-AWARE INTELLIGENCE, MULTI-ANSWER CONTROL & PARALLEL AI ENGINE
+// CONTEXT-AWARE INTELLIGENCE, FORMAL DEFAULT & MULTI-ANSWER CONTROL
 // ============================================================================
 
 function getInstantGreetingReply(text: string): string | null {
@@ -758,6 +760,34 @@ function getInstantGreetingReply(text: string): string | null {
   return null;
 }
 
+/**
+ * Returns true ONLY for questions whose inherent intent is to enumerate
+ * multiple meanings/types (such as "full form of...", "types of...",
+ * "kinds of...", "categories of...", "meanings of...").
+ */
+function isMultiAnswerCategoryQuestion(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  if (!lower) return false;
+
+  // Exclude writing/creative/action requests even if they contain words like "form"
+  if (
+    /^(?:write|draft|compose|create|generate|make|rewrite|change|turn)\s+(?:a|an|the|it|this)?\s*(?:letter|application|email|essay|story|poem|message|note|paragraph)\b/i.test(
+      lower
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    /\b(?:full\s*forms?|fully\s*forms?|stands?\s+for|acronyms?|abbreviations?|meanings?\s+of)\b/i.test(
+      lower
+    ) ||
+    /\b(?:types?|kinds?|categories|forms?|branches|parts|classifications|examples)\s+of\b/i.test(
+      lower
+    )
+  );
+}
+
 function detectAnswerQuantityPreference(text: string): {
   wantsOnlyOne: boolean;
   wantsMoreOrAll: boolean;
@@ -766,12 +796,12 @@ function detectAnswerQuantityPreference(text: string): {
   const lower = text.toLowerCase().trim();
 
   const wantsOnlyOne =
-    /\b(?:only\s+(?:say|give|tell|show|provide|write)?\s*(?:one|1)|(?:just|strictly)\s+(?:say|give|tell|show|provide|write)?\s*(?:one|1)|(?:one|1)\s+(?:answer|meaning|full\s*form|option|result)\s+only|single\s+(?:answer|meaning|full\s*form)|only\s+1\b|just\s+1\b)\b/i.test(
+    /\b(?:only\s+(?:say|give|tell|show|provide|write)?\s*(?:one|1)|(?:just|strictly)\s+(?:say|give|tell|show|provide|write)?\s*(?:one|1)|(?:one|1)\s+(?:answer|meaning|full\s*form|type|kind|option|result)\s+only|single\s+(?:answer|meaning|full\s*form|type)|only\s+1\b|just\s+1\b)\b/i.test(
       lower
     );
 
   const wantsOnlyRemaining =
-    /\b(?:more|other|remaining|rest\s+of(?:\s+the)?|additional|extra)\s+(?:answers?|meanings?|full\s*forms?|options?|ones?)\b/i.test(
+    /\b(?:more|other|remaining|rest\s+of(?:\s+the)?|additional|extra)\s+(?:answers?|meanings?|full\s*forms?|types?|kinds?|options?|ones?)\b/i.test(
       lower
     ) ||
     /^(?:more|tell\s+(?:me\s+)?more|give\s+(?:me\s+)?more|say\s+more|what\s+else|any\s+other|others?)$/i.test(
@@ -779,7 +809,7 @@ function detectAnswerQuantityPreference(text: string): {
     );
 
   const wantsAll =
-    /\b(?:all\s+(?:possible\s+)?(?:answers?|meanings?|full\s*forms?|options?|results?)|show\s+(?:me\s+)?all|list\s+all|all\s+of\s+them)\b/i.test(
+    /\b(?:all\s+(?:possible\s+)?(?:answers?|meanings?|full\s*forms?|types?|kinds?|options?|results?)|show\s+(?:me\s+)?all|list\s+all|all\s+of\s+them)\b/i.test(
       lower
     );
 
@@ -788,6 +818,18 @@ function detectAnswerQuantityPreference(text: string): {
     wantsMoreOrAll: wantsOnlyRemaining || wantsAll,
     wantsOnlyRemaining: wantsOnlyRemaining && !wantsAll,
   };
+}
+
+function detectStyleChangeRequest(text: string): string | null {
+  const lower = text.toLowerCase().trim();
+  if (
+    /\b(?:make\s+it|do\s+it|write\s+it|change\s+(?:it\s+)?to|rewrite\s+(?:it\s+)?(?:as|in)|turn\s+it\s+into|in\s+a)?\s*(?:friendly|casual|informal|humorous|funny|cute|short|shorter|brief|simple|simpler|polite|emotional|text\s*message|sms|email)\b/i.test(
+      lower
+    )
+  ) {
+    return text.trim();
+  }
+  return null;
 }
 
 function explicitGoogleGroundingRequested(text: string): boolean {
@@ -873,22 +915,26 @@ function analyzeConversationContext(
   const lower = latestMessage.toLowerCase().trim();
   const wordCount = lower.split(/\s+/).filter(Boolean).length;
   const qtyPref = detectAnswerQuantityPreference(latestMessage);
+  const styleChange = detectStyleChangeRequest(latestMessage);
 
   const isStandaloneRequest =
     !qtyPref.wantsMoreOrAll &&
+    !styleChange &&
     (/^(?:write\s+(?:a|an)\b|draft\b|compose\b|create\b|generate\b|calculate\b|solve\b|translate\b|hi\b|hello\b)/i.test(
       lower
     ) ||
       /\b(?:full\s*form|fully\s*form|stand\s*for|stands\s*for|meaning)\s+(?:of\s+)?[a-z0-9]{2,}\b/i.test(
         lower
       ) ||
+      /\b(?:types?|kinds?|categories|forms?)\s+of\s+[a-z0-9]{2,}/i.test(lower) ||
       /^(?:what|who|when|where|define)\s+(?:is|are|was|were)\s+(?!it\b|this\b|that\b|these\b|those\b)[a-z0-9]{2,}/i.test(
         lower
       ));
 
   const hasFollowUpCue =
     qtyPref.wantsMoreOrAll ||
-    /^(?:about|regarding|for|in|on|with|and|or|also|what about|how about|i mean|i means|specifically|especially|only|more|explain|elaborate|shorten|shorter|longer|brief|summarize|rewrite|change|update|modify|make it|all possible|why|how|what else)\b/i.test(
+    Boolean(styleChange) ||
+    /^(?:about|regarding|for|in|on|with|and|or|also|what about|how about|i mean|i means|specifically|especially|only|more|explain|elaborate|shorten|shorter|longer|brief|summarize|rewrite|change|update|modify|make it|do it|all possible|why|how|what else)\b/i.test(
       lower
     ) ||
     /\b(?:it|this|that|these|those|above|previous|first one|second one|third one|last one|possible answers|more answers|other answers|remaining answers)\b/i.test(
@@ -940,6 +986,7 @@ function generateContextAwareLetterOrApplication(
 
   if (!isLetter && !isApplication) return null;
 
+  const isFriendly = /\bfriendly\b|\bcasual\b|\binformal\b/.test(combinedLower);
   const isShorter = /\bshort(?:er)?\b|\bbrief\b|\bsmall\b/.test(latestLower);
 
   const reasonMatch = ctx.combinedTopicContext.match(
@@ -948,6 +995,7 @@ function generateContextAwareLetterOrApplication(
   let extractedReason = reasonMatch ? reasonMatch[1].trim() : '';
   extractedReason = extractedReason
     .replace(/\bcomming\b/gi, 'coming')
+    .replace(/\bhometoday\b/gi, 'home today')
     .replace(/\bstuding\b/gi, 'studying')
     .replace(/\btommorow\b/gi, 'tomorrow')
     .replace(/[.?!]+$/g, '')
@@ -973,8 +1021,6 @@ function generateContextAwareLetterOrApplication(
         : 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. I am writing to kindly request your support regarding my academic matter.';
 
     return [
-      'Here is a formal application you can use and fill in with your details:',
-      '',
       '**To,**',
       '**The Principal,**',
       '**[Your School / College Name],**',
@@ -1000,16 +1046,24 @@ function generateContextAwareLetterOrApplication(
   const toFriend = /\bfriend\b/.test(combinedLower);
 
   const salutation = toFather
-    ? '**Dear Dad,**'
+    ? isFriendly
+      ? '**Dear Dad,**'
+      : '**Respected Father,**'
     : toMother
-      ? '**Dear Mom,**'
+      ? isFriendly
+        ? '**Dear Mom,**'
+        : '**Respected Mother,**'
       : toFriend
         ? '**Dear [Friend’s Name],**'
         : '**Dear [Recipient’s Name],**';
 
-  const signOff = toFather || toMother ? '**With love,**' : '**Yours sincerely,**';
+  const signOff = toFather || toMother
+    ? isFriendly
+      ? '**With love,**'
+      : '**Your loving son / daughter,**'
+    : '**Yours sincerely,**';
 
-  const isComingHome = /\bcoming\s+home\b|\bcomming\s+home\b|\breturn(?:ing)?\s+home\b|\bvisit(?:ing)?\s+home\b/.test(
+  const isComingHome = /\bcoming\s+home\b|\bcomming\s+home\b|\bhometoday\b|\breturn(?:ing)?\s+home\b|\bvisit(?:ing)?\s+home\b/.test(
     combinedLower
   );
   const isSchoolFee = /\bschool\s*fee\b|\bcollege\s*fee\b|\btuition\s*fee\b|\bfee\b/.test(
@@ -1024,42 +1078,54 @@ function generateContextAwareLetterOrApplication(
       : /\btonight\b/.test(combinedLower)
         ? 'tonight'
         : 'today';
-    bodyParagraphs = isShorter
-      ? [
-          `I hope you are doing well. I am writing to let you know that I am **coming home ${whenText}**!`,
-          `I will leave after finishing my classes and expect to arrive by **[Arrival Time]**. Looking forward to seeing everyone at home soon.`,
-        ]
-      : [
-          'I hope this letter finds you in the best of health and happiness. Everything is going well here with my studies.',
-          `I am excited to let you know that I am **coming home ${whenText}**! My classes wrap up in the afternoon, and I will take the **[Bus / Train / Flight]** scheduled for **[Departure Time]**, so I should reach home around **[Arrival Time]**.`,
-          'I am really looking forward to spending time with you and everyone at home. Please let me know if you need me to bring anything on my way back.',
-        ];
+
+    if (isFriendly) {
+      bodyParagraphs = isShorter
+        ? [
+            `Hope you're doing great! Just wanted to let you know that I am **coming home ${whenText}**.`,
+            `I'll leave right after my classes and should reach home by **[Arrival Time]**. See you soon!`,
+          ]
+        : [
+            `I hope you're doing great and everything at home is going smoothly!`,
+            `I'm excited to let you know that I am **coming home ${whenText}**. As soon as my classes finish, I'll head out and expect to reach home around **[Arrival Time]**.`,
+            `Can't wait to catch up with you and everyone at home. Let me know if you'd like me to bring anything along!`,
+          ];
+    } else {
+      bodyParagraphs = isShorter
+        ? [
+            `I hope this letter finds you in the best of health and spirits. I am writing to inform you that I am **coming home ${whenText}**.`,
+            `I will depart after my classes conclude and expect to arrive by **[Arrival Time]**.`,
+          ]
+        : [
+            'I hope this letter finds you in the best of health and spirits. Everything here is progressing well with my studies.',
+            `I am writing to inform you that I am **coming home ${whenText}**. After completing my classes, I will depart by **[Transport / Bus / Train]** at **[Departure Time]** and expect to arrive home around **[Arrival Time]**.`,
+            'Please convey my warm regards to everyone at home. I look forward to seeing you soon.',
+          ];
+    }
   } else if (isSchoolFee) {
     const feeDetail = requestedAmount
       ? `The total fee amount due is **${requestedAmount}**, and the due date is approaching soon.`
       : 'The due date for submitting my school fee is approaching soon.';
     bodyParagraphs = [
-      'I hope this letter finds you in good health and high spirits. Everything is going well here, and I am working hard on my studies.',
-      `I am writing to let you know that our school has announced the schedule for this term's fee submission. ${feeDetail} I would be very grateful if you could kindly send the fee amount at your earliest convenience so I can deposit it on time.`,
-      'Please give my warm regards to everyone at home. Take care of yourself.',
+      'I hope this letter finds you in good health and high spirits. Everything is going well here, and I am working diligently on my studies.',
+      `I am writing to inform you that our institution has announced the schedule for this term's fee submission. ${feeDetail} I kindly request you to send the required amount at your earliest convenience so that I may deposit it on time.`,
+      'Please convey my warm regards to everyone at home.',
     ];
   } else if (extractedReason) {
     const normalizedReason = extractedReason.replace(/^i\s+am\b/i, 'I am').replace(/^i\b/i, 'I');
     bodyParagraphs = [
-      'I hope this letter finds you in good health and high spirits. Everything is going well on my end.',
-      `I am writing this letter to let you know that **${normalizedReason}**. I wanted to inform you in advance so everything can be planned smoothly.`,
-      'Please give my warm regards to everyone at home. Take good care of yourself and write back soon.',
+      'I hope this letter finds you in good health and spirits. Everything is going well on my end.',
+      `I am writing to inform you that **${normalizedReason}**. I wanted to let you know in advance so that everything may be arranged smoothly.`,
+      'Please convey my warm regards to everyone at home.',
     ];
   } else {
     bodyParagraphs = [
-      'I hope this letter finds you in the best of health and happiness. Everything here is going well, and I am staying focused on my studies and daily routine.',
-      'Please give my warm regards to everyone at home and take good care of yourself.',
+      'I hope this letter finds you in the best of health and spirits. Everything here is going well, and I remain focused on my studies and responsibilities.',
+      'Please convey my warm regards to everyone at home.',
     ];
   }
 
   return [
-    'Here is a polite, simple letter you can use and fill in with your details:',
-    '',
     '**[Your Address / Hostel Name]**',
     '**[City Name]**',
     '**[Date]**',
@@ -1122,13 +1188,11 @@ function resolveCuratedMultiAnswerKnowledge(
     }
   }
 
-  // Case 1: User explicitly asked for ONLY ONE answer
   if (qtyPref.wantsOnlyOne) {
     const chosen = candidateEntries[0];
     return `**${acronym}** stands for **${chosen.expansion}** — ${chosen.details}`;
   }
 
-  // Case 2: Follow-up asking for MORE / ALL possible answers after previous response
   if (ctx.isFollowUp && qtyPref.wantsMoreOrAll) {
     const prevAssistantText = (
       ctx.previousAssistantMessages[ctx.previousAssistantMessages.length - 1] || ''
@@ -1150,7 +1214,6 @@ function resolveCuratedMultiAnswerKnowledge(
     }
   }
 
-  // Default: Show ALL possible answers clearly
   if (candidateEntries.length === 1) {
     const only = candidateEntries[0];
     return `**${acronym}** stands for **${only.expansion}**.\n\n${only.details}`;
@@ -1291,18 +1354,7 @@ async function fetchContextAwareKnowledgeFallback(
             extract?: string;
           };
           if (summaryData.extract) {
-            if (qtyPref.wantsOnlyOne || hits.length === 1) {
-              return `**${summaryData.title || topTitle}**: ${summaryData.extract}`;
-            }
-            const otherMeanings = hits
-              .slice(1, 4)
-              .map((h) => h.title)
-              .filter(Boolean);
-            const extraSection =
-              otherMeanings.length > 0
-                ? `\n\nOther related answers/meanings: **${otherMeanings.join('**, **')}**.`
-                : '';
-            return `**${summaryData.title || topTitle}**: ${summaryData.extract}${extraSection}`;
+            return `**${summaryData.title || topTitle}**: ${summaryData.extract}`;
           }
         }
       }
@@ -1394,16 +1446,31 @@ function buildQuantityDirectiveForTurn(
 ): string {
   const ctx = analyzeConversationContext(conversationHistory);
   const qtyPref = detectAnswerQuantityPreference(ctx.latestMessage);
+  const styleChange = detectStyleChangeRequest(ctx.latestMessage);
+  const isMultiCat = isMultiAnswerCategoryQuestion(ctx.latestMessage);
 
+  // 1. User explicitly asked for ONLY ONE answer
   if (qtyPref.wantsOnlyOne) {
-    return 'IMPORTANT INSTRUCTION: The user explicitly requested ONLY ONE answer. Provide strictly ONE single clear, direct answer and do NOT list multiple answers.';
+    return 'IMPORTANT INSTRUCTION: The user explicitly requested ONLY ONE answer. Provide strictly ONE single clear, direct answer. Do NOT list multiple variations or options.';
   }
 
+  // 2. Follow-up asking for MORE / ALL possible answers to a previous question
   if (ctx.isFollowUp && qtyPref.wantsMoreOrAll) {
-    return `IMPORTANT INSTRUCTION: The user is asking for MORE / ALL possible answers to their previous question ("${ctx.lastMeaningfulUserQuestion}"). List ALL remaining and possible answers clearly as a numbered list. NEVER define the word "answer".`;
+    return `IMPORTANT INSTRUCTION: The user is asking for MORE / ALL possible answers to their previous question ("${ctx.lastMeaningfulUserQuestion}"). List ALL remaining and possible answers or types clearly as a numbered list. NEVER define the word "answer".`;
   }
 
-  return 'IMPORTANT INSTRUCTION: If this question has multiple valid answers, meanings, or full forms, list ALL major answers clearly in a numbered list rather than giving only one.';
+  // 3. Question inherently asks for "full form of...", "types of...", "kinds of...", "meanings of..."
+  if (isMultiCat) {
+    return 'IMPORTANT INSTRUCTION: This question asks for full forms, meanings, or types/kinds. List ALL major full forms, meanings, or types clearly in a numbered list rather than giving only one.';
+  }
+
+  // 4. User explicitly asked to change style (e.g., "make it friendly", "do it casual", "make it shorter")
+  if (ctx.isFollowUp && styleChange) {
+    return `IMPORTANT INSTRUCTION: Update your previous answer ("${ctx.lastMeaningfulUserQuestion}") according to the user's style request ("${styleChange}"). Provide ONLY ONE single updated version — do NOT list multiple styles or variations.`;
+  }
+
+  // 5. Default for all standard questions & writing tasks (letters, applications, explanations, etc.)
+  return 'IMPORTANT INSTRUCTION: Provide ONLY ONE single, clean, direct answer in a standard, formal tone. Do NOT provide multiple styles, variations, or alternative versions (such as "friendly email", "cute text", or "humorous note") unless the user explicitly asks to change the style.';
 }
 
 async function synthesizeWithFreeFallbackEngine(
@@ -1412,7 +1479,6 @@ async function synthesizeWithFreeFallbackEngine(
   liveGroundingContext: string,
   liveSources: Array<{ uri: string; title: string }>
 ): Promise<string> {
-  // Fast deterministic resolution for multi-answer / single-answer / follow-up acronym queries
   const curatedMatch = resolveCuratedMultiAnswerKnowledge(conversationHistory);
   if (curatedMatch && !liveGroundingContext) {
     return curatedMatch;
@@ -1444,7 +1510,7 @@ async function synthesizeWithFreeFallbackEngine(
   const messagesPayload: Array<{ role: string; content: string }> = [
     {
       role: 'system',
-      content: `${systemInstructions}\n\n${quantityDirective}`.slice(0, 1800),
+      content: `${systemInstructions}\n\n${quantityDirective}`.slice(0, 1900),
     },
     ...recentTurns,
   ];
@@ -1483,10 +1549,10 @@ async function synthesizeWithFreeFallbackEngine(
     const contextAwarePrompt = liveGroundingContext
       ? `${liveGroundingContext}\n\nSummarize clearly: ${ctx.latestMessage}`
       : ctx.isFollowUp
-        ? `Original question: "${ctx.lastMeaningfulUserQuestion}"\nPrevious answer given: "${
+        ? `Original request: "${ctx.lastMeaningfulUserQuestion}"\nPrevious answer given: "${
             ctx.previousAssistantMessages[ctx.previousAssistantMessages.length - 1] || 'None'
           }"\nUser follow-up: "${ctx.latestMessage}"\n${quantityDirective}`
-        : `Question: "${ctx.latestMessage}"\n${quantityDirective}`;
+        : `Request: "${ctx.latestMessage}"\n${quantityDirective}`;
 
     const res = await fetchWithTimeout(
       `https://text.pollinations.ai/${encodeURIComponent(contextAwarePrompt.slice(0, 750))}?model=openai`,
@@ -1797,9 +1863,6 @@ async function revokeAccountSession(): Promise<void> {
 // ============================================================================
 
 export default function App() {
-  // Vertical / Portrait Screen Detection:
-  // Activates the neon vertical dashboard on phones or any vertical screen (height > width),
-  // while keeping Chromebooks, laptops, and desktop landscape screens unchanged.
   const [isVerticalScreen, setIsVerticalScreen] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.innerHeight > window.innerWidth || window.innerWidth < 768;
@@ -1850,7 +1913,6 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
 
-  // Vertical Neon Prompt Card State
   const [verticalInput, setVerticalInput] = useState('');
   const [verticalAttachments, setVerticalAttachments] = useState<Attachment[]>([]);
   const [verticalDictating, setVerticalDictating] = useState(false);
@@ -3511,7 +3573,6 @@ export default function App() {
             </div>
           </section>
 
-          {/* Status Notices if Offline or Account Alert */}
           {!isOnline && (
             <div className="mx-3.5 mt-1 px-3 py-1 rounded-xl bg-amber-500/20 border border-amber-400/40 text-[11px] text-amber-200 flex items-center gap-1.5 shrink-0">
               <WifiOff className="w-3.5 h-3.5 shrink-0" />
@@ -3532,7 +3593,7 @@ export default function App() {
             </div>
           )}
 
-          {/* MAIN SCROLLABLE VIEWPORT: HOME HERO + PROMPT + 2x2 CARDS OR ACTIVE CHAT */}
+          {/* MAIN SCROLLABLE VIEWPORT */}
           <div
             ref={chatScrollContainerRef}
             onScroll={handleScroll}
@@ -3540,7 +3601,6 @@ export default function App() {
           >
             {isWelcomeScreen ? (
               <div className="flex-1 flex flex-col justify-between py-2 gap-3">
-                {/* Holographic Arc Reactor Centerpiece */}
                 <div className="flex flex-col items-center text-center pt-1">
                   <div className="relative w-28 h-28 flex items-center justify-center mb-2">
                     <div className="absolute inset-0 rounded-full border-2 border-cyan-400/60 shadow-[0_0_45px_rgba(34,211,238,0.65)] animate-pulse" />
@@ -3763,7 +3823,6 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* ACTIVE CONVERSATION STREAM IN VERTICAL MODE */
               <div className="flex-1 flex flex-col justify-between py-2 gap-2">
                 <div className="space-y-1 -mx-3.5">
                   {activeConversation.messages.map((msg) => (
@@ -3789,7 +3848,6 @@ export default function App() {
                   <div ref={messagesEndRef} className="h-2" />
                 </div>
 
-                {/* Compact Neon Prompt Input Card pinned at bottom of active chat */}
                 <div className="sticky bottom-1 rounded-2xl bg-[#061224]/95 border-2 border-cyan-400/75 shadow-[0_0_24px_rgba(34,211,238,0.35)] p-2.5 space-y-2">
                   {verticalAttachments.length > 0 && (
                     <div className="flex flex-wrap gap-1">
@@ -3871,7 +3929,7 @@ export default function App() {
             )}
           </div>
 
-          {/* BOTTOM 4-TAB NEON DOCK BAR (Home | History | Settings | Upgrade) */}
+          {/* BOTTOM 4-TAB NEON DOCK BAR */}
           <nav className="px-2 pt-1.5 pb-2 bg-[#040c1a]/95 border-t border-cyan-500/35 shadow-[0_-6px_24px_rgba(6,182,212,0.18)] grid grid-cols-4 gap-1 shrink-0 z-10 jarvis-mobile-safe-bottom">
             <button
               type="button"
