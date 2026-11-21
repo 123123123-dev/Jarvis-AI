@@ -166,7 +166,6 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-// Capture beforeinstallprompt immediately so it is never missed before React mounts
 let earlyDeferredInstallPrompt: BeforeInstallPromptEvent | null = null;
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeinstallprompt', (e: Event) => {
@@ -183,15 +182,17 @@ let cachedBackendAvailable: boolean | null = null;
 
 const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, accurate, and helpful AI assistant.
 Core rules:
-1. Single Standard/Formal Response by Default:
+1. Clean Notebook Writing Style (Strict):
+   - Always write answers neatly just like a person writes by hand in a school or college notebook.
+   - NEVER use LaTeX or formatting symbols such as $, $$, \\frac, \\times, **, *, #, ##, ###, ^, //, @, or backticks.
+   - Write fractions simply with a slash like 1/2 or 4/8, powers like x² or x³, multiplication as ×, and division as ÷.
+   - Write clear plain headings and numbered steps (Step 1:, Step 2:, 1., 2., 3.) without asterisks or hash symbols.
+2. Single Standard/Formal Response by Default:
    - For general questions and all writing tasks (letters, applications, emails, essays, messages), provide ONLY ONE clean, direct answer in a standard, formal tone.
-   - NEVER output multiple styles, versions, or variations (do NOT offer "cute text", "friendly email", "humorous note", etc.) unless the user explicitly asks to change the style (e.g., "make it friendly", "make it casual", "make it shorter", "give another version").
-2. Multi-Answer Questions ("full form of...", "types of...", "kinds of...", "meanings of..."):
-   - ONLY when a question asks for full forms, meanings, or types/kinds/categories (e.g., "full form of DHA", "types of energy", "kinds of nouns"), list ALL major answers/types clearly in a numbered list — UNLESS the user explicitly says "only say one answer" (or "just one", "only 1").
-   - If the user says "only say one answer", give strictly ONE answer.
-   - If the user subsequently asks for "more answers" or "all possible answers", look at the previous question in conversation history and list ALL remaining / all possible answers for that topic. Never define the word "answer".
-3. Math & Equations: Solve arithmetic expressions, verify numeric equations (check if LHS = RHS), and simplify/solve algebraic equations accurately step-by-step.
-4. Clean Formatting: Answer only what is asked without tacking on unrequested menus or raw HTML tags like <br>.`;
+   - NEVER output multiple styles, versions, or variations unless the user explicitly asks to change the style.
+3. Multi-Answer Questions ("full form of...", "types of...", "kinds of...", "meanings of..."):
+   - When a question asks for full forms, meanings, or types/kinds/categories, list ALL major answers/types clearly in a numbered list unless the user says "only say one answer".
+   - If the user subsequently asks for "more answers" or "all possible answers", look at the previous question in conversation history and list the remaining/all possible answers for that topic.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
@@ -203,7 +204,7 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Universal intelligence across study help, writing, coding, science, and live news.',
     badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
     systemDirective:
-      'Answer clearly, accurately, and directly in a standard formal tone unless asked to change style.',
+      'Answer clearly, accurately, and directly in clean notebook style without formatting symbols.',
     quickPrompts: [
       'Give me a briefing on today’s top global and technology news from Google grounding.',
       'Explain photosynthesis in simple terms for a high school student.',
@@ -319,11 +320,11 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
       'Full-stack TypeScript/React, distributed systems, algorithms, databases, and DevOps.',
     badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
     systemDirective:
-      'Deliver clean, production-grade code, clear explanations, and sound software architecture recommendations.',
+      'Deliver clean explanations and sound software architecture recommendations.',
     quickPrompts: [
       'Architect a fault-tolerant real-time WebSocket and Redis pub/sub backend.',
       'Review React rendering bottlenecks and propose memoization strategies.',
-      'Write a production-ready rate limiter algorithm using token bucket logic.',
+      'Explain a rate limiter algorithm using token bucket logic.',
     ],
   },
   {
@@ -734,8 +735,199 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
 };
 
 // ============================================================================
-// DETERMINISTIC MATH & ALGEBRA SOLVER (ARITHMETIC + EQUATIONS + LINEAR ALGEBRA)
+// NOTEBOOK STYLE TEXT FORMATTER (ELIMINATES $$, //, **, ^, #, @ SYMBOLS)
 // ============================================================================
+
+const SUPERSCRIPT_CHAR_MAP: Record<string, string> = {
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  '(': '⁽',
+  ')': '⁾',
+  n: 'ⁿ',
+};
+
+function toUnicodeSuperscript(exp: string): string {
+  return exp
+    .split('')
+    .map((ch) => SUPERSCRIPT_CHAR_MAP[ch] ?? ch)
+    .join('');
+}
+
+function formatAsCleanNotebookText(rawText: string): string {
+  if (!rawText) return '';
+
+  let text = rawText
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?p>/gi, '\n');
+
+  // Protect valid URLs (http:// or https://) before removing //
+  const preservedUrls: string[] = [];
+  text = text.replace(/https?:\/\/[^\s)\]]+/g, (url) => {
+    const token = `JARVISURLTOKEN${preservedUrls.length}END`;
+    preservedUrls.push(url);
+    return token;
+  });
+
+  // Convert LaTeX \frac{a}{b} (repeatedly for nested braces) into clean notebook fractions
+  for (let pass = 0; pass < 3; pass++) {
+    text = text.replace(
+      /\\(?:d|t)?frac\{([^{}]+)\}\{([^{}]+)\}/g,
+      (_match, num: string, den: string) => {
+        const cleanNum = num.trim();
+        const cleanDen = den.trim();
+        const simpleNum = /^[+-]?[a-zA-Z0-9.]+$/.test(cleanNum);
+        const simpleDen = /^[+-]?[a-zA-Z0-9.]+$/.test(cleanDen);
+        if (simpleNum && simpleDen) {
+          return `${cleanNum}/${cleanDen}`;
+        }
+        return `(${cleanNum})/(${cleanDen})`;
+      }
+    );
+  }
+
+  // Convert common LaTeX commands into plain notebook notation
+  text = text
+    .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
+    .replace(/\\(?:text|mathrm|mathbf|mathit|operatorname)\{([^{}]+)\}/g, '$1')
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '×')
+    .replace(/\\div/g, '÷')
+    .replace(/\\pm/g, '±')
+    .replace(/\\leq/g, '≤')
+    .replace(/\\geq/g, '≥')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\approx/g, '≈')
+    .replace(/\\infty/g, '∞')
+    .replace(/\\pi\b/g, 'π')
+    .replace(/\\theta\b/g, 'θ')
+    .replace(/\\alpha\b/g, 'α')
+    .replace(/\\beta\b/g, 'β')
+    .replace(/\\gamma\b/g, 'γ')
+    .replace(/\\delta\b/g, 'δ')
+    .replace(/\\Delta\b/g, 'Δ')
+    .replace(/\\Omega\b/g, 'Ω')
+    .replace(/\\left/g, '')
+    .replace(/\\right/g, '')
+    .replace(/\\,/g, ' ')
+    .replace(/\\;/g, ' ')
+    .replace(/\\!/g, '');
+
+  // Remove $$ and $ math delimiters
+  text = text.replace(/\$\$/g, '').replace(/\$/g, '');
+
+  // Convert exponents x^{2} or x^2 into Unicode superscripts and remove ^
+  text = text
+    .replace(/\^\{([^{}]+)\}/g, (_m, exp: string) => toUnicodeSuperscript(exp))
+    .replace(/\^([0-9+-]+)/g, (_m, exp: string) => toUnicodeSuperscript(exp))
+    .replace(/\^/g, '');
+
+  // Remove remaining curly braces from LaTeX grouping
+  text = text.replace(/[{}]/g, '');
+
+  // Remove Markdown heading hashes (#, ##, ###), bold/italic asterisks (*, **), backticks (`), //, and @
+  text = text
+    .replace(/^\s*#{1,6}\s*/gm, '')
+    .replace(/#/g, '')
+    .replace(/\*{1,3}/g, '')
+    .replace(/`+/g, '')
+    .replace(/\/\//g, ' ')
+    .replace(/@/g, '');
+
+  // Restore protected URLs
+  text = text.replace(/JARVISURLTOKEN(\d+)END/g, (_m, idxStr: string) => {
+    const index = Number(idxStr);
+    return preservedUrls[index] || '';
+  });
+
+  // Clean extra spaces and blank lines
+  text = text
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return text;
+}
+
+// ============================================================================
+// EXACT RATIONAL ARITHMETIC & NOTEBOOK MATH / EQUATION SOLVER
+// ============================================================================
+
+interface FractionValue {
+  n: number;
+  d: number;
+}
+
+function gcd(a: number, b: number): number {
+  let x = Math.abs(Math.round(a));
+  let y = Math.abs(Math.round(b));
+  while (y !== 0) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x || 1;
+}
+
+function makeFraction(numerator: number, denominator = 1): FractionValue {
+  if (denominator === 0) {
+    return { n: NaN, d: 1 };
+  }
+  if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) {
+    const scale = 1000000;
+    const nScaled = Math.round(numerator * scale);
+    const dScaled = Math.round(denominator * scale);
+    const g = gcd(nScaled, dScaled);
+    const sign = dScaled < 0 ? -1 : 1;
+    return { n: (sign * nScaled) / g, d: Math.abs(dScaled) / g };
+  }
+  if (numerator === 0) return { n: 0, d: 1 };
+  const sign = denominator < 0 ? -1 : 1;
+  const g = gcd(numerator, denominator);
+  return {
+    n: (sign * numerator) / g,
+    d: Math.abs(denominator) / g,
+  };
+}
+
+function addFractions(a: FractionValue, b: FractionValue): FractionValue {
+  return makeFraction(a.n * b.d + b.n * a.d, a.d * b.d);
+}
+
+function subFractions(a: FractionValue, b: FractionValue): FractionValue {
+  return makeFraction(a.n * b.d - b.n * a.d, a.d * b.d);
+}
+
+function divFractions(a: FractionValue, b: FractionValue): FractionValue {
+  return makeFraction(a.n * b.d, a.d * b.n);
+}
+
+function formatFractionNotebook(f: FractionValue): string {
+  if (!Number.isFinite(f.n) || !Number.isFinite(f.d) || f.d === 0) return 'undefined';
+  if (f.n === 0) return '0';
+  if (f.d === 1) return String(f.n);
+  const decimal = f.n / f.d;
+  const cleanDec = Number(decimal.toPrecision(6)).toString();
+  if (cleanDec.length <= 6 && !cleanDec.includes('e')) {
+    return `${f.n}/${f.d} (or ${cleanDec})`;
+  }
+  return `${f.n}/${f.d}`;
+}
+
+function formatFractionShort(f: FractionValue): string {
+  if (f.n === 0) return '0';
+  if (f.d === 1) return String(f.n);
+  return `${f.n}/${f.d}`;
+}
 
 function normalizeImplicitMultiplication(expr: string): string {
   return expr
@@ -883,42 +1075,65 @@ function formatCleanNumber(num: number): string {
   return Number(num.toPrecision(10)).toString();
 }
 
+function parseNumericOrFractionToken(token: string): FractionValue | null {
+  const fracMatch = token.match(/^([+-]?\d+)\/([+-]?\d+)$/);
+  if (fracMatch) {
+    const num = Number(fracMatch[1]);
+    const den = Number(fracMatch[2]);
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return null;
+    return makeFraction(num, den);
+  }
+  const numVal = Number(token);
+  if (!Number.isFinite(numVal)) return null;
+  return makeFraction(numVal, 1);
+}
+
 function parseLinearSide(sideExpr: string): {
-  vars: Record<string, number>;
-  constant: number;
+  vars: Record<string, FractionValue>;
+  constant: FractionValue;
+  hadReducibleFraction: boolean;
 } | null {
-  const compact = sideExpr.replace(/−/g, '-').replace(/\s+/g, '');
-  if (!compact || /[()*/^]/.test(compact)) return null;
+  const compact = sideExpr.replace(/−/g, '-').replace(/÷/g, '/').replace(/\s+/g, '');
+  if (!compact || /[()*^]/.test(compact)) return null;
 
   const withPlus = compact.replace(/(?<!^)-/g, '+-');
   const terms = withPlus.split('+').filter(Boolean);
   if (terms.length === 0) return null;
 
-  const vars: Record<string, number> = {};
-  let constant = 0;
+  const vars: Record<string, FractionValue> = {};
+  let constant: FractionValue = { n: 0, d: 1 };
+  let hadReducibleFraction = false;
 
   for (const term of terms) {
-    const varMatch = term.match(/^([+-]?(?:\d+(?:\.\d+)?)?)([a-zA-Z])$/);
+    const varMatch = term.match(/^([+-]?(?:\d+(?:\/\d+|\.\d+)?)?)([a-zA-Z])$/);
     if (varMatch) {
       const coeffStr = varMatch[1];
       const varName = varMatch[2].toLowerCase();
-      const coeff =
-        coeffStr === '' || coeffStr === '+'
-          ? 1
-          : coeffStr === '-'
-            ? -1
-            : parseFloat(coeffStr);
-      if (!Number.isFinite(coeff)) return null;
-      vars[varName] = (vars[varName] || 0) + coeff;
+      let coeff: FractionValue | null;
+      if (coeffStr === '' || coeffStr === '+') {
+        coeff = { n: 1, d: 1 };
+      } else if (coeffStr === '-') {
+        coeff = { n: -1, d: 1 };
+      } else {
+        coeff = parseNumericOrFractionToken(coeffStr);
+        if (coeff && coeffStr.includes('/') && coeff.d !== Number(coeffStr.split('/')[1])) {
+          hadReducibleFraction = true;
+        }
+      }
+      if (!coeff) return null;
+      vars[varName] = addFractions(vars[varName] || { n: 0, d: 1 }, coeff);
       continue;
     }
 
-    const numVal = Number(term);
-    if (!Number.isFinite(numVal)) return null;
-    constant += numVal;
+    const parsedConst = parseNumericOrFractionToken(term);
+    if (!parsedConst) return null;
+    if (term.includes('/') && parsedConst.d !== Number(term.split('/')[1])) {
+      hadReducibleFraction = true;
+    }
+    constant = addFractions(constant, parsedConst);
   }
 
-  return { vars, constant };
+  return { vars, constant, hadReducibleFraction };
 }
 
 function solveMathOrEquation(rawInput: string): string | null {
@@ -930,7 +1145,7 @@ function solveMathOrEquation(rawInput: string): string | null {
 
   if (!cleaned) return null;
 
-  // 1. Equations containing '=' (e.g., 2+10-7=12-9 or 2x-9y+12=3x+7y-30)
+  // 1. Equations containing '=' (e.g., 2+10-7=12-9 or 2x-9y+4=3y+6x+4/8)
   if (cleaned.includes('=')) {
     const parts = cleaned.split('=').map((p) => p.trim());
     if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
@@ -945,19 +1160,18 @@ function solveMathOrEquation(rawInput: string): string | null {
       const rhsStr = formatCleanNumber(rhsVal);
 
       return [
-        `- **Left side:** \`${lhsRaw}\` = **${lhsStr}**`,
-        `- **Right side:** \`${rhsRaw}\` = **${rhsStr}**`,
-        `- **Result:** ${
-          isEqual
-            ? `**Correct (True)** — both sides equal **${lhsStr}**.`
-            : `**Incorrect (False)** — **${lhsStr}** does not equal **${rhsStr}**.`
-        }`,
+        `Given equation: ${lhsRaw} = ${rhsRaw}`,
+        `Left side: ${lhsRaw} = ${lhsStr}`,
+        `Right side: ${rhsRaw} = ${rhsStr}`,
+        isEqual
+          ? `Result: Correct (True), because both sides equal ${lhsStr}.`
+          : `Result: Incorrect (False), because ${lhsStr} is not equal to ${rhsStr}.`,
       ].join('\n');
     } catch {
       // Fall through to algebraic linear equation solver
     }
 
-    // 1B. Linear algebraic equation (1 or 2 variables, e.g., 2x-9y+12=3x+7y-30)
+    // 1B. Linear algebraic equation (1 or 2 variables, including fractions like 4/8)
     const lhsParsed = parseLinearSide(lhsRaw);
     const rhsParsed = parseLinearSide(rhsRaw);
     if (lhsParsed && rhsParsed) {
@@ -967,75 +1181,133 @@ function solveMathOrEquation(rawInput: string): string | null {
 
       if (allVars.length === 1) {
         const v = allVars[0];
-        const netVar = (lhsParsed.vars[v] || 0) - (rhsParsed.vars[v] || 0);
-        const netConst = rhsParsed.constant - lhsParsed.constant;
+        const netVar = subFractions(
+          lhsParsed.vars[v] || { n: 0, d: 1 },
+          rhsParsed.vars[v] || { n: 0, d: 1 }
+        );
+        const netConst = subFractions(rhsParsed.constant, lhsParsed.constant);
 
-        if (Math.abs(netVar) < 1e-12) {
-          return Math.abs(netConst) < 1e-12
-            ? `**Infinite solutions** — \`${cleaned}\` is an identity (true for every value of **${v}**).`
-            : `**No solution** — \`${cleaned}\` simplifies to \`0 = ${formatCleanNumber(netConst)}\`, which is impossible.`;
+        if (netVar.n === 0) {
+          return netConst.n === 0
+            ? `Given equation: ${cleaned}\nResult: Infinite solutions (this equation is true for every value of ${v}).`
+            : `Given equation: ${cleaned}\nResult: No solution (it simplifies to 0 = ${formatFractionNotebook(netConst)}, which is false).`;
         }
 
-        const solution = netConst / netVar;
+        const solution = divFractions(netConst, netVar);
         return [
-          `**Step-by-step solution for \`${cleaned}\`:**`,
-          `1. Combine **${v}** terms on the left and constants on the right: \`${formatCleanNumber(netVar)}${v} = ${formatCleanNumber(netConst)}\``,
-          `2. Divide by **${formatCleanNumber(netVar)}**: **${v} = ${formatCleanNumber(solution)}**`,
+          `Given equation: ${cleaned}`,
+          `Step 1: Move ${v} terms to the left side and numbers to the right side:`,
+          `${formatFractionShort(netVar)}${v} = ${formatFractionShort(netConst)}`,
+          `Step 2: Divide both sides by ${formatFractionShort(netVar)}:`,
+          `${v} = ${formatFractionNotebook(solution)}`,
         ].join('\n');
       }
 
       if (allVars.length === 2) {
         const [v1, v2] = allVars;
-        let c1 = (lhsParsed.vars[v1] || 0) - (rhsParsed.vars[v1] || 0);
-        let c2 = (lhsParsed.vars[v2] || 0) - (rhsParsed.vars[v2] || 0);
-        let rhsC = rhsParsed.constant - lhsParsed.constant;
+        let c1 = subFractions(
+          lhsParsed.vars[v1] || { n: 0, d: 1 },
+          rhsParsed.vars[v1] || { n: 0, d: 1 }
+        );
+        let c2 = subFractions(
+          lhsParsed.vars[v2] || { n: 0, d: 1 },
+          rhsParsed.vars[v2] || { n: 0, d: 1 }
+        );
+        let rhsC = subFractions(rhsParsed.constant, lhsParsed.constant);
 
-        if (c1 < 0) {
-          c1 = -c1;
-          c2 = -c2;
-          rhsC = -rhsC;
+        if (c1.n < 0) {
+          c1 = { n: -c1.n, d: c1.d };
+          c2 = { n: -c2.n, d: c2.d };
+          rhsC = { n: -rhsC.n, d: rhsC.d };
         }
 
-        const formatTerm = (coeff: number, varName: string, isFirst: boolean): string => {
-          const absVal = Math.abs(coeff);
-          const coeffLabel = absVal === 1 ? '' : formatCleanNumber(absVal);
+        const formatVarTerm = (coeff: FractionValue, varName: string, isFirst: boolean): string => {
+          const absNum = Math.abs(coeff.n);
+          const magStr =
+            coeff.d === 1
+              ? absNum === 1
+                ? ''
+                : String(absNum)
+              : `(${absNum}/${coeff.d})`;
           if (isFirst) {
-            return `${coeff < 0 ? '-' : ''}${coeffLabel}${varName}`;
+            return `${coeff.n < 0 ? '-' : ''}${magStr}${varName}`;
           }
-          return `${coeff < 0 ? ' - ' : ' + '}${coeffLabel}${varName}`;
+          return `${coeff.n < 0 ? ' - ' : ' + '}${magStr}${varName}`;
         };
 
-        const standardEquation = `${formatTerm(c1, v1, true)}${formatTerm(
+        const standardEquation = `${formatVarTerm(c1, v1, true)}${formatVarTerm(
           c2,
           v2,
           false
-        )} = ${formatCleanNumber(rhsC)}`;
+        )} = ${formatFractionShort(rhsC)}`;
 
-        const solvedForV1 =
-          c1 === 1
-            ? `${v1} = ${formatCleanNumber(rhsC)} ${c2 >= 0 ? '-' : '+'} ${formatCleanNumber(
-                Math.abs(c2)
-              )}${v2}`
-            : `${v1} = (${formatCleanNumber(rhsC)} ${c2 >= 0 ? '-' : '+'} ${formatCleanNumber(
-                Math.abs(c2)
-              )}${v2}) / ${formatCleanNumber(c1)}`;
+        // Solve for v2 (e.g., y)
+        const v2RhsConst = divFractions(rhsC, c2);
+        const v2Slope = divFractions({ n: -c1.n, d: c1.d }, c2);
+        const v2SlopeStr =
+          v2Slope.n === 0
+            ? ''
+            : `${v2Slope.n < 0 ? '-' : ''}${
+                v2Slope.d === 1
+                  ? Math.abs(v2Slope.n) === 1
+                    ? ''
+                    : Math.abs(v2Slope.n)
+                  : `(${Math.abs(v2Slope.n)}/${v2Slope.d})`
+              }${v1}`;
+        const v2ConstStr =
+          v2RhsConst.n === 0
+            ? ''
+            : v2SlopeStr
+              ? `${v2RhsConst.n < 0 ? ' - ' : ' + '}${formatFractionShort({
+                  n: Math.abs(v2RhsConst.n),
+                  d: v2RhsConst.d,
+                })}`
+              : formatFractionShort(v2RhsConst);
+        const solvedForV2 = `${v2} = ${v2SlopeStr}${v2ConstStr || '0'}`;
 
-        const solvedForV2 =
-          c2 === 1
-            ? `${v2} = ${formatCleanNumber(rhsC)} ${c1 >= 0 ? '-' : '+'} ${formatCleanNumber(
-                Math.abs(c1)
-              )}${v1}`
-            : `${v2} = (${formatCleanNumber(rhsC)} ${c1 >= 0 ? '-' : '+'} ${formatCleanNumber(
-                Math.abs(c1)
-              )}${v1}) / ${formatCleanNumber(c2)}`;
+        // Solve for v1 (e.g., x)
+        const v1RhsConst = divFractions(rhsC, c1);
+        const v1Slope = divFractions({ n: -c2.n, d: c2.d }, c1);
+        const v1SlopeStr =
+          v1Slope.n === 0
+            ? ''
+            : `${v1Slope.n < 0 ? '-' : ''}${
+                v1Slope.d === 1
+                  ? Math.abs(v1Slope.n) === 1
+                    ? ''
+                    : Math.abs(v1Slope.n)
+                  : `(${Math.abs(v1Slope.n)}/${v1Slope.d})`
+              }${v2}`;
+        const v1ConstStr =
+          v1RhsConst.n === 0
+            ? ''
+            : v1SlopeStr
+              ? `${v1RhsConst.n < 0 ? ' - ' : ' + '}${formatFractionShort({
+                  n: Math.abs(v1RhsConst.n),
+                  d: v1RhsConst.d,
+                })}`
+              : formatFractionShort(v1RhsConst);
+        const solvedForV1 = `${v1} = ${v1SlopeStr}${v1ConstStr || '0'}`;
 
-        return [
-          `**Simplified linear equation for \`${cleaned}\`:**`,
-          `1. Move variable terms to the left and constants to the right:`,
-          `   **\`${standardEquation}\`**`,
-          `2. **Solved for ${v1}:** \`${solvedForV1}\``,
-          `3. **Solved for ${v2}:** \`${solvedForV2}\``,
-        ].join('\n');
+        const steps: string[] = [`Given equation: ${cleaned}`];
+        let stepNum = 1;
+
+        if (lhsParsed.hadReducibleFraction || rhsParsed.hadReducibleFraction) {
+          steps.push(
+            `Step ${stepNum++}: Simplify the fractions first (for example, 4/8 simplifies to 1/2).`
+          );
+        }
+
+        steps.push(
+          `Step ${stepNum++}: Move variable terms to the left side and numbers to the right side, then combine like terms:`,
+          standardEquation,
+          `Step ${stepNum++}: Solved for ${v2}:`,
+          solvedForV2,
+          `Step ${stepNum++}: Solved for ${v1}:`,
+          solvedForV1
+        );
+
+        return steps.join('\n');
       }
     }
 
@@ -1053,7 +1325,7 @@ function solveMathOrEquation(rawInput: string): string | null {
   if (hasDigit && hasMathOperator && hasOnlyMathChars) {
     try {
       const value = evaluateSafeMathExpression(cleaned);
-      return `**${formatCleanNumber(value)}**`;
+      return `${cleaned} = ${formatCleanNumber(value)}`;
     } catch {
       return null;
     }
@@ -1343,29 +1615,29 @@ function generateContextAwareLetterOrApplication(
         : 'Application for Kind Consideration';
 
     const bodyText = isLeave
-      ? 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. Due to an urgent matter at home, I am unable to attend classes today.'
+      ? 'Most respectfully, I state that I am a regular student of class [Your Class and Section] in your institution. Due to an urgent matter at home, I am unable to attend classes today.'
       : extractedReason
-        ? `Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. I am writing to kindly request your consideration regarding ${extractedReason}.`
-        : 'Most respectfully, I state that I am a regular student of class **[Your Class & Section]** in your institution. I am writing to kindly request your support regarding my academic matter.';
+        ? `Most respectfully, I state that I am a regular student of class [Your Class and Section] in your institution. I am writing to kindly request your consideration regarding ${extractedReason}.`
+        : 'Most respectfully, I state that I am a regular student of class [Your Class and Section] in your institution. I am writing to kindly request your support regarding my academic matter.';
 
     return [
-      '**To,**',
-      '**The Principal,**',
-      '**[Your School / College Name],**',
-      '**[City Name]**',
+      'To,',
+      'The Principal,',
+      '[Your School or College Name],',
+      '[City Name]',
       '',
-      `**Subject: ${subjectLine}**`,
+      `Subject: ${subjectLine}`,
       '',
-      '**Respected Sir / Madam,**',
+      'Respected Sir / Madam,',
       '',
       bodyText,
       '',
-      'Kindly grant my request for **[Date / Number of Days]**. I shall be very grateful to you for this kindness.',
+      'Kindly grant my request for [Date / Number of Days]. I shall be very grateful to you for this kindness.',
       '',
-      '**Yours obediently,**',
-      '**[Your Name]**',
-      'Class: **[Your Class]** | Roll No: **[Your Roll Number]**',
-      'Date: **[Date]**',
+      'Yours obediently,',
+      '[Your Name]',
+      'Class: [Your Class] | Roll No: [Your Roll Number]',
+      'Date: [Date]',
     ].join('\n');
   }
 
@@ -1375,21 +1647,21 @@ function generateContextAwareLetterOrApplication(
 
   const salutation = toFather
     ? isFriendly
-      ? '**Dear Dad,**'
-      : '**Respected Father,**'
+      ? 'Dear Dad,'
+      : 'Respected Father,'
     : toMother
       ? isFriendly
-        ? '**Dear Mom,**'
-        : '**Respected Mother,**'
+        ? 'Dear Mom,'
+        : 'Respected Mother,'
       : toFriend
-        ? '**Dear [Friend’s Name],**'
-        : '**Dear [Recipient’s Name],**';
+        ? 'Dear [Friend’s Name],'
+        : 'Dear [Recipient’s Name],';
 
   const signOff = toFather || toMother
     ? isFriendly
-      ? '**With love,**'
-      : '**Your loving son / daughter,**'
-    : '**Yours sincerely,**';
+      ? 'With love,'
+      : 'Your loving son / daughter,'
+    : 'Yours sincerely,';
 
   const isComingHome = /\bcoming\s+home\b|\bcomming\s+home\b|\bhometoday\b|\breturn(?:ing)?\s+home\b|\bvisit(?:ing)?\s+home\b/.test(
     combinedLower
@@ -1410,29 +1682,29 @@ function generateContextAwareLetterOrApplication(
     if (isFriendly) {
       bodyParagraphs = isShorter
         ? [
-            `Hope you're doing great! Just wanted to let you know that I am **coming home ${whenText}**.`,
-            `I'll leave right after my classes and should reach home by **[Arrival Time]**. See you soon!`,
+            `Hope you're doing great! Just wanted to let you know that I am coming home ${whenText}.`,
+            `I'll leave right after my classes and should reach home by [Arrival Time]. See you soon!`,
           ]
         : [
             `I hope you're doing great and everything at home is going smoothly!`,
-            `I'm excited to let you know that I am **coming home ${whenText}**. As soon as my classes finish, I'll head out and expect to reach home around **[Arrival Time]**.`,
+            `I'm excited to let you know that I am coming home ${whenText}. As soon as my classes finish, I'll head out and expect to reach home around [Arrival Time].`,
             `Can't wait to catch up with you and everyone at home. Let me know if you'd like me to bring anything along!`,
           ];
     } else {
       bodyParagraphs = isShorter
         ? [
-            `I hope this letter finds you in the best of health and spirits. I am writing to inform you that I am **coming home ${whenText}**.`,
-            `I will depart after my classes conclude and expect to arrive by **[Arrival Time]**.`,
+            `I hope this letter finds you in the best of health and spirits. I am writing to inform you that I am coming home ${whenText}.`,
+            `I will depart after my classes conclude and expect to arrive by [Arrival Time].`,
           ]
         : [
             'I hope this letter finds you in the best of health and spirits. Everything here is progressing well with my studies.',
-            `I am writing to inform you that I am **coming home ${whenText}**. After completing my classes, I will depart by **[Transport / Bus / Train]** at **[Departure Time]** and expect to arrive home around **[Arrival Time]**.`,
+            `I am writing to inform you that I am coming home ${whenText}. After completing my classes, I will depart by [Transport / Bus / Train] at [Departure Time] and expect to arrive home around [Arrival Time].`,
             'Please convey my warm regards to everyone at home. I look forward to seeing you soon.',
           ];
     }
   } else if (isSchoolFee) {
     const feeDetail = requestedAmount
-      ? `The total fee amount due is **${requestedAmount}**, and the due date is approaching soon.`
+      ? `The total fee amount due is ${requestedAmount}, and the due date is approaching soon.`
       : 'The due date for submitting my school fee is approaching soon.';
     bodyParagraphs = [
       'I hope this letter finds you in good health and high spirits. Everything is going well here, and I am working diligently on my studies.',
@@ -1443,7 +1715,7 @@ function generateContextAwareLetterOrApplication(
     const normalizedReason = extractedReason.replace(/^i\s+am\b/i, 'I am').replace(/^i\b/i, 'I');
     bodyParagraphs = [
       'I hope this letter finds you in good health and spirits. Everything is going well on my end.',
-      `I am writing to inform you that **${normalizedReason}**. I wanted to let you know in advance so that everything may be arranged smoothly.`,
+      `I am writing to inform you that ${normalizedReason}. I wanted to let you know in advance so that everything may be arranged smoothly.`,
       'Please convey my warm regards to everyone at home.',
     ];
   } else {
@@ -1454,15 +1726,15 @@ function generateContextAwareLetterOrApplication(
   }
 
   return [
-    '**[Your Address / Hostel Name]**',
-    '**[City Name]**',
-    '**[Date]**',
+    '[Your Address / Hostel Name]',
+    '[City Name]',
+    '[Date]',
     '',
     salutation,
     '',
     ...bodyParagraphs.flatMap((p) => [p, '']),
     signOff,
-    '**[Your Name]**',
+    '[Your Name]',
   ].join('\n');
 }
 
@@ -1518,7 +1790,7 @@ function resolveCuratedMultiAnswerKnowledge(
 
   if (qtyPref.wantsOnlyOne) {
     const chosen = candidateEntries[0];
-    return `**${acronym}** stands for **${chosen.expansion}** — ${chosen.details}`;
+    return `${acronym} stands for ${chosen.expansion} — ${chosen.details}`;
   }
 
   if (ctx.isFollowUp && qtyPref.wantsMoreOrAll) {
@@ -1531,29 +1803,29 @@ function resolveCuratedMultiAnswerKnowledge(
         (entry) => !prevAssistantText.includes(entry.expansion.toLowerCase())
       );
       if (remaining.length > 0 && remaining.length < candidateEntries.length) {
-        const listMarkdown = remaining
+        const listText = remaining
           .map(
             (entry, idx) =>
-              `${idx + 1}. **${entry.expansion}** — ${entry.details}`
+              `${idx + 1}. ${entry.expansion} — ${entry.details}`
           )
           .join('\n');
-        return `Here are the other full forms of **${acronym}**:\n\n${listMarkdown}`;
+        return `Here are the other full forms of ${acronym}:\n\n${listText}`;
       }
     }
   }
 
   if (candidateEntries.length === 1) {
     const only = candidateEntries[0];
-    return `**${acronym}** stands for **${only.expansion}**.\n\n${only.details}`;
+    return `${acronym} stands for ${only.expansion}.\n\n${only.details}`;
   }
 
-  const listMarkdown = candidateEntries
+  const listText = candidateEntries
     .map(
       (entry, idx) =>
-        `${idx + 1}. **${entry.expansion}** — ${entry.details}`
+        `${idx + 1}. ${entry.expansion} — ${entry.details}`
     )
     .join('\n');
-  return `Here are all the major full forms of **${acronym}**:\n\n${listMarkdown}`;
+  return `Here are all the major full forms of ${acronym}:\n\n${listText}`;
 }
 
 async function fetchContextAwareKnowledgeFallback(
@@ -1561,7 +1833,6 @@ async function fetchContextAwareKnowledgeFallback(
 ): Promise<string | null> {
   const ctx = analyzeConversationContext(conversationHistory);
 
-  // Never send math expressions or algebraic equations to Wikipedia
   if (isLikelyMathExpression(ctx.latestMessage)) {
     return solveMathOrEquation(ctx.latestMessage);
   }
@@ -1623,7 +1894,7 @@ async function fetchContextAwareKnowledgeFallback(
                 extract?: string;
               };
               if (summary.extract) {
-                return `**${acronym}** stands for **${summary.title || topTitle}** — ${summary.extract}`;
+                return `${acronym} stands for ${summary.title || topTitle} — ${summary.extract}`;
               }
             }
           }
@@ -1636,11 +1907,11 @@ async function fetchContextAwareKnowledgeFallback(
                 .replace(/"/g, '"')
                 .replace(/&/g, '&')
                 .trim();
-              return `${idx + 1}. **${h.title}**${cleanSnippet ? ` — ${cleanSnippet}` : ''}`;
+              return `${idx + 1}. ${h.title}${cleanSnippet ? ` — ${cleanSnippet}` : ''}`;
             })
             .join('\n');
 
-          return `Here are the possible meanings and expansions for **${acronym}**:\n\n${formattedHits}`;
+          return `Here are the possible meanings and expansions for ${acronym}:\n\n${formattedHits}`;
         }
       }
     } catch {
@@ -1689,7 +1960,7 @@ async function fetchContextAwareKnowledgeFallback(
             extract?: string;
           };
           if (summaryData.extract) {
-            return `**${summaryData.title || topTitle}**: ${summaryData.extract}`;
+            return `${summaryData.title || topTitle}: ${summaryData.extract}`;
           }
         }
       }
@@ -1769,13 +2040,6 @@ async function fetchFreeLiveGoogleGrounding(
   };
 }
 
-function sanitizeNaturalResponse(rawText: string): string {
-  return rawText
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/?p>/gi, '\n')
-    .trim();
-}
-
 function buildQuantityDirectiveForTurn(
   conversationHistory: Array<{ role: string; content: string }>
 ): string {
@@ -1784,23 +2048,26 @@ function buildQuantityDirectiveForTurn(
   const styleChange = detectStyleChangeRequest(ctx.latestMessage);
   const isMultiCat = isMultiAnswerCategoryQuestion(ctx.latestMessage);
 
+  const notebookStyleRule =
+    'Write in clean notebook style just like a person writes by hand. Do NOT use $, $$, \\frac, **, *, #, ^, //, @, or backticks.';
+
   if (qtyPref.wantsOnlyOne) {
-    return 'IMPORTANT INSTRUCTION: The user explicitly requested ONLY ONE answer. Provide strictly ONE single clear, direct answer. Do NOT list multiple variations or options.';
+    return `${notebookStyleRule} The user explicitly requested ONLY ONE answer. Provide strictly ONE single clear, direct answer.`;
   }
 
   if (ctx.isFollowUp && qtyPref.wantsMoreOrAll) {
-    return `IMPORTANT INSTRUCTION: The user is asking for MORE / ALL possible answers to their previous question ("${ctx.lastMeaningfulUserQuestion}"). List ALL remaining and possible answers or types clearly as a numbered list. NEVER define the word "answer".`;
+    return `${notebookStyleRule} The user is asking for MORE / ALL possible answers to their previous question ("${ctx.lastMeaningfulUserQuestion}"). List ALL remaining and possible answers or types clearly as a numbered list.`;
   }
 
   if (isMultiCat) {
-    return 'IMPORTANT INSTRUCTION: This question asks for full forms, meanings, or types/kinds. List ALL major full forms, meanings, or types clearly in a numbered list rather than giving only one.';
+    return `${notebookStyleRule} This question asks for full forms, meanings, or types/kinds. List ALL major full forms, meanings, or types clearly in a numbered list.`;
   }
 
   if (ctx.isFollowUp && styleChange) {
-    return `IMPORTANT INSTRUCTION: Update your previous answer ("${ctx.lastMeaningfulUserQuestion}") according to the user's style request ("${styleChange}"). Provide ONLY ONE single updated version — do NOT list multiple styles or variations.`;
+    return `${notebookStyleRule} Update your previous answer ("${ctx.lastMeaningfulUserQuestion}") according to the user's style request ("${styleChange}"). Provide ONLY ONE single updated version.`;
   }
 
-  return 'IMPORTANT INSTRUCTION: Provide ONLY ONE single, clean, direct answer in a standard, formal tone. Do NOT provide multiple styles, variations, or alternative versions (such as "friendly email", "cute text", or "humorous note") unless the user explicitly asks to change the style.';
+  return `${notebookStyleRule} Provide ONLY ONE single, clean, direct answer in a standard, formal tone unless the user explicitly asks to change the style.`;
 }
 
 async function synthesizeWithFreeFallbackEngine(
@@ -1811,15 +2078,14 @@ async function synthesizeWithFreeFallbackEngine(
 ): Promise<string> {
   const ctx = analyzeConversationContext(conversationHistory);
 
-  // Instant deterministic solver for arithmetic & equations
   if (!liveGroundingContext) {
     const mathSolution = solveMathOrEquation(ctx.latestMessage);
-    if (mathSolution) return mathSolution;
+    if (mathSolution) return formatAsCleanNotebookText(mathSolution);
   }
 
   const curatedMatch = resolveCuratedMultiAnswerKnowledge(conversationHistory);
   if (curatedMatch && !liveGroundingContext) {
-    return curatedMatch;
+    return formatAsCleanNotebookText(curatedMatch);
   }
 
   const quantityDirective = buildQuantityDirectiveForTurn(conversationHistory);
@@ -1879,7 +2145,7 @@ async function synthesizeWithFreeFallbackEngine(
     ) {
       throw new Error(`Invalid ${modelName} response`);
     }
-    return sanitizeNaturalResponse(content);
+    return formatAsCleanNotebookText(content);
   };
 
   const queryDirectGetWithContext = async (): Promise<string> => {
@@ -1906,7 +2172,7 @@ async function synthesizeWithFreeFallbackEngine(
     ) {
       throw new Error('Invalid GET response');
     }
-    return sanitizeNaturalResponse(text);
+    return formatAsCleanNotebookText(text);
   };
 
   try {
@@ -1919,17 +2185,17 @@ async function synthesizeWithFreeFallbackEngine(
   } catch {
     const composedLetter = generateContextAwareLetterOrApplication(conversationHistory);
     if (composedLetter) {
-      return composedLetter;
+      return formatAsCleanNotebookText(composedLetter);
     }
 
     const smartKnowledge = await fetchContextAwareKnowledgeFallback(conversationHistory);
     if (smartKnowledge) {
-      return smartKnowledge;
+      return formatAsCleanNotebookText(smartKnowledge);
     }
 
     if (liveSources.length > 0) {
       return liveSources
-        .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
+        .map((src, index) => `${index + 1}. ${src.title} (${src.uri})`)
         .join('\n');
     }
 
@@ -2583,10 +2849,9 @@ export default function App() {
 
     stopSpeaking();
 
-    const cleanText = text
+    const cleanText = formatAsCleanNotebookText(text)
       .replace(/\[.*?\]\(.*?\)/g, '')
       .replace(/!\[.*?\]\(.*?\)/g, '')
-      .replace(/[*#`_>-]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -2688,13 +2953,13 @@ export default function App() {
         return;
       }
 
-      // 2. Instant Deterministic Math & Equation Solver
+      // 2. Instant Deterministic Notebook Math & Equation Solver
       const instantMath = solveMathOrEquation(text);
       if (instantMath) {
         const mathMessage: Message = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: instantMath,
+          content: formatAsCleanNotebookText(instantMath),
           sources: [],
           timestamp: Date.now(),
         };
@@ -2795,7 +3060,7 @@ export default function App() {
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: `Here is the image generated for **"${cleanArtPrompt}"**:`,
+          content: `Here is the image generated for "${cleanArtPrompt}":`,
           imageUrl,
           sources: [],
           timestamp: Date.now(),
@@ -2824,7 +3089,7 @@ export default function App() {
         let replyImageUrl: string | undefined;
 
         if (curatedDirect) {
-          replyText = curatedDirect;
+          replyText = formatAsCleanNotebookText(curatedDirect);
         } else if (cachedBackendAvailable !== false) {
           try {
             const backendMessages = cleanHistory.map((m, index) => {
@@ -2865,7 +3130,7 @@ export default function App() {
             }>(res, 'BACKEND_UNAVAILABLE_405');
 
             cachedBackendAvailable = true;
-            replyText = sanitizeNaturalResponse(data.content || 'How can I help you?');
+            replyText = formatAsCleanNotebookText(data.content || 'How can I help you?');
             replyImageUrl = data.imageUrl;
           } catch {
             cachedBackendAvailable = false;
@@ -2888,7 +3153,7 @@ export default function App() {
         assistantMessage = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          content: replyText,
+          content: formatAsCleanNotebookText(replyText),
           sources: shouldUseGoogleGrounding ? liveWeb.sources : [],
           imageUrl: replyImageUrl,
           timestamp: Date.now(),
@@ -2917,7 +3182,7 @@ export default function App() {
       const errorMessage: Message = {
         id: Math.random().toString(36).substring(2, 9),
         role: 'assistant',
-        content: `**JARVIS notice:** ${errorText}`,
+        content: `JARVIS notice: ${errorText}`,
         sources: [],
         timestamp: Date.now(),
         isError: true,
@@ -3061,10 +3326,9 @@ export default function App() {
       }
       window.speechSynthesis.cancel();
 
-      const cleanText = replyText
+      const cleanText = formatAsCleanNotebookText(replyText)
         .replace(/\[.*?\]\(.*?\)/g, '')
         .replace(/!\[.*?\]\(.*?\)/g, '')
-        .replace(/[*#`_>-]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
 
@@ -3143,7 +3407,7 @@ export default function App() {
             : null;
 
           if (curatedDirect) {
-            reply = curatedDirect;
+            reply = formatAsCleanNotebookText(curatedDirect);
           } else if (cachedBackendAvailable !== false) {
             try {
               const backendPayload = historyPayload.map((m, idx) =>
@@ -3172,7 +3436,7 @@ export default function App() {
                 'BACKEND_UNAVAILABLE_405'
               );
               cachedBackendAvailable = true;
-              reply = sanitizeNaturalResponse(data.content || 'Processed.');
+              reply = formatAsCleanNotebookText(data.content || 'Processed.');
             } catch {
               cachedBackendAvailable = false;
               reply = await synthesizeWithFreeFallbackEngine(
@@ -3192,16 +3456,17 @@ export default function App() {
           }
         }
 
+        const cleanReply = formatAsCleanNotebookText(reply);
         const assistantTurn: VoiceTurn = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          text: reply,
+          text: cleanReply,
           timestamp: Date.now(),
         };
         setVoiceTurns((prev) => [...prev.slice(-14), assistantTurn]);
         setVoiceThinking(false);
 
-        speakVoiceTurnReply(reply, () => {
+        speakVoiceTurnReply(cleanReply, () => {
           if (liveVoiceOpenRef.current && voiceAutoLoopRef.current) {
             startVoiceRecognition();
           }
@@ -3382,7 +3647,7 @@ export default function App() {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         setAccountNotice(
-          'Screen sharing is unavailable in this mobile browser. Tap the paperclip (📎) icon to upload a screenshot for JARVIS Vision.'
+          'Screen sharing is unavailable in this mobile browser. Tap the paperclip icon to upload a screenshot for JARVIS Vision.'
         );
         return;
       }
@@ -3646,10 +3911,9 @@ export default function App() {
 
       {isMobileView ? (
         /* ====================================================================
-           CLEAN MOBILE BROWSER VIEW (TOP BAR WITHOUT TOOLS/VOICE/EXPORT/SIGN IN/INSTALL)
+           CLEAN MOBILE BROWSER VIEW
            ==================================================================== */
         <div className="flex-1 flex flex-col h-[100dvh] w-full max-w-full overflow-hidden relative bg-[#060b13]">
-          {/* MINIMAL MOBILE TOP BAR (ONLY MENU + BRAND — INSTALL IS IN SIDE DRAWER) */}
           <header className="px-3.5 py-2.5 bg-[#08101d]/95 border-b border-cyan-500/25 flex items-center justify-between gap-2 shrink-0 z-10">
             <div className="flex items-center gap-2.5 min-w-0">
               <button
@@ -3699,7 +3963,6 @@ export default function App() {
             </div>
           )}
 
-          {/* MAIN MOBILE CHAT VIEWPORT */}
           <div
             ref={chatScrollContainerRef}
             onScroll={handleScroll}
@@ -3745,7 +4008,6 @@ export default function App() {
             )}
           </div>
 
-          {/* MOBILE PROMPT INPUT BAR */}
           <div className="px-3 py-2.5 bg-[#060b13] border-t border-slate-800/80 shrink-0 jarvis-mobile-safe-bottom">
             <div className="rounded-2xl bg-[#081326] border border-cyan-500/45 p-2.5 space-y-2">
               {mobileAttachments.length > 0 && (
@@ -4013,9 +4275,7 @@ export default function App() {
             <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-300 shrink-0">
               <div className="flex items-center gap-2">
                 <WifiOff className="w-4 h-4 shrink-0" />
-                <span>
-                  <strong>Offline:</strong> AI replies require an internet connection.
-                </span>
+                <span>Offline: AI replies require an internet connection.</span>
               </div>
             </div>
           )}
@@ -4041,7 +4301,7 @@ export default function App() {
               <div className="flex items-center gap-2 min-w-0">
                 <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                 <p className="truncate">
-                  <strong>Signed in:</strong> conversations are saved to your account.
+                  Signed in: conversations are saved to your account.
                 </p>
               </div>
             </div>
