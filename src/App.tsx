@@ -67,21 +67,9 @@ import {
   PhoneOff,
   Save,
   Menu,
-  Bell,
-  User as UserIcon,
-  Box,
-  FlaskConical,
-  Scan,
-  Settings,
   Paperclip,
   Globe,
   ArrowUp,
-  MessageSquare,
-  Music,
-  FileEdit,
-  Home,
-  History,
-  Crown,
 } from 'lucide-react';
 
 // ============================================================================
@@ -178,6 +166,15 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+// Capture beforeinstallprompt immediately so it is never missed before React mounts
+let earlyDeferredInstallPrompt: BeforeInstallPromptEvent | null = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e: Event) => {
+    e.preventDefault();
+    earlyDeferredInstallPrompt = e as BeforeInstallPromptEvent;
+  });
+}
+
 const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
@@ -193,7 +190,7 @@ Core rules:
    - ONLY when a question asks for full forms, meanings, or types/kinds/categories (e.g., "full form of DHA", "types of energy", "kinds of nouns"), list ALL major answers/types clearly in a numbered list — UNLESS the user explicitly says "only say one answer" (or "just one", "only 1").
    - If the user says "only say one answer", give strictly ONE answer.
    - If the user subsequently asks for "more answers" or "all possible answers", look at the previous question in conversation history and list ALL remaining / all possible answers for that topic. Never define the word "answer".
-3. Conversation Context Awareness: Always read the full conversation history before answering to know if the latest message modifies a previous answer (e.g., "make it friendly", "tell me more answers") or starts a new topic.
+3. Math & Equations: Solve arithmetic expressions, verify numeric equations (check if LHS = RHS), and simplify/solve algebraic equations accurately step-by-step.
 4. Clean Formatting: Answer only what is asked without tacking on unrequested menus or raw HTML tags like <br>.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
@@ -737,6 +734,343 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
 };
 
 // ============================================================================
+// DETERMINISTIC MATH & ALGEBRA SOLVER (ARITHMETIC + EQUATIONS + LINEAR ALGEBRA)
+// ============================================================================
+
+function normalizeImplicitMultiplication(expr: string): string {
+  return expr
+    .replace(/×/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/−/g, '-')
+    .replace(/(\d)\s*\(/g, '$1*(')
+    .replace(/\)\s*(\d)/g, ')*$1')
+    .replace(/\)\s*\(/g, ')*(')
+    .replace(/(\d)\s*(pi|e|sin|cos|tan|sqrt|log|ln|abs)\b/gi, '$1*$2');
+}
+
+function evaluateSafeMathExpression(rawExpr: string): number {
+  const sanitized = normalizeImplicitMultiplication(rawExpr)
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/π/g, 'pi')
+    .replace(/\*\*/g, '^');
+
+  if (!sanitized) throw new Error('Enter a mathematical expression.');
+  if (!/^[0-9a-z+\-*/^().]+$/.test(sanitized)) {
+    throw new Error('Unsupported characters in expression.');
+  }
+
+  let pos = 0;
+  const peek = () => sanitized[pos] || '';
+  const consume = () => sanitized[pos++];
+
+  const parseExpression = (): number => {
+    let value = parseTerm();
+    while (peek() === '+' || peek() === '-') {
+      const op = consume();
+      const right = parseTerm();
+      value = op === '+' ? value + right : value - right;
+    }
+    return value;
+  };
+
+  const parseTerm = (): number => {
+    let value = parsePower();
+    while (peek() === '*' || peek() === '/') {
+      const op = consume();
+      const right = parsePower();
+      if (op === '/') {
+        if (right === 0) throw new Error('Division by zero.');
+        value /= right;
+      } else {
+        value *= right;
+      }
+    }
+    return value;
+  };
+
+  const parsePower = (): number => {
+    let base = parseUnary();
+    if (peek() === '^') {
+      consume();
+      const exponent = parsePower();
+      base = Math.pow(base, exponent);
+    }
+    return base;
+  };
+
+  const parseUnary = (): number => {
+    if (peek() === '+') {
+      consume();
+      return parseUnary();
+    }
+    if (peek() === '-') {
+      consume();
+      return -parseUnary();
+    }
+    return parsePrimary();
+  };
+
+  const parsePrimary = (): number => {
+    if (peek() === '(') {
+      consume();
+      const inside = parseExpression();
+      if (peek() !== ')') throw new Error('Mismatched parentheses.');
+      consume();
+      return inside;
+    }
+
+    if (/[a-z]/.test(peek())) {
+      let ident = '';
+      while (/[a-z]/.test(peek())) {
+        ident += consume();
+      }
+      if (ident === 'pi') return Math.PI;
+      if (ident === 'e') return Math.E;
+
+      if (peek() !== '(') throw new Error(`Expected '(' after function ${ident}.`);
+      consume();
+      const arg = parseExpression();
+      if (peek() !== ')') throw new Error(`Expected ')' after ${ident}(...).`);
+      consume();
+
+      switch (ident) {
+        case 'sin':
+          return Math.sin(arg);
+        case 'cos':
+          return Math.cos(arg);
+        case 'tan':
+          return Math.tan(arg);
+        case 'sqrt':
+          if (arg < 0) throw new Error('Square root of negative number.');
+          return Math.sqrt(arg);
+        case 'log':
+          if (arg <= 0) throw new Error('Logarithm requires positive input.');
+          return Math.log10(arg);
+        case 'ln':
+          if (arg <= 0) throw new Error('Natural log requires positive input.');
+          return Math.log(arg);
+        case 'abs':
+          return Math.abs(arg);
+        default:
+          throw new Error(`Unknown function: ${ident}`);
+      }
+    }
+
+    let numStr = '';
+    while (/[0-9.]/.test(peek())) {
+      numStr += consume();
+    }
+    if (!numStr) throw new Error(`Unexpected token near "${peek()}"`);
+    const parsed = Number(numStr);
+    if (!Number.isFinite(parsed)) throw new Error('Invalid numeric value.');
+    return parsed;
+  };
+
+  const result = parseExpression();
+  if (pos !== sanitized.length) {
+    throw new Error(`Unexpected trailing character "${peek()}"`);
+  }
+  if (!Number.isFinite(result)) {
+    throw new Error('Calculation overflow or undefined result.');
+  }
+  return result;
+}
+
+function formatCleanNumber(num: number): string {
+  if (Math.abs(num) < 1e-12) return '0';
+  if (Number.isInteger(num)) return String(num);
+  return Number(num.toPrecision(10)).toString();
+}
+
+function parseLinearSide(sideExpr: string): {
+  vars: Record<string, number>;
+  constant: number;
+} | null {
+  const compact = sideExpr.replace(/−/g, '-').replace(/\s+/g, '');
+  if (!compact || /[()*/^]/.test(compact)) return null;
+
+  const withPlus = compact.replace(/(?<!^)-/g, '+-');
+  const terms = withPlus.split('+').filter(Boolean);
+  if (terms.length === 0) return null;
+
+  const vars: Record<string, number> = {};
+  let constant = 0;
+
+  for (const term of terms) {
+    const varMatch = term.match(/^([+-]?(?:\d+(?:\.\d+)?)?)([a-zA-Z])$/);
+    if (varMatch) {
+      const coeffStr = varMatch[1];
+      const varName = varMatch[2].toLowerCase();
+      const coeff =
+        coeffStr === '' || coeffStr === '+'
+          ? 1
+          : coeffStr === '-'
+            ? -1
+            : parseFloat(coeffStr);
+      if (!Number.isFinite(coeff)) return null;
+      vars[varName] = (vars[varName] || 0) + coeff;
+      continue;
+    }
+
+    const numVal = Number(term);
+    if (!Number.isFinite(numVal)) return null;
+    constant += numVal;
+  }
+
+  return { vars, constant };
+}
+
+function solveMathOrEquation(rawInput: string): string | null {
+  const cleaned = rawInput
+    .trim()
+    .replace(/^(?:what\s+is|calculate|compute|solve|evaluate|simplify|check(?:\s+if)?)\s+/i, '')
+    .replace(/[?]+$/g, '')
+    .trim();
+
+  if (!cleaned) return null;
+
+  // 1. Equations containing '=' (e.g., 2+10-7=12-9 or 2x-9y+12=3x+7y-30)
+  if (cleaned.includes('=')) {
+    const parts = cleaned.split('=').map((p) => p.trim());
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+    const [lhsRaw, rhsRaw] = parts;
+
+    // 1A. Purely numeric equation verification (e.g., 2+10-7=12-9)
+    try {
+      const lhsVal = evaluateSafeMathExpression(lhsRaw);
+      const rhsVal = evaluateSafeMathExpression(rhsRaw);
+      const isEqual = Math.abs(lhsVal - rhsVal) < 1e-9;
+      const lhsStr = formatCleanNumber(lhsVal);
+      const rhsStr = formatCleanNumber(rhsVal);
+
+      return [
+        `- **Left side:** \`${lhsRaw}\` = **${lhsStr}**`,
+        `- **Right side:** \`${rhsRaw}\` = **${rhsStr}**`,
+        `- **Result:** ${
+          isEqual
+            ? `**Correct (True)** — both sides equal **${lhsStr}**.`
+            : `**Incorrect (False)** — **${lhsStr}** does not equal **${rhsStr}**.`
+        }`,
+      ].join('\n');
+    } catch {
+      // Fall through to algebraic linear equation solver
+    }
+
+    // 1B. Linear algebraic equation (1 or 2 variables, e.g., 2x-9y+12=3x+7y-30)
+    const lhsParsed = parseLinearSide(lhsRaw);
+    const rhsParsed = parseLinearSide(rhsRaw);
+    if (lhsParsed && rhsParsed) {
+      const allVars = Array.from(
+        new Set([...Object.keys(lhsParsed.vars), ...Object.keys(rhsParsed.vars)])
+      ).sort();
+
+      if (allVars.length === 1) {
+        const v = allVars[0];
+        const netVar = (lhsParsed.vars[v] || 0) - (rhsParsed.vars[v] || 0);
+        const netConst = rhsParsed.constant - lhsParsed.constant;
+
+        if (Math.abs(netVar) < 1e-12) {
+          return Math.abs(netConst) < 1e-12
+            ? `**Infinite solutions** — \`${cleaned}\` is an identity (true for every value of **${v}**).`
+            : `**No solution** — \`${cleaned}\` simplifies to \`0 = ${formatCleanNumber(netConst)}\`, which is impossible.`;
+        }
+
+        const solution = netConst / netVar;
+        return [
+          `**Step-by-step solution for \`${cleaned}\`:**`,
+          `1. Combine **${v}** terms on the left and constants on the right: \`${formatCleanNumber(netVar)}${v} = ${formatCleanNumber(netConst)}\``,
+          `2. Divide by **${formatCleanNumber(netVar)}**: **${v} = ${formatCleanNumber(solution)}**`,
+        ].join('\n');
+      }
+
+      if (allVars.length === 2) {
+        const [v1, v2] = allVars;
+        let c1 = (lhsParsed.vars[v1] || 0) - (rhsParsed.vars[v1] || 0);
+        let c2 = (lhsParsed.vars[v2] || 0) - (rhsParsed.vars[v2] || 0);
+        let rhsC = rhsParsed.constant - lhsParsed.constant;
+
+        if (c1 < 0) {
+          c1 = -c1;
+          c2 = -c2;
+          rhsC = -rhsC;
+        }
+
+        const formatTerm = (coeff: number, varName: string, isFirst: boolean): string => {
+          const absVal = Math.abs(coeff);
+          const coeffLabel = absVal === 1 ? '' : formatCleanNumber(absVal);
+          if (isFirst) {
+            return `${coeff < 0 ? '-' : ''}${coeffLabel}${varName}`;
+          }
+          return `${coeff < 0 ? ' - ' : ' + '}${coeffLabel}${varName}`;
+        };
+
+        const standardEquation = `${formatTerm(c1, v1, true)}${formatTerm(
+          c2,
+          v2,
+          false
+        )} = ${formatCleanNumber(rhsC)}`;
+
+        const solvedForV1 =
+          c1 === 1
+            ? `${v1} = ${formatCleanNumber(rhsC)} ${c2 >= 0 ? '-' : '+'} ${formatCleanNumber(
+                Math.abs(c2)
+              )}${v2}`
+            : `${v1} = (${formatCleanNumber(rhsC)} ${c2 >= 0 ? '-' : '+'} ${formatCleanNumber(
+                Math.abs(c2)
+              )}${v2}) / ${formatCleanNumber(c1)}`;
+
+        const solvedForV2 =
+          c2 === 1
+            ? `${v2} = ${formatCleanNumber(rhsC)} ${c1 >= 0 ? '-' : '+'} ${formatCleanNumber(
+                Math.abs(c1)
+              )}${v1}`
+            : `${v2} = (${formatCleanNumber(rhsC)} ${c1 >= 0 ? '-' : '+'} ${formatCleanNumber(
+                Math.abs(c1)
+              )}${v1}) / ${formatCleanNumber(c2)}`;
+
+        return [
+          `**Simplified linear equation for \`${cleaned}\`:**`,
+          `1. Move variable terms to the left and constants to the right:`,
+          `   **\`${standardEquation}\`**`,
+          `2. **Solved for ${v1}:** \`${solvedForV1}\``,
+          `3. **Solved for ${v2}:** \`${solvedForV2}\``,
+        ].join('\n');
+      }
+    }
+
+    return null;
+  }
+
+  // 2. Standalone arithmetic / math expression (e.g., 8/2+56(2), sqrt(144)+25)
+  const strippedMathWords = cleaned
+    .replace(/\b(?:pi|e|sin|cos|tan|sqrt|log|ln|abs)\b/gi, '')
+    .trim();
+  const hasDigit = /\d/.test(strippedMathWords);
+  const hasMathOperator = /[+\-*/^()]/.test(strippedMathWords);
+  const hasOnlyMathChars = /^[0-9+\-*/^().\s]+$/.test(strippedMathWords);
+
+  if (hasDigit && hasMathOperator && hasOnlyMathChars) {
+    try {
+      const value = evaluateSafeMathExpression(cleaned);
+      return `**${formatCleanNumber(value)}**`;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function isLikelyMathExpression(text: string): boolean {
+  return (
+    /[=+\-*/^]/.test(text) &&
+    /\d/.test(text) &&
+    !/\b(?:full\s*form|letter|application|news|who|what\s+is\s+[a-z]{3,})\b/i.test(text)
+  );
+}
+
+// ============================================================================
 // CONTEXT-AWARE INTELLIGENCE, FORMAL DEFAULT & MULTI-ANSWER CONTROL
 // ============================================================================
 
@@ -760,16 +1094,10 @@ function getInstantGreetingReply(text: string): string | null {
   return null;
 }
 
-/**
- * Returns true ONLY for questions whose inherent intent is to enumerate
- * multiple meanings/types (such as "full form of...", "types of...",
- * "kinds of...", "categories of...", "meanings of...").
- */
 function isMultiAnswerCategoryQuestion(text: string): boolean {
   const lower = text.toLowerCase().trim();
   if (!lower) return false;
 
-  // Exclude writing/creative/action requests even if they contain words like "form"
   if (
     /^(?:write|draft|compose|create|generate|make|rewrite|change|turn)\s+(?:a|an|the|it|this)?\s*(?:letter|application|email|essay|story|poem|message|note|paragraph)\b/i.test(
       lower
@@ -1231,10 +1559,16 @@ function resolveCuratedMultiAnswerKnowledge(
 async function fetchContextAwareKnowledgeFallback(
   conversationHistory: Array<{ role: string; content: string }>
 ): Promise<string | null> {
+  const ctx = analyzeConversationContext(conversationHistory);
+
+  // Never send math expressions or algebraic equations to Wikipedia
+  if (isLikelyMathExpression(ctx.latestMessage)) {
+    return solveMathOrEquation(ctx.latestMessage);
+  }
+
   const curatedDirect = resolveCuratedMultiAnswerKnowledge(conversationHistory);
   if (curatedDirect) return curatedDirect;
 
-  const ctx = analyzeConversationContext(conversationHistory);
   const fullContext = ctx.combinedTopicContext;
   const fullLower = fullContext.toLowerCase();
   const qtyPref = detectAnswerQuantityPreference(ctx.latestMessage);
@@ -1326,6 +1660,7 @@ async function fetchContextAwareKnowledgeFallback(
   if (
     !cleanedTopic ||
     cleanedTopic.length > 90 ||
+    isLikelyMathExpression(cleanedTopic) ||
     /^(?:answer|answers|more|possible|all|one)$/i.test(cleanedTopic)
   ) {
     return null;
@@ -1449,27 +1784,22 @@ function buildQuantityDirectiveForTurn(
   const styleChange = detectStyleChangeRequest(ctx.latestMessage);
   const isMultiCat = isMultiAnswerCategoryQuestion(ctx.latestMessage);
 
-  // 1. User explicitly asked for ONLY ONE answer
   if (qtyPref.wantsOnlyOne) {
     return 'IMPORTANT INSTRUCTION: The user explicitly requested ONLY ONE answer. Provide strictly ONE single clear, direct answer. Do NOT list multiple variations or options.';
   }
 
-  // 2. Follow-up asking for MORE / ALL possible answers to a previous question
   if (ctx.isFollowUp && qtyPref.wantsMoreOrAll) {
     return `IMPORTANT INSTRUCTION: The user is asking for MORE / ALL possible answers to their previous question ("${ctx.lastMeaningfulUserQuestion}"). List ALL remaining and possible answers or types clearly as a numbered list. NEVER define the word "answer".`;
   }
 
-  // 3. Question inherently asks for "full form of...", "types of...", "kinds of...", "meanings of..."
   if (isMultiCat) {
     return 'IMPORTANT INSTRUCTION: This question asks for full forms, meanings, or types/kinds. List ALL major full forms, meanings, or types clearly in a numbered list rather than giving only one.';
   }
 
-  // 4. User explicitly asked to change style (e.g., "make it friendly", "do it casual", "make it shorter")
   if (ctx.isFollowUp && styleChange) {
     return `IMPORTANT INSTRUCTION: Update your previous answer ("${ctx.lastMeaningfulUserQuestion}") according to the user's style request ("${styleChange}"). Provide ONLY ONE single updated version — do NOT list multiple styles or variations.`;
   }
 
-  // 5. Default for all standard questions & writing tasks (letters, applications, explanations, etc.)
   return 'IMPORTANT INSTRUCTION: Provide ONLY ONE single, clean, direct answer in a standard, formal tone. Do NOT provide multiple styles, variations, or alternative versions (such as "friendly email", "cute text", or "humorous note") unless the user explicitly asks to change the style.';
 }
 
@@ -1479,12 +1809,19 @@ async function synthesizeWithFreeFallbackEngine(
   liveGroundingContext: string,
   liveSources: Array<{ uri: string; title: string }>
 ): Promise<string> {
+  const ctx = analyzeConversationContext(conversationHistory);
+
+  // Instant deterministic solver for arithmetic & equations
+  if (!liveGroundingContext) {
+    const mathSolution = solveMathOrEquation(ctx.latestMessage);
+    if (mathSolution) return mathSolution;
+  }
+
   const curatedMatch = resolveCuratedMultiAnswerKnowledge(conversationHistory);
   if (curatedMatch && !liveGroundingContext) {
     return curatedMatch;
   }
 
-  const ctx = analyzeConversationContext(conversationHistory);
   const quantityDirective = buildQuantityDirectiveForTurn(conversationHistory);
 
   const recentTurns = conversationHistory.slice(-10).map((msg, idx, arr) => {
@@ -1653,135 +1990,6 @@ function buildSystemInstructions(
   return parts.join('\n\n');
 }
 
-function evaluateSafeMathExpression(rawExpr: string): number {
-  const sanitized = rawExpr
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/π/g, 'pi')
-    .replace(/\*\*/g, '^');
-
-  if (!sanitized) throw new Error('Enter a mathematical expression.');
-  if (!/^[0-9a-z+\-*/^().]+$/.test(sanitized)) {
-    throw new Error('Unsupported characters in expression.');
-  }
-
-  let pos = 0;
-  const peek = () => sanitized[pos] || '';
-  const consume = () => sanitized[pos++];
-
-  const parseExpression = (): number => {
-    let value = parseTerm();
-    while (peek() === '+' || peek() === '-') {
-      const op = consume();
-      const right = parseTerm();
-      value = op === '+' ? value + right : value - right;
-    }
-    return value;
-  };
-
-  const parseTerm = (): number => {
-    let value = parsePower();
-    while (peek() === '*' || peek() === '/') {
-      const op = consume();
-      const right = parsePower();
-      if (op === '/') {
-        if (right === 0) throw new Error('Division by zero.');
-        value /= right;
-      } else {
-        value *= right;
-      }
-    }
-    return value;
-  };
-
-  const parsePower = (): number => {
-    let base = parseUnary();
-    if (peek() === '^') {
-      consume();
-      const exponent = parsePower();
-      base = Math.pow(base, exponent);
-    }
-    return base;
-  };
-
-  const parseUnary = (): number => {
-    if (peek() === '+') {
-      consume();
-      return parseUnary();
-    }
-    if (peek() === '-') {
-      consume();
-      return -parseUnary();
-    }
-    return parsePrimary();
-  };
-
-  const parsePrimary = (): number => {
-    if (peek() === '(') {
-      consume();
-      const inside = parseExpression();
-      if (peek() !== ')') throw new Error('Mismatched parentheses.');
-      consume();
-      return inside;
-    }
-
-    if (/[a-z]/.test(peek())) {
-      let ident = '';
-      while (/[a-z]/.test(peek())) {
-        ident += consume();
-      }
-      if (ident === 'pi') return Math.PI;
-      if (ident === 'e') return Math.E;
-
-      if (peek() !== '(') throw new Error(`Expected '(' after function ${ident}.`);
-      consume();
-      const arg = parseExpression();
-      if (peek() !== ')') throw new Error(`Expected ')' after ${ident}(...).`);
-      consume();
-
-      switch (ident) {
-        case 'sin':
-          return Math.sin(arg);
-        case 'cos':
-          return Math.cos(arg);
-        case 'tan':
-          return Math.tan(arg);
-        case 'sqrt':
-          if (arg < 0) throw new Error('Square root of negative number.');
-          return Math.sqrt(arg);
-        case 'log':
-          if (arg <= 0) throw new Error('Logarithm requires positive input.');
-          return Math.log10(arg);
-        case 'ln':
-          if (arg <= 0) throw new Error('Natural log requires positive input.');
-          return Math.log(arg);
-        case 'abs':
-          return Math.abs(arg);
-        default:
-          throw new Error(`Unknown function: ${ident}`);
-      }
-    }
-
-    let numStr = '';
-    while (/[0-9.]/.test(peek())) {
-      numStr += consume();
-    }
-    if (!numStr) throw new Error(`Unexpected token near "${peek()}"`);
-    const parsed = Number(numStr);
-    if (!Number.isFinite(parsed)) throw new Error('Invalid numeric value.');
-    return parsed;
-  };
-
-  const result = parseExpression();
-  if (pos !== sanitized.length) {
-    throw new Error(`Unexpected trailing character "${peek()}"`);
-  }
-  if (!Number.isFinite(result)) {
-    throw new Error('Calculation overflow or undefined result.');
-  }
-  return result;
-}
-
 async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const rawText = await response.text();
   const trimmed = rawText.trim();
@@ -1863,22 +2071,20 @@ async function revokeAccountSession(): Promise<void> {
 // ============================================================================
 
 export default function App() {
-  const [isVerticalScreen, setIsVerticalScreen] = useState(() => {
+  const [isMobileView, setIsMobileView] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.innerHeight > window.innerWidth || window.innerWidth < 768;
+    return window.innerWidth < 768;
   });
 
   useEffect(() => {
-    const checkOrientation = () => {
-      setIsVerticalScreen(
-        window.innerHeight > window.innerWidth || window.innerWidth < 768
-      );
+    const checkViewport = () => {
+      setIsMobileView(window.innerWidth < 768);
     };
-    window.addEventListener('resize', checkOrientation);
-    window.addEventListener('orientationchange', checkOrientation);
+    window.addEventListener('resize', checkViewport);
+    window.addEventListener('orientationchange', checkViewport);
     return () => {
-      window.removeEventListener('resize', checkOrientation);
-      window.removeEventListener('orientationchange', checkOrientation);
+      window.removeEventListener('resize', checkViewport);
+      window.removeEventListener('orientationchange', checkViewport);
     };
   }, []);
 
@@ -1893,9 +2099,7 @@ export default function App() {
   const [accountNotice, setAccountNotice] = useState('');
 
   const [sidebarOpen, setSidebarOpen] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      !(window.innerHeight > window.innerWidth || window.innerWidth < 768)
+    () => typeof window !== 'undefined' && window.innerWidth >= 768
   );
   const [isLoading, setIsLoading] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -1909,14 +2113,13 @@ export default function App() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
-  const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] =
-    useState<BeforeInstallPromptEvent | null>(null);
+    useState<BeforeInstallPromptEvent | null>(() => earlyDeferredInstallPrompt);
 
-  const [verticalInput, setVerticalInput] = useState('');
-  const [verticalAttachments, setVerticalAttachments] = useState<Attachment[]>([]);
-  const [verticalDictating, setVerticalDictating] = useState(false);
-  const verticalFileInputRef = useRef<HTMLInputElement>(null);
+  const [mobileInput, setMobileInput] = useState('');
+  const [mobileAttachments, setMobileAttachments] = useState<Attachment[]>([]);
+  const [mobileDictating, setMobileDictating] = useState(false);
+  const mobileFileInputRef = useRef<HTMLInputElement>(null);
 
   const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
     try {
@@ -2007,13 +2210,27 @@ export default function App() {
   const voiceAutoLoopRef = useRef(true);
 
   useEffect(() => {
+    if (earlyDeferredInstallPrompt && !deferredInstallPrompt) {
+      setDeferredInstallPrompt(earlyDeferredInstallPrompt);
+    }
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
-      setDeferredInstallPrompt(e as BeforeInstallPromptEvent);
+      const promptEvent = e as BeforeInstallPromptEvent;
+      earlyDeferredInstallPrompt = promptEvent;
+      setDeferredInstallPrompt(promptEvent);
+    };
+    const handleAppInstalled = () => {
+      earlyDeferredInstallPrompt = null;
+      setDeferredInstallPrompt(null);
+      setAccountNotice('JARVIS AI has been installed on your device!');
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-  }, []);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, [deferredInstallPrompt]);
 
   useEffect(() => {
     liveVoiceOpenRef.current = liveVoiceOpen;
@@ -2270,7 +2487,6 @@ export default function App() {
         setImageStudioOpen(false);
         setWorkbenchOpen(false);
         setMemoryModalOpen(false);
-        setSetupModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -2296,7 +2512,7 @@ export default function App() {
   const handleNewChat = () => {
     stopSpeaking();
     setActiveChatId(null);
-    if (isVerticalScreen) {
+    if (isMobileView) {
       setSidebarOpen(false);
     }
   };
@@ -2304,7 +2520,7 @@ export default function App() {
   const handleSelectChat = (id: string) => {
     stopSpeaking();
     setActiveChatId(id);
-    if (isVerticalScreen) {
+    if (isMobileView) {
       setSidebarOpen(false);
     }
   };
@@ -2394,7 +2610,7 @@ export default function App() {
   };
 
   // ==========================================================================
-  // CONTEXT-AWARE CORE SEND MESSAGE ENGINE
+  // CORE SEND MESSAGE ENGINE
   // ==========================================================================
 
   const handleSendMessage = async (
@@ -2404,7 +2620,7 @@ export default function App() {
   ) => {
     if (!text.trim() && attachments.length === 0) return;
 
-    if (isVerticalScreen && sidebarOpen) {
+    if (isMobileView && sidebarOpen) {
       setSidebarOpen(false);
     }
 
@@ -2449,6 +2665,7 @@ export default function App() {
     }
 
     if (attachments.length === 0) {
+      // 1. Instant Greeting Reply
       const instantGreeting = getInstantGreetingReply(text);
       if (instantGreeting) {
         const instantMessage: Message = {
@@ -2467,6 +2684,29 @@ export default function App() {
         );
         if (settings.voiceEnabled) {
           handleToggleSpeakMessage(instantMessage.id, instantMessage.content);
+        }
+        return;
+      }
+
+      // 2. Instant Deterministic Math & Equation Solver
+      const instantMath = solveMathOrEquation(text);
+      if (instantMath) {
+        const mathMessage: Message = {
+          id: Math.random().toString(36).substring(2, 9),
+          role: 'assistant',
+          content: instantMath,
+          sources: [],
+          timestamp: Date.now(),
+        };
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === currentConvId
+              ? { ...c, updatedAt: Date.now(), messages: [...c.messages, mathMessage] }
+              : c
+          )
+        );
+        if (settings.voiceEnabled) {
+          handleToggleSpeakMessage(mathMessage.id, mathMessage.content);
         }
         return;
       }
@@ -2705,16 +2945,16 @@ export default function App() {
   };
 
   // ==========================================================================
-  // VERTICAL DASHBOARD PROMPT HANDLERS (FILES, MIC, SEND, INSTALL)
+  // MOBILE PROMPT & PWA INSTALL HANDLERS
   // ==========================================================================
 
-  const handleVerticalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).slice(0, 10 - verticalAttachments.length);
+  const handleMobileFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).slice(0, 10 - mobileAttachments.length);
     files.forEach((file) => {
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
-          setVerticalAttachments((prev) =>
+          setMobileAttachments((prev) =>
             prev.length >= 10
               ? prev
               : [
@@ -2733,7 +2973,7 @@ export default function App() {
     e.target.value = '';
   };
 
-  const handleVerticalMicDictate = () => {
+  const handleMobileMicDictate = () => {
     if (typeof window === 'undefined') return;
     const SpeechRecCtor =
       (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
@@ -2746,50 +2986,53 @@ export default function App() {
       return;
     }
 
-    if (verticalDictating) {
+    if (mobileDictating) {
       stopVoiceRecognition();
-      setVerticalDictating(false);
+      setMobileDictating(false);
       return;
     }
 
     const rec = new SpeechRecCtor();
     rec.lang = voiceLang;
     rec.interimResults = false;
-    rec.onstart = () => setVerticalDictating(true);
+    rec.onstart = () => setMobileDictating(true);
     rec.onresult = (event) => {
       const transcript = event.results[0]?.[0]?.transcript || '';
       if (transcript) {
-        setVerticalInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        setMobileInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
       }
     };
-    rec.onerror = () => setVerticalDictating(false);
-    rec.onend = () => setVerticalDictating(false);
+    rec.onerror = () => setMobileDictating(false);
+    rec.onend = () => setMobileDictating(false);
     recognitionRef.current = rec;
     try {
       rec.start();
     } catch {
-      setVerticalDictating(false);
+      setMobileDictating(false);
     }
   };
 
-  const handleVerticalSubmit = () => {
-    if ((!verticalInput.trim() && verticalAttachments.length === 0) || isLoading) return;
-    const textToSend = verticalInput;
-    const filesToSend = [...verticalAttachments];
-    setVerticalInput('');
-    setVerticalAttachments([]);
+  const handleMobileSubmit = () => {
+    if ((!mobileInput.trim() && mobileAttachments.length === 0) || isLoading) return;
+    const textToSend = mobileInput;
+    const filesToSend = [...mobileAttachments];
+    setMobileInput('');
+    setMobileAttachments([]);
     void handleSendMessage(textToSend, filesToSend);
   };
 
   const handleInstallApp = async () => {
-    if (deferredInstallPrompt) {
-      await deferredInstallPrompt.prompt();
-      await deferredInstallPrompt.userChoice;
+    setSidebarOpen(false);
+    const promptToUse = deferredInstallPrompt || earlyDeferredInstallPrompt;
+    if (promptToUse) {
+      await promptToUse.prompt();
+      await promptToUse.userChoice;
+      earlyDeferredInstallPrompt = null;
       setDeferredInstallPrompt(null);
       return;
     }
     setAccountNotice(
-      'To install JARVIS AI on your phone: tap your browser menu (⋮ or Share) and select "Add to Home Screen" or "Install App".'
+      'To install JARVIS AI on your phone: tap your browser menu (⋮ or Share) and select "Install app" or "Add to Home Screen".'
     );
   };
 
@@ -2871,7 +3114,8 @@ export default function App() {
 
       try {
         const instantGreeting = getInstantGreetingReply(trimmed);
-        let reply = instantGreeting || '';
+        const instantMath = instantGreeting ? null : solveMathOrEquation(trimmed);
+        let reply = instantGreeting || instantMath || '';
 
         if (!reply) {
           const shouldSearch = explicitGoogleGroundingRequested(trimmed);
@@ -3181,9 +3425,7 @@ export default function App() {
   const handleRunScientificCalc = () => {
     try {
       const value = evaluateSafeMathExpression(calcInput);
-      setCalcResult(
-        Number.isInteger(value) ? String(value) : value.toPrecision(10).replace(/\.?0+$/, '')
-      );
+      setCalcResult(formatCleanNumber(value));
       setCalcError('');
     } catch (err) {
       setCalcError(err instanceof Error ? err.message : 'Invalid expression');
@@ -3365,11 +3607,11 @@ export default function App() {
   const isEngineeringRole = activeProfession.id.endsWith('-eng');
 
   // ==========================================================================
-  // RENDER: VERTICAL / MOBILE NEON FUTURISTIC DASHBOARD VS DESKTOP WORKSPACE
+  // RENDER
   // ==========================================================================
 
   return (
-    <div className="flex h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-[#040914] text-slate-100 antialiased font-sans">
+    <div className="flex h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-[#060b13] text-slate-100 antialiased font-sans">
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -3388,201 +3630,65 @@ export default function App() {
         onShare={() => setShareModalOpen(true)}
       />
 
-      {isVerticalScreen ? (
+      {/* MOBILE SIDE DRAWER: ONLY INSTALL BUTTON MOVED HERE */}
+      {isMobileView && sidebarOpen && (
+        <div className="fixed left-3 bottom-[118px] w-[256px] z-[60] pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => void handleInstallApp()}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500/25 to-blue-600/25 hover:from-cyan-500/35 hover:to-blue-600/35 border border-cyan-400/60 text-cyan-200 text-xs font-semibold shadow-[0_0_16px_rgba(34,211,238,0.25)] active:scale-95 transition"
+          >
+            <Download className="w-4 h-4 text-cyan-300 shrink-0" />
+            <span>Install JARVIS App</span>
+          </button>
+        </div>
+      )}
+
+      {isMobileView ? (
         /* ====================================================================
-           FUTURISTIC NEON VERTICAL / PORTRAIT DASHBOARD (MOBILE & PORTRAIT)
+           CLEAN MOBILE BROWSER VIEW (TOP BAR WITHOUT TOOLS/VOICE/EXPORT/SIGN IN/INSTALL)
            ==================================================================== */
-        <div
-          className="flex-1 flex flex-col h-[100dvh] w-full max-w-full overflow-hidden relative"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 50% 42%, rgba(6, 182, 212, 0.22) 0%, rgba(4, 9, 20, 0.86) 62%, rgba(2, 6, 14, 0.97) 100%), url('./jarvis-welcome-bg.png')",
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: 'cover',
-          }}
-        >
-          {/* TOP NEON HEADER BAR */}
-          <header className="px-3.5 pt-3 pb-2 flex items-center justify-between gap-2 shrink-0 z-10">
+        <div className="flex-1 flex flex-col h-[100dvh] w-full max-w-full overflow-hidden relative bg-[#060b13]">
+          {/* MINIMAL MOBILE TOP BAR (ONLY MENU + BRAND — INSTALL IS IN SIDE DRAWER) */}
+          <header className="px-3.5 py-2.5 bg-[#08101d]/95 border-b border-cyan-500/25 flex items-center justify-between gap-2 shrink-0 z-10">
             <div className="flex items-center gap-2.5 min-w-0">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                aria-label="Open menu"
-                className="w-10 h-10 rounded-xl bg-[#071326]/90 border border-cyan-400/50 shadow-[0_0_14px_rgba(34,211,238,0.3)] flex items-center justify-center text-cyan-300 active:scale-95 transition shrink-0"
+                aria-label="Open side drawer"
+                className="w-9 h-9 rounded-xl bg-slate-900 border border-cyan-500/40 flex items-center justify-center text-cyan-300 active:scale-95 transition shrink-0"
               >
                 <Menu className="w-5 h-5" />
               </button>
 
-              <div className="relative flex items-center justify-center shrink-0">
-                <div className="w-10 h-10 rounded-full border-2 border-cyan-400/75 shadow-[0_0_18px_rgba(34,211,238,0.55)] flex items-center justify-center bg-cyan-950/70">
-                  <ArcReactorLogo glow={true} size="sm" />
-                </div>
-              </div>
+              <ArcReactorLogo glow={true} size="sm" />
 
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-base font-extrabold tracking-wide text-white truncate">
+                  <span className="text-sm font-extrabold tracking-wide text-white truncate">
                     JARVIS AI
                   </span>
-                  <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border border-cyan-400/60 bg-cyan-500/15 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.35)]">
+                  <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider rounded border border-cyan-400/50 bg-cyan-500/15 text-cyan-300">
                     PRO
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-300/80 leading-none mt-0.5 truncate">
+                <p className="text-[10px] text-slate-400 leading-none mt-0.5 truncate">
                   AI workspace
                 </p>
               </div>
             </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setMemoryModalOpen(true)}
-                aria-label="Memory & Notifications"
-                className="relative w-10 h-10 rounded-full bg-[#071326]/90 border border-cyan-400/40 flex items-center justify-center text-slate-200 active:scale-95 transition"
-              >
-                <Bell className="w-4 h-4" />
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shadow">
-                  {memories.length > 0 ? memories.length : 3}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAuthModalOpen(true)}
-                aria-label="Account profile"
-                className="w-10 h-10 rounded-full bg-gradient-to-b from-cyan-500/30 to-blue-700/40 border-2 border-cyan-400/70 shadow-[0_0_15px_rgba(34,211,238,0.45)] flex items-center justify-center text-cyan-200 active:scale-95 transition"
-              >
-                <UserIcon className="w-5 h-5" />
-              </button>
-            </div>
           </header>
 
-          {/* 3-ROW NEON ACTION PILL GRID */}
-          <section className="px-3.5 py-1.5 space-y-2 shrink-0 z-10">
-            {/* Row 1: Live Voice | Today's News | Image Studio */}
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={openLiveVoiceSession}
-                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/50 shadow-[0_0_14px_rgba(34,211,238,0.2)] active:scale-95 transition text-left"
-              >
-                <Mic className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span className="text-[11px] font-medium text-slate-100 leading-tight">
-                  Live Voice
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setNewsModalOpen(true)}
-                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.16)] active:scale-95 transition text-left"
-              >
-                <Newspaper className="w-4 h-4 text-amber-400 shrink-0" />
-                <span className="text-[11px] font-medium text-slate-100 leading-tight">
-                  Today's News
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setImageStudioOpen(true)}
-                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-purple-400/50 shadow-[0_0_14px_rgba(192,132,252,0.2)] active:scale-95 transition text-left"
-              >
-                <ImageIcon className="w-4 h-4 text-fuchsia-400 shrink-0" />
-                <span className="text-[11px] font-medium text-slate-100 leading-tight">
-                  Image Studio
-                </span>
-              </button>
-            </div>
-
-            {/* Row 2: All-Domain Core | Eng & Med Lab | Screen Vision */}
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setProfessionsModalOpen(true)}
-                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.16)] active:scale-95 transition text-left"
-              >
-                <Box className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span className="text-[11px] font-medium text-slate-100 leading-tight line-clamp-2">
-                  {activeProfession.shortName}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWorkbenchOpen(true)}
-                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-emerald-400/45 shadow-[0_0_14px_rgba(52,211,153,0.16)] active:scale-95 transition text-left"
-              >
-                <FlaskConical className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span className="text-[11px] font-medium text-slate-100 leading-tight">
-                  Eng & Med Lab
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleCaptureScreenVision()}
-                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.16)] active:scale-95 transition text-left"
-              >
-                <Scan className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span className="text-[11px] font-medium text-slate-100 leading-tight">
-                  Screen Vision
-                </span>
-              </button>
-            </div>
-
-            {/* Row 3: Tools | Export | Install | Setup */}
-            <div className="grid grid-cols-4 gap-1.5">
-              <button
-                type="button"
-                onClick={() => setToolsModalOpen(true)}
-                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-purple-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
-              >
-                <Wrench className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span>Tools</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setExportModalOpen(true)}
-                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-emerald-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Export</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleInstallApp()}
-                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-cyan-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
-              >
-                <Download className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span>Install</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSetupModalOpen(true)}
-                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-amber-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
-              >
-                <Settings className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Setup</span>
-              </button>
-            </div>
-          </section>
-
           {!isOnline && (
-            <div className="mx-3.5 mt-1 px-3 py-1 rounded-xl bg-amber-500/20 border border-amber-400/40 text-[11px] text-amber-200 flex items-center gap-1.5 shrink-0">
+            <div className="bg-amber-500/20 border-b border-amber-500/30 px-3.5 py-1.5 text-[11px] text-amber-200 flex items-center gap-1.5 shrink-0">
               <WifiOff className="w-3.5 h-3.5 shrink-0" />
               <span>Offline: AI replies require an internet connection.</span>
             </div>
           )}
 
           {accountNotice && (
-            <div className="mx-3.5 mt-1 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 text-[11px] text-cyan-100 flex items-center justify-between gap-2 shrink-0">
-              <span className="line-clamp-2">{accountNotice}</span>
+            <div className="bg-slate-900 border-b border-cyan-500/35 px-3.5 py-2 text-xs text-cyan-100 flex items-center justify-between gap-2 shrink-0">
+              <span className="leading-snug">{accountNotice}</span>
               <button
                 type="button"
                 onClick={() => setAccountNotice('')}
@@ -3593,399 +3699,181 @@ export default function App() {
             </div>
           )}
 
-          {/* MAIN SCROLLABLE VIEWPORT */}
+          {/* MAIN MOBILE CHAT VIEWPORT */}
           <div
             ref={chatScrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3.5 flex flex-col justify-between"
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col"
+            style={
+              isWelcomeScreen
+                ? {
+                    backgroundImage:
+                      "linear-gradient(rgba(6, 11, 19, 0.38), rgba(6, 11, 19, 0.72)), url('./jarvis-welcome-bg.png')",
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: 'cover',
+                  }
+                : undefined
+            }
           >
             {isWelcomeScreen ? (
-              <div className="flex-1 flex flex-col justify-between py-2 gap-3">
-                <div className="flex flex-col items-center text-center pt-1">
-                  <div className="relative w-28 h-28 flex items-center justify-center mb-2">
-                    <div className="absolute inset-0 rounded-full border-2 border-cyan-400/60 shadow-[0_0_45px_rgba(34,211,238,0.65)] animate-pulse" />
-                    <div className="absolute inset-2 rounded-full border border-cyan-300/40" />
-                    <ArcReactorLogo glow={true} size="lg" />
-                  </div>
-
-                  <h1 className="text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.8)]">
-                    Hello, I am{' '}
-                    <span className="text-cyan-300 drop-shadow-[0_0_16px_rgba(34,211,238,0.85)]">
-                      JARVIS
-                    </span>
-                  </h1>
-
-                  <p className="text-xs text-slate-200/90 max-w-xs mt-1 leading-relaxed">
-                    Ask questions, search the web,{' '}
-                    <span className="text-cyan-300 font-semibold">generate AI artwork</span>,
-                    solve math, or upload up to{' '}
-                    <span className="text-cyan-300 font-semibold">10 files!</span>
-                  </p>
-                </div>
-
-                {/* NEON GLOWING PROMPT INPUT CARD */}
-                <div className="rounded-2xl bg-[#061224]/90 border-2 border-cyan-400/75 shadow-[0_0_26px_rgba(34,211,238,0.38)] p-3 space-y-2.5">
-                  {verticalAttachments.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {verticalAttachments.map((att, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-[10px] text-cyan-200"
-                        >
-                          <span className="truncate max-w-[110px]">{att.name}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setVerticalAttachments((prev) =>
-                                prev.filter((_, idx) => idx !== i)
-                              )
-                            }
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={verticalInput}
-                      onChange={(e) => setVerticalInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleVerticalSubmit();
-                        }
-                      }}
-                      placeholder="Ask JARVIS anything..."
-                      className="flex-1 bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none min-w-0"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={handleVerticalSubmit}
-                      disabled={
-                        isLoading ||
-                        (!verticalInput.trim() && verticalAttachments.length === 0)
-                      }
-                      aria-label="Send message"
-                      className="w-10 h-10 rounded-full bg-gradient-to-b from-cyan-400 to-cyan-600 disabled:opacity-45 text-slate-950 flex items-center justify-center shadow-[0_0_18px_rgba(34,211,238,0.75)] active:scale-95 transition shrink-0"
-                    >
-                      <ArrowUp className="w-5 h-5 stroke-[2.5]" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <input
-                      ref={verticalFileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={handleVerticalFileSelect}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => verticalFileInputRef.current?.click()}
-                      aria-label="Attach files"
-                      className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-300 active:scale-95 transition"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleVerticalMicDictate}
-                      aria-label="Voice dictation"
-                      className={`p-1.5 rounded-lg transition active:scale-95 ${
-                        verticalDictating
-                          ? 'text-rose-400 animate-pulse'
-                          : 'text-slate-300 hover:text-cyan-300'
-                      }`}
-                    >
-                      <Mic className="w-4 h-4" />
-                    </button>
-
-                    <div className="h-4 w-px bg-slate-700" />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          webSearchEnabled: !prev.webSearchEnabled,
-                        }))
-                      }
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition ${
-                        settings.webSearchEnabled
-                          ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]'
-                          : 'bg-slate-900/90 border-slate-700 text-slate-300'
-                      }`}
-                    >
-                      <Globe className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Web</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          dualEngineEnabled: !prev.dualEngineEnabled,
-                        }))
-                      }
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition truncate ${
-                        settings.dualEngineEnabled
-                          ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]'
-                          : 'bg-slate-900/90 border-slate-700 text-slate-300'
-                      }`}
-                    >
-                      <Cpu className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                      <span className="truncate">Dual Engine</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2x2 NEON QUICK SUGGESTION CARDS */}
-                <div className="grid grid-cols-2 gap-2.5 pb-1">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPrompt('What is full form of DHA?')}
-                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-cyan-400/50 shadow-[0_0_14px_rgba(34,211,238,0.2)] active:scale-95 transition text-left"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center shrink-0">
-                        <MessageSquare className="w-4 h-4 text-cyan-400" />
-                      </div>
-                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
-                        What is full form of DHA?
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setImageStudioOpen(true)}
-                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-purple-400/50 shadow-[0_0_14px_rgba(192,132,252,0.2)] active:scale-95 transition text-left"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-fuchsia-500/15 border border-fuchsia-400/40 flex items-center justify-center shrink-0">
-                        <Palette className="w-4 h-4 text-fuchsia-400" />
-                      </div>
-                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
-                        Generate AI Artwork
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void handleSendMessage(
-                        'Give me today’s latest Elon Musk and technology news from Google grounding.',
-                        [],
-                        { forceGoogleGrounding: true }
-                      )
-                    }
-                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.18)] active:scale-95 transition text-left"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center shrink-0">
-                        <Music className="w-4 h-4 text-cyan-400" />
-                      </div>
-                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
-                        Elon Musk & Tech News
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSelectPrompt('Write a leave application to my principal')
-                    }
-                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-amber-400/45 shadow-[0_0_14px_rgba(251,191,36,0.18)] active:scale-95 transition text-left"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center shrink-0">
-                        <FileEdit className="w-4 h-4 text-amber-400" />
-                      </div>
-                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
-                        Draft a Leave Application / Letter
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
-                  </button>
-                </div>
-              </div>
+              <WelcomeHero onSelectPrompt={handleSelectPrompt} />
             ) : (
-              <div className="flex-1 flex flex-col justify-between py-2 gap-2">
-                <div className="space-y-1 -mx-3.5">
-                  {activeConversation.messages.map((msg) => (
-                    <MessageItem
-                      key={msg.id}
-                      message={msg}
-                      onSpeak={handleToggleSpeakMessage}
-                      isSpeaking={speakingMessageId === msg.id}
-                    />
-                  ))}
+              <div className="flex-1 py-3 space-y-1 w-full max-w-full overflow-x-hidden">
+                {activeConversation.messages.map((msg) => (
+                  <MessageItem
+                    key={msg.id}
+                    message={msg}
+                    onSpeak={handleToggleSpeakMessage}
+                    isSpeaking={speakingMessageId === msg.id}
+                  />
+                ))}
 
-                  {isLoading && (
-                    <div className="py-3 px-4 bg-slate-900/60 border-y border-cyan-500/20">
-                      <div className="flex gap-3 items-center">
-                        <ArcReactorLogo glow={true} size="sm" />
-                        <div className="flex items-center gap-2 text-xs text-cyan-300">
-                          <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
-                          <span className="font-mono">JARVIS is thinking...</span>
-                        </div>
+                {isLoading && (
+                  <div className="py-3 px-4 bg-slate-900/50 border-y border-cyan-500/20">
+                    <div className="flex gap-3 items-center">
+                      <ArcReactorLogo glow={true} size="sm" />
+                      <div className="flex items-center gap-2 text-xs text-cyan-300">
+                        <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
+                        <span className="font-mono">JARVIS is thinking...</span>
                       </div>
                     </div>
-                  )}
-                  <div ref={messagesEndRef} className="h-2" />
-                </div>
-
-                <div className="sticky bottom-1 rounded-2xl bg-[#061224]/95 border-2 border-cyan-400/75 shadow-[0_0_24px_rgba(34,211,238,0.35)] p-2.5 space-y-2">
-                  {verticalAttachments.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {verticalAttachments.map((att, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/20 text-[10px] text-cyan-200"
-                        >
-                          <span className="truncate max-w-[100px]">{att.name}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setVerticalAttachments((prev) =>
-                                prev.filter((_, idx) => idx !== i)
-                              )
-                            }
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="file"
-                      multiple
-                      className="hidden"
-                      ref={verticalFileInputRef}
-                      onChange={handleVerticalFileSelect}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => verticalFileInputRef.current?.click()}
-                      className="p-1.5 text-slate-300 hover:text-cyan-300 shrink-0"
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleVerticalMicDictate}
-                      className={`p-1.5 shrink-0 ${
-                        verticalDictating ? 'text-rose-400 animate-pulse' : 'text-slate-300'
-                      }`}
-                    >
-                      <Mic className="w-4 h-4" />
-                    </button>
-
-                    <input
-                      type="text"
-                      value={verticalInput}
-                      onChange={(e) => setVerticalInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleVerticalSubmit();
-                        }
-                      }}
-                      placeholder="Ask JARVIS anything..."
-                      className="flex-1 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none min-w-0"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={handleVerticalSubmit}
-                      disabled={
-                        isLoading ||
-                        (!verticalInput.trim() && verticalAttachments.length === 0)
-                      }
-                      className="w-9 h-9 rounded-full bg-gradient-to-b from-cyan-400 to-cyan-600 disabled:opacity-45 text-slate-950 flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.7)] shrink-0"
-                    >
-                      <ArrowUp className="w-4 h-4 stroke-[2.5]" />
-                    </button>
                   </div>
-                </div>
+                )}
+                <div ref={messagesEndRef} className="h-3" />
               </div>
             )}
           </div>
 
-          {/* BOTTOM 4-TAB NEON DOCK BAR */}
-          <nav className="px-2 pt-1.5 pb-2 bg-[#040c1a]/95 border-t border-cyan-500/35 shadow-[0_-6px_24px_rgba(6,182,212,0.18)] grid grid-cols-4 gap-1 shrink-0 z-10 jarvis-mobile-safe-bottom">
-            <button
-              type="button"
-              onClick={handleNewChat}
-              className={`relative flex flex-col items-center justify-center py-1.5 rounded-2xl transition ${
-                isWelcomeScreen && !sidebarOpen
-                  ? 'bg-cyan-500/15 border border-cyan-400/50 text-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.3)]'
-                  : 'text-slate-400 hover:text-cyan-200'
-              }`}
-            >
-              <Home className="w-5 h-5" />
-              <span className="text-[11px] font-semibold mt-0.5">Home</span>
-              {isWelcomeScreen && !sidebarOpen && (
-                <span className="absolute bottom-0 w-10 h-0.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+          {/* MOBILE PROMPT INPUT BAR */}
+          <div className="px-3 py-2.5 bg-[#060b13] border-t border-slate-800/80 shrink-0 jarvis-mobile-safe-bottom">
+            <div className="rounded-2xl bg-[#081326] border border-cyan-500/45 p-2.5 space-y-2">
+              {mobileAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {mobileAttachments.map((att, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-[10px] text-cyan-200"
+                    >
+                      <span className="truncate max-w-[110px]">{att.name}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMobileAttachments((prev) =>
+                            prev.filter((_, idx) => idx !== i)
+                          )
+                        }
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
               )}
-            </button>
 
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className={`flex flex-col items-center justify-center py-1.5 rounded-2xl transition ${
-                sidebarOpen
-                  ? 'bg-cyan-500/15 border border-cyan-400/50 text-cyan-300'
-                  : 'text-slate-400 hover:text-cyan-200'
-              }`}
-            >
-              <History className="w-5 h-5" />
-              <span className="text-[11px] font-medium mt-0.5">History</span>
-            </button>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={mobileInput}
+                  onChange={(e) => setMobileInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleMobileSubmit();
+                    }
+                  }}
+                  placeholder="Ask JARVIS anything..."
+                  className="flex-1 bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none min-w-0"
+                />
 
-            <button
-              type="button"
-              onClick={() => setSetupModalOpen(true)}
-              className={`flex flex-col items-center justify-center py-1.5 rounded-2xl transition ${
-                setupModalOpen
-                  ? 'bg-cyan-500/15 border border-cyan-400/50 text-cyan-300'
-                  : 'text-slate-400 hover:text-cyan-200'
-              }`}
-            >
-              <Settings className="w-5 h-5" />
-              <span className="text-[11px] font-medium mt-0.5">Settings</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={handleMobileSubmit}
+                  disabled={
+                    isLoading ||
+                    (!mobileInput.trim() && mobileAttachments.length === 0)
+                  }
+                  aria-label="Send message"
+                  className="w-9 h-9 rounded-full bg-cyan-500 disabled:opacity-45 text-slate-950 flex items-center justify-center active:scale-95 transition shrink-0"
+                >
+                  <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+                </button>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => setAuthModalOpen(true)}
-              className="flex flex-col items-center justify-center py-1.5 rounded-2xl text-amber-400 hover:text-amber-300 transition"
-            >
-              <Crown className="w-5 h-5" />
-              <span className="text-[11px] font-semibold mt-0.5">Upgrade</span>
-            </button>
-          </nav>
+              <div className="flex items-center gap-2 pt-0.5">
+                <input
+                  ref={mobileFileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleMobileFileSelect}
+                />
+                <button
+                  type="button"
+                  onClick={() => mobileFileInputRef.current?.click()}
+                  aria-label="Attach files"
+                  className="p-1 rounded-lg text-slate-300 hover:text-cyan-300"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleMobileMicDictate}
+                  aria-label="Voice dictation"
+                  className={`p-1 rounded-lg ${
+                    mobileDictating
+                      ? 'text-rose-400 animate-pulse'
+                      : 'text-slate-300 hover:text-cyan-300'
+                  }`}
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+
+                <div className="h-3.5 w-px bg-slate-700" />
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      webSearchEnabled: !prev.webSearchEnabled,
+                    }))
+                  }
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition ${
+                    settings.webSearchEnabled
+                      ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                      : 'bg-slate-900 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  <Globe className="w-3 h-3 text-cyan-400" />
+                  <span>Web</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      dualEngineEnabled: !prev.dualEngineEnabled,
+                    }))
+                  }
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition truncate ${
+                    settings.dualEngineEnabled
+                      ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                      : 'bg-slate-900 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  <Cpu className="w-3 h-3 text-cyan-400 shrink-0" />
+                  <span className="truncate">Dual Engine</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         /* ====================================================================
-           BIG SCREEN / CHROMEBOOK / LAPTOP WORKSPACE
+           DESKTOP / LAPTOP WORKSPACE
            ==================================================================== */
         <div className="flex-1 flex flex-col h-[100dvh] min-w-0 max-w-full overflow-hidden relative bg-[#060b13]">
           <Header
@@ -4226,92 +4114,6 @@ export default function App() {
               showScrollBottom={showScrollBottom}
               onScrollToBottom={scrollToBottom}
             />
-          </div>
-        </div>
-      )}
-
-      {/* SETUP & SYSTEM SETTINGS MODAL */}
-      {setupModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-cyan-500/40 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Settings className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-semibold text-white">JARVIS Setup & Controls</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSetupModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
-                <div>
-                  <div className="font-semibold text-white">Auto-Speak Replies</div>
-                  <div className="text-slate-400 text-[11px]">Read JARVIS answers aloud</div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.voiceEnabled}
-                  onChange={() => {
-                    if (settings.voiceEnabled) stopSpeaking();
-                    setSettings((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }));
-                  }}
-                  className="w-4 h-4 accent-cyan-400"
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
-                <div>
-                  <div className="font-semibold text-white">Live Web Grounding</div>
-                  <div className="text-slate-400 text-[11px]">Include Google News context</div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={Boolean(settings.webSearchEnabled)}
-                  onChange={() =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      webSearchEnabled: !prev.webSearchEnabled,
-                    }))
-                  }
-                  className="w-4 h-4 accent-cyan-400"
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
-                <div>
-                  <div className="font-semibold text-white">Dual Engine Pro</div>
-                  <div className="text-slate-400 text-[11px]">Parallel multi-model synthesis</div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={Boolean(settings.dualEngineEnabled)}
-                  onChange={() =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      dualEngineEnabled: !prev.dualEngineEnabled,
-                    }))
-                  }
-                  className="w-4 h-4 accent-cyan-400"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSetupModalOpen(false);
-                  setMemoryModalOpen(true);
-                }}
-                className="w-full py-2.5 rounded-xl bg-violet-600/25 border border-violet-400/50 text-violet-200 font-medium"
-              >
-                Manage Neural Memory ({memories.length} saved)
-              </button>
-            </div>
           </div>
         </div>
       )}
