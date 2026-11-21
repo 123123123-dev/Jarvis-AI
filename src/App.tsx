@@ -66,9 +66,22 @@ import {
   Wrench,
   PhoneOff,
   Save,
-  LayoutGrid,
-  Share2,
-  FileDown,
+  Menu,
+  Bell,
+  User as UserIcon,
+  Box,
+  FlaskConical,
+  Scan,
+  Settings,
+  Paperclip,
+  Globe,
+  ArrowUp,
+  MessageSquare,
+  Music,
+  FileEdit,
+  Home,
+  History,
+  Crown,
 } from 'lucide-react';
 
 // ============================================================================
@@ -160,6 +173,11 @@ interface SpeechRecognitionInstance {
   abort: () => void;
 }
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
 const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
 const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
@@ -168,11 +186,13 @@ let cachedBackendAvailable: boolean | null = null;
 
 const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, accurate, and helpful AI assistant like ChatGPT and Gemini.
 Core rules:
-1. Conversation Context Awareness: Always read the full conversation history before answering. Determine whether the user's latest message is a follow-up/refinement to the previous message (for example: "about housing", "make it shorter", "explain the second one", "in Urdu", "what about in Pakistan?") or a completely new topic (for example: "full form of DHA" after writing a letter). If it is a follow-up, answer in direct relation to the earlier messages; if it is a new topic, answer the new topic cleanly without repeating earlier answers.
-2. Complete & Accurate Answers: Provide thorough, complete, accurate answers—never stop mid-explanation or give vague guesses.
-   - When asked for the "full form" of an abbreviation/acronym (like DHA), list all major well-known full forms clearly with brief descriptions, and if a specific domain is mentioned (e.g., housing), focus on that exact expansion (e.g., Defence Housing Authority).
-   - When asked to write a letter or application, include every specific detail the user asked for (such as coming home today, school fee, leave reason, dates, or amounts) in clean, polite standard letter format with bold placeholders (**[Your Address]**, **[Date]**, **Dear Dad,**, **With love,**, **[Your Name]**).
-3. Clean Formatting: Answer only what is asked without tacking on unrequested menus or raw HTML tags like <br>.`;
+1. Multi-Answer & Single-Answer Control:
+   - Whenever a user asks a question that has multiple valid answers, meanings, or full forms (such as abbreviations/acronyms like DHA, ATM, SIM, PIN, CSS, or multi-meaning terms), ALWAYS list ALL major well-known answers clearly in a numbered list with brief descriptions — UNLESS the user explicitly says to only give one answer (e.g., "only say one answer", "just one", "give me one answer", "only 1").
+   - If the user explicitly asks for ONLY ONE answer, give strictly 1 clear, accurate answer.
+   - If the user subsequently asks for MORE answers or ALL possible answers (e.g., "give me all possible answers", "tell me more answers", "more answers", "what else", "other meanings", "show all"), look at the previous question in the conversation history and list ALL remaining / all possible answers to that previous question. NEVER define the word "answer" itself.
+2. Conversation Context Awareness: Always read the full conversation history before answering. Determine whether the user's latest message is a follow-up/refinement to the previous message (for example: "about housing", "give me all possible answers", "tell me more answers", "make it shorter", "explain the second one") or a completely new topic.
+3. Letter & Application Writing: When asked to write a letter or application, include every specific detail the user asked for in clean, polite standard format with bold placeholders (**[Your Address]**, **[Date]**, **Dear Dad,**, **With love,**, **[Your Name]**).
+4. Clean Formatting: Answer only what is asked without tacking on unrequested menus or raw HTML tags like <br>.`;
 
 const PROFESSION_PROFILES: ProfessionProfile[] = [
   {
@@ -536,7 +556,6 @@ const IMAGE_STYLE_PRESETS = [
   },
 ];
 
-// Curated acronym knowledge base merged with live Wikipedia disambiguation
 const ACRONYM_KNOWLEDGE_BASE: Record<
   string,
   Array<{ expansion: string; domain: string; details: string }>
@@ -579,10 +598,144 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
         'A simple carbohydrate (triose) used in metabolic glycolysis pathways and as the active ingredient in sunless tanning products.',
     },
   ],
+  ATM: [
+    {
+      expansion: 'Automated Teller Machine',
+      domain: 'banking finance cash machine',
+      details:
+        'An electronic banking outlet that allows customers to complete basic financial transactions without the aid of a branch representative.',
+    },
+    {
+      expansion: 'Asynchronous Transfer Mode',
+      domain: 'networking telecommunications computer',
+      details:
+        'A high-speed telecommunications switching technique that uses fixed-size 53-byte cells to transmit voice, video, and data.',
+    },
+    {
+      expansion: 'Standard Atmosphere (unit)',
+      domain: 'physics chemistry pressure unit',
+      details:
+        'A unit of pressure defined as 101,325 pascals (Pa), approximately equal to Earth’s average atmospheric pressure at sea level.',
+    },
+    {
+      expansion: 'Ataxia Telangiectasia Mutated',
+      domain: 'genetics biology medicine dna',
+      details:
+        'A serine/threonine protein kinase gene involved in repairing DNA double-strand breaks and regulating cell cycle checkpoints.',
+    },
+  ],
+  SIM: [
+    {
+      expansion: 'Subscriber Identity Module',
+      domain: 'mobile telecom phone network',
+      details:
+        'An integrated circuit smart card that securely stores the International Mobile Subscriber Identity (IMSI) and cryptographic keys on mobile phones.',
+    },
+    {
+      expansion: 'Structured Illumination Microscopy',
+      domain: 'optics physics biology imaging',
+      details:
+        'A super-resolution fluorescence microscopy technique that bypasses the classical optical diffraction limit.',
+    },
+    {
+      expansion: 'Society for Information Management',
+      domain: 'business technology leadership',
+      details:
+        'A professional organization of senior IT executives, CIOs, and technology leaders.',
+    },
+  ],
+  PIN: [
+    {
+      expansion: 'Personal Identification Number',
+      domain: 'banking security password card',
+      details:
+        'A secret numeric passcode used to authenticate a user to an ATM, debit/credit card, or mobile device.',
+    },
+    {
+      expansion: 'Postal Index Number',
+      domain: 'postal mail address india',
+      details:
+        'A 6-digit postal code numbering system used by India Post to identify delivery post offices.',
+    },
+    {
+      expansion: 'Positive-Intrinsic-Negative (Diode)',
+      domain: 'electronics physics semiconductor',
+      details:
+        'A semiconductor diode with a wide undoped intrinsic region between p-type and n-type layers, used in RF switches and photodetectors.',
+    },
+  ],
+  CSS: [
+    {
+      expansion: 'Cascading Style Sheets',
+      domain: 'web development html design programming',
+      details:
+        'A stylesheet language used for describing the presentation, layout, colors, and typography of HTML web documents.',
+    },
+    {
+      expansion: 'Central Superior Services',
+      domain: 'pakistan civil service exam government',
+      details:
+        'A premier competitive examination conducted by the Federal Public Service Commission (FPSC) in Pakistan for recruitment into federal bureaucratic services.',
+    },
+    {
+      expansion: 'Content Scramble System',
+      domain: 'dvd encryption media drm',
+      details:
+        'A digital rights management (DRM) and encryption system used on commercial DVD-Video discs.',
+    },
+  ],
+  RAM: [
+    {
+      expansion: 'Random Access Memory',
+      domain: 'computer hardware memory electronics',
+      details:
+        'Volatile high-speed computer memory that temporarily stores active operating system data, applications, and variables for fast CPU access.',
+    },
+    {
+      expansion: 'Reliability, Availability, and Maintainability',
+      domain: 'engineering systems reliability',
+      details:
+        'An engineering discipline used to measure and optimize the operational uptime and dependability of complex industrial systems.',
+    },
+  ],
+  API: [
+    {
+      expansion: 'Application Programming Interface',
+      domain: 'software programming web development',
+      details:
+        'A set of protocols and definitions that allows different software applications to communicate and exchange data.',
+    },
+    {
+      expansion: 'Active Pharmaceutical Ingredient',
+      domain: 'pharmacology medicine drugs',
+      details:
+        'The biologically active chemical substance in a pharmaceutical drug that produces the intended therapeutic effect.',
+    },
+    {
+      expansion: 'American Petroleum Institute',
+      domain: 'oil gas energy engineering',
+      details:
+        'The largest U.S. trade association for the oil and natural gas industry, known for engineering and motor oil standards.',
+    },
+  ],
+  ICU: [
+    {
+      expansion: 'Intensive Care Unit',
+      domain: 'hospital medicine healthcare',
+      details:
+        'A specialized hospital department providing continuous monitoring and life-support care for critically ill or injured patients.',
+    },
+    {
+      expansion: 'International Components for Unicode',
+      domain: 'software programming localization',
+      details:
+        'An open-source set of C/C++ and Java libraries providing Unicode and globalization support for software applications.',
+    },
+  ],
 };
 
 // ============================================================================
-// CONTEXT-AWARE INTELLIGENCE, PARALLEL AI ENGINE & SMART COMPOSERS
+// CONTEXT-AWARE INTELLIGENCE, MULTI-ANSWER CONTROL & PARALLEL AI ENGINE
 // ============================================================================
 
 function getInstantGreetingReply(text: string): string | null {
@@ -603,6 +756,38 @@ function getInstantGreetingReply(text: string): string | null {
     return "You're welcome! Let me know if you need anything else.";
   }
   return null;
+}
+
+function detectAnswerQuantityPreference(text: string): {
+  wantsOnlyOne: boolean;
+  wantsMoreOrAll: boolean;
+  wantsOnlyRemaining: boolean;
+} {
+  const lower = text.toLowerCase().trim();
+
+  const wantsOnlyOne =
+    /\b(?:only\s+(?:say|give|tell|show|provide|write)?\s*(?:one|1)|(?:just|strictly)\s+(?:say|give|tell|show|provide|write)?\s*(?:one|1)|(?:one|1)\s+(?:answer|meaning|full\s*form|option|result)\s+only|single\s+(?:answer|meaning|full\s*form)|only\s+1\b|just\s+1\b)\b/i.test(
+      lower
+    );
+
+  const wantsOnlyRemaining =
+    /\b(?:more|other|remaining|rest\s+of(?:\s+the)?|additional|extra)\s+(?:answers?|meanings?|full\s*forms?|options?|ones?)\b/i.test(
+      lower
+    ) ||
+    /^(?:more|tell\s+(?:me\s+)?more|give\s+(?:me\s+)?more|say\s+more|what\s+else|any\s+other|others?)$/i.test(
+      lower.replace(/[!?.]+$/g, '')
+    );
+
+  const wantsAll =
+    /\b(?:all\s+(?:possible\s+)?(?:answers?|meanings?|full\s*forms?|options?|results?)|show\s+(?:me\s+)?all|list\s+all|all\s+of\s+them)\b/i.test(
+      lower
+    );
+
+  return {
+    wantsOnlyOne,
+    wantsMoreOrAll: wantsOnlyRemaining || wantsAll,
+    wantsOnlyRemaining: wantsOnlyRemaining && !wantsAll,
+  };
 }
 
 function explicitGoogleGroundingRequested(text: string): boolean {
@@ -651,21 +836,23 @@ function raceToFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
   });
 }
 
-/**
- * Determines whether the latest user message is a true follow-up/refinement
- * to the previous message (e.g., "about housing", "make it shorter", "in Urdu")
- * or a standalone new question/command (e.g., "full form of DHA").
- */
 function analyzeConversationContext(
   conversationHistory: Array<{ role: string; content: string }>
 ): {
   isFollowUp: boolean;
   latestMessage: string;
   previousUserMessages: string[];
+  previousAssistantMessages: string[];
   combinedTopicContext: string;
+  lastMeaningfulUserQuestion: string;
 } {
   const userMessages = conversationHistory
     .filter((m) => m.role === 'user')
+    .map((m) => m.content.trim())
+    .filter(Boolean);
+
+  const assistantMessages = conversationHistory
+    .filter((m) => m.role === 'assistant')
     .map((m) => m.content.trim())
     .filter(Boolean);
 
@@ -677,31 +864,34 @@ function analyzeConversationContext(
       isFollowUp: false,
       latestMessage,
       previousUserMessages: [],
+      previousAssistantMessages: assistantMessages,
       combinedTopicContext: latestMessage,
+      lastMeaningfulUserQuestion: latestMessage,
     };
   }
 
   const lower = latestMessage.toLowerCase().trim();
   const wordCount = lower.split(/\s+/).filter(Boolean).length;
+  const qtyPref = detectAnswerQuantityPreference(latestMessage);
 
-  // Standalone new questions/commands that contain their own subject
   const isStandaloneRequest =
-    /^(?:write\s+(?:a|an)\b|draft\b|compose\b|create\b|generate\b|calculate\b|solve\b|translate\b|hi\b|hello\b)/i.test(
+    !qtyPref.wantsMoreOrAll &&
+    (/^(?:write\s+(?:a|an)\b|draft\b|compose\b|create\b|generate\b|calculate\b|solve\b|translate\b|hi\b|hello\b)/i.test(
       lower
     ) ||
-    /\b(?:full\s*form|fully\s*form|stand\s*for|stands\s*for|meaning)\s+(?:of\s+)?[a-z0-9]{2,}\b/i.test(
-      lower
-    ) ||
-    /^(?:what|who|when|where|define)\s+(?:is|are|was|were)\s+(?!it\b|this\b|that\b|these\b|those\b)[a-z0-9]{2,}/i.test(
-      lower
-    );
+      /\b(?:full\s*form|fully\s*form|stand\s*for|stands\s*for|meaning)\s+(?:of\s+)?[a-z0-9]{2,}\b/i.test(
+        lower
+      ) ||
+      /^(?:what|who|when|where|define)\s+(?:is|are|was|were)\s+(?!it\b|this\b|that\b|these\b|those\b)[a-z0-9]{2,}/i.test(
+        lower
+      ));
 
-  // Explicit follow-up / refinement cues that depend on the previous turn
   const hasFollowUpCue =
+    qtyPref.wantsMoreOrAll ||
     /^(?:about|regarding|for|in|on|with|and|or|also|what about|how about|i mean|i means|specifically|especially|only|more|explain|elaborate|shorten|shorter|longer|brief|summarize|rewrite|change|update|modify|make it|all possible|why|how|what else)\b/i.test(
       lower
     ) ||
-    /\b(?:it|this|that|these|those|above|previous|first one|second one|third one|last one)\b/i.test(
+    /\b(?:it|this|that|these|those|above|previous|first one|second one|third one|last one|possible answers|more answers|other answers|remaining answers)\b/i.test(
       lower
     ) ||
     (wordCount <= 2 && !isStandaloneRequest);
@@ -721,15 +911,12 @@ function analyzeConversationContext(
     isFollowUp,
     latestMessage,
     previousUserMessages,
+    previousAssistantMessages: assistantMessages,
     combinedTopicContext,
+    lastMeaningfulUserQuestion: isFollowUp ? lastMeaningfulPrev : latestMessage,
   };
 }
 
-/**
- * Context-Aware Letter & Application Composer:
- * Runs only when the latest turn explicitly asks for a letter/application or is a
- * direct follow-up modification to a previous letter/application.
- */
 function generateContextAwareLetterOrApplication(
   conversationHistory: Array<{ role: string; content: string }>
 ): string | null {
@@ -742,13 +929,12 @@ function generateContextAwareLetterOrApplication(
       latestLower
     );
 
-  // Only inherit a previous letter/application if this message is a true follow-up modification
   if (!latestIsLetterOrApp && !ctx.isFollowUp) {
     return null;
   }
 
   const isLetter = /\bwrite\s+(?:a\s+)?letter\b|\bletter\s+to\b/.test(combinedLower);
-  const isApplication = /\bwrite\s+(?:an?\s+)?application\b|\bapplication\s+to\b/.test(
+  const isApplication = /\bwrite\s+(?:an?\s+)?application\b|\bapplication\s+to\b|\bleave\s+application\b/.test(
     combinedLower
   );
 
@@ -756,7 +942,6 @@ function generateContextAwareLetterOrApplication(
 
   const isShorter = /\bshort(?:er)?\b|\bbrief\b|\bsmall\b/.test(latestLower);
 
-  // Extract the user's specific reason/topic clause
   const reasonMatch = ctx.combinedTopicContext.match(
     /(?:that|saying|telling(?:\s+him|\s+her|\s+them)?|regarding|about|for\s+(?:asking\s+to)?|to\s+(?:ask|inform|tell|request))\s+(.+)$/i
   );
@@ -810,7 +995,6 @@ function generateContextAwareLetterOrApplication(
     ].join('\n');
   }
 
-  // Recipient detection
   const toFather = /\bdad\b|\bfather\b|\bpapa\b|\babbu\b/.test(combinedLower);
   const toMother = /\bmom\b|\bmother\b|\bmama\b|\bammi\b/.test(combinedLower);
   const toFriend = /\bfriend\b/.test(combinedLower);
@@ -888,72 +1072,132 @@ function generateContextAwareLetterOrApplication(
   ].join('\n');
 }
 
-/**
- * Context-Aware Acronym & Knowledge Resolver:
- * Tracks previous messages so follow-ups like "about housing" after "full form of DHA"
- * resolve directly to "Defence Housing Authority (DHA)".
- */
-async function fetchContextAwareKnowledgeFallback(
+function resolveCuratedMultiAnswerKnowledge(
   conversationHistory: Array<{ role: string; content: string }>
-): Promise<string | null> {
+): string | null {
   const ctx = analyzeConversationContext(conversationHistory);
   const fullContext = ctx.combinedTopicContext;
   const fullLower = fullContext.toLowerCase();
+  const qtyPref = detectAnswerQuantityPreference(ctx.latestMessage);
 
-  // Detect if the conversation is asking for an acronym / full form
+  const isFullFormOrMeaningQuery =
+    /\b(?:full\s*form|fully\s*form|stand\s*for|stands\s*for|acronym|abbreviation|meaning|answers?)\b/i.test(
+      fullLower
+    );
+
+  const acronymMatch =
+    ctx.lastMeaningfulUserQuestion.match(/\b([A-Z]{2,8})\b/) ||
+    fullContext.match(/\b([A-Z]{2,8})\b/) ||
+    fullContext.match(
+      /(?:full\s*form|fully\s*form|meaning)\s+(?:of\s+)?([a-zA-Z]{2,8})\b/i
+    );
+
+  const acronym = acronymMatch ? acronymMatch[1].toUpperCase() : '';
+  if (!isFullFormOrMeaningQuery || !acronym) return null;
+
+  const curatedEntries = ACRONYM_KNOWLEDGE_BASE[acronym];
+  if (!curatedEntries || curatedEntries.length === 0) return null;
+
+  const filterWords = fullLower
+    .replace(
+      /\b(?:what|is|the|give|me|all|possible|full|fully|forms?|of|stand|for|i|mean|means|about|regarding|in|on|only|say|just|one|single|more|answers?|other|remaining|rest|tell|show)\b/g,
+      ' '
+    )
+    .replace(new RegExp(`\\b${acronym.toLowerCase()}\\b`, 'g'), ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 3);
+
+  let candidateEntries = curatedEntries;
+  if (filterWords.length > 0) {
+    const matched = curatedEntries.filter((entry) =>
+      filterWords.some(
+        (fw) =>
+          entry.domain.toLowerCase().includes(fw) ||
+          entry.expansion.toLowerCase().includes(fw) ||
+          entry.details.toLowerCase().includes(fw)
+      )
+    );
+    if (matched.length > 0) {
+      candidateEntries = matched;
+    }
+  }
+
+  // Case 1: User explicitly asked for ONLY ONE answer
+  if (qtyPref.wantsOnlyOne) {
+    const chosen = candidateEntries[0];
+    return `**${acronym}** stands for **${chosen.expansion}** — ${chosen.details}`;
+  }
+
+  // Case 2: Follow-up asking for MORE / ALL possible answers after previous response
+  if (ctx.isFollowUp && qtyPref.wantsMoreOrAll) {
+    const prevAssistantText = (
+      ctx.previousAssistantMessages[ctx.previousAssistantMessages.length - 1] || ''
+    ).toLowerCase();
+
+    if (qtyPref.wantsOnlyRemaining && prevAssistantText) {
+      const remaining = candidateEntries.filter(
+        (entry) => !prevAssistantText.includes(entry.expansion.toLowerCase())
+      );
+      if (remaining.length > 0 && remaining.length < candidateEntries.length) {
+        const listMarkdown = remaining
+          .map(
+            (entry, idx) =>
+              `${idx + 1}. **${entry.expansion}** — ${entry.details}`
+          )
+          .join('\n');
+        return `Here are the other full forms of **${acronym}**:\n\n${listMarkdown}`;
+      }
+    }
+  }
+
+  // Default: Show ALL possible answers clearly
+  if (candidateEntries.length === 1) {
+    const only = candidateEntries[0];
+    return `**${acronym}** stands for **${only.expansion}**.\n\n${only.details}`;
+  }
+
+  const listMarkdown = candidateEntries
+    .map(
+      (entry, idx) =>
+        `${idx + 1}. **${entry.expansion}** — ${entry.details}`
+    )
+    .join('\n');
+  return `Here are all the major full forms of **${acronym}**:\n\n${listMarkdown}`;
+}
+
+async function fetchContextAwareKnowledgeFallback(
+  conversationHistory: Array<{ role: string; content: string }>
+): Promise<string | null> {
+  const curatedDirect = resolveCuratedMultiAnswerKnowledge(conversationHistory);
+  if (curatedDirect) return curatedDirect;
+
+  const ctx = analyzeConversationContext(conversationHistory);
+  const fullContext = ctx.combinedTopicContext;
+  const fullLower = fullContext.toLowerCase();
+  const qtyPref = detectAnswerQuantityPreference(ctx.latestMessage);
+
   const isFullFormQuery =
     /\b(?:full\s*form|fully\s*form|stand\s*for|stands\s*for|acronym|abbreviation)\b/i.test(
       fullLower
     );
 
-  // Extract uppercase acronym token (e.g., DHA, NADRA, MBBS, CPU) from current or combined context
   const acronymMatch =
-    ctx.latestMessage.match(/\b([A-Z]{2,8})\b/) ||
+    ctx.lastMeaningfulUserQuestion.match(/\b([A-Z]{2,8})\b/) ||
     fullContext.match(/\b([A-Z]{2,8})\b/) ||
     fullContext.match(/(?:full\s*form|fully\s*form)\s+(?:of\s+)?([a-zA-Z]{2,8})\b/i);
 
   const acronym = acronymMatch ? acronymMatch[1].toUpperCase() : '';
 
   if (isFullFormQuery && acronym) {
-    // Check domain filter from current or previous turns (e.g., "about housing", "medical", "dubai")
     const filterWords = fullLower
       .replace(
-        /\b(?:what|is|the|give|me|all|possible|full|fully|forms?|of|stand|for|i|mean|means|about|regarding|in|on)\b/g,
+        /\b(?:what|is|the|give|me|all|possible|full|fully|forms?|of|stand|for|i|mean|means|about|regarding|in|on|only|say|just|one|single|more|answers?|other|remaining|rest|tell|show)\b/g,
         ' '
       )
       .replace(new RegExp(`\\b${acronym.toLowerCase()}\\b`, 'g'), ' ')
       .split(/\s+/)
       .filter((w) => w.length >= 3);
 
-    const curatedEntries = ACRONYM_KNOWLEDGE_BASE[acronym];
-    if (curatedEntries && curatedEntries.length > 0) {
-      if (filterWords.length > 0) {
-        const matched = curatedEntries.filter((entry) =>
-          filterWords.some(
-            (fw) =>
-              entry.domain.toLowerCase().includes(fw) ||
-              entry.expansion.toLowerCase().includes(fw) ||
-              entry.details.toLowerCase().includes(fw)
-          )
-        );
-        if (matched.length > 0) {
-          return matched
-            .map((m) => `**${acronym}** stands for **${m.expansion}**.\n\n${m.details}`)
-            .join('\n\n---\n\n');
-        }
-      }
-
-      // Return all possible full forms cleanly
-      const listMarkdown = curatedEntries
-        .map(
-          (entry, idx) =>
-            `${idx + 1}. **${entry.expansion}** — ${entry.details}`
-        )
-        .join('\n');
-      return `Here are the main full forms of **${acronym}**:\n\n${listMarkdown}`;
-    }
-
-    // Dynamic Wikipedia Disambiguation lookup for any other acronym (e.g., NADRA, HEC, CPU, DNA)
     try {
       const searchQuery =
         filterWords.length > 0
@@ -961,37 +1205,45 @@ async function fetchContextAwareKnowledgeFallback(
           : `${acronym} acronym`;
       const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
         searchQuery
-      )}&srlimit=5&format=json&origin=*`;
+      )}&srlimit=6&format=json&origin=*`;
       const searchRes = await fetchWithTimeout(searchUrl, {}, 3000);
       if (searchRes.ok) {
         const searchData = (await searchRes.json()) as {
           query?: { search?: Array<{ title?: string; snippet?: string }> };
         };
-        const hits = searchData.query?.search || [];
-        if (hits.length > 0 && hits[0].title) {
-          const topTitle = hits[0].title;
-          const summaryRes = await fetchWithTimeout(
-            `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
-            {},
-            3000
-          );
-          if (summaryRes.ok) {
-            const summary = (await summaryRes.json()) as {
-              title?: string;
-              extract?: string;
-            };
-            if (summary.extract) {
-              const otherTitles = hits
-                .slice(1, 4)
-                .map((h) => h.title)
-                .filter(Boolean);
-              const othersLine =
-                otherTitles.length > 0
-                  ? `\n\nOther related meanings: **${otherTitles.join('**, **')}**.`
-                  : '';
-              return `**${acronym} — ${summary.title || topTitle}**: ${summary.extract}${othersLine}`;
+        const hits = (searchData.query?.search || []).filter((h) => Boolean(h.title));
+        if (hits.length > 0) {
+          if (qtyPref.wantsOnlyOne) {
+            const topTitle = hits[0].title!;
+            const summaryRes = await fetchWithTimeout(
+              `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
+              {},
+              3000
+            );
+            if (summaryRes.ok) {
+              const summary = (await summaryRes.json()) as {
+                title?: string;
+                extract?: string;
+              };
+              if (summary.extract) {
+                return `**${acronym}** stands for **${summary.title || topTitle}** — ${summary.extract}`;
+              }
             }
           }
+
+          const formattedHits = hits
+            .slice(0, 6)
+            .map((h, idx) => {
+              const cleanSnippet = (h.snippet || '')
+                .replace(/<[^>]+>/g, '')
+                .replace(/"/g, '"')
+                .replace(/&/g, '&')
+                .trim();
+              return `${idx + 1}. **${h.title}**${cleanSnippet ? ` — ${cleanSnippet}` : ''}`;
+            })
+            .join('\n');
+
+          return `Here are the possible meanings and expansions for **${acronym}**:\n\n${formattedHits}`;
         }
       }
     } catch {
@@ -999,29 +1251,35 @@ async function fetchContextAwareKnowledgeFallback(
     }
   }
 
-  // General factual / study lookup using cleaned topic keywords
-  const cleanedTopic = fullContext
+  const cleanedTopic = ctx.lastMeaningfulUserQuestion
     .replace(
-      /\b(?:what\s+is|who\s+is|define|explain|tell\s+me\s+about|give\s+me|all\s+possible|i\s+mean|i\s+means)\b/gi,
+      /\b(?:what\s+is|who\s+is|define|explain|tell\s+me\s+about|give\s+me|all\s+possible|answers?|more|only\s+say\s+one\s+answer|just\s+one|i\s+mean|i\s+means)\b/gi,
       ' '
     )
-    .replace(/[?!.]+/g, ' ')
+    .replace(/[?!.,]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleanedTopic || cleanedTopic.length > 90) return null;
+  if (
+    !cleanedTopic ||
+    cleanedTopic.length > 90 ||
+    /^(?:answer|answers|more|possible|all|one)$/i.test(cleanedTopic)
+  ) {
+    return null;
+  }
 
   try {
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
       cleanedTopic
-    )}&srlimit=3&format=json&origin=*`;
+    )}&srlimit=4&format=json&origin=*`;
     const searchRes = await fetchWithTimeout(searchUrl, {}, 3000);
     if (searchRes.ok) {
       const searchData = (await searchRes.json()) as {
-        query?: { search?: Array<{ title?: string }> };
+        query?: { search?: Array<{ title?: string; snippet?: string }> };
       };
-      const topTitle = searchData.query?.search?.[0]?.title;
-      if (topTitle) {
+      const hits = (searchData.query?.search || []).filter((h) => Boolean(h.title));
+      if (hits.length > 0) {
+        const topTitle = hits[0].title!;
         const summaryRes = await fetchWithTimeout(
           `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topTitle)}`,
           {},
@@ -1033,7 +1291,18 @@ async function fetchContextAwareKnowledgeFallback(
             extract?: string;
           };
           if (summaryData.extract) {
-            return `**${summaryData.title || topTitle}**: ${summaryData.extract}`;
+            if (qtyPref.wantsOnlyOne || hits.length === 1) {
+              return `**${summaryData.title || topTitle}**: ${summaryData.extract}`;
+            }
+            const otherMeanings = hits
+              .slice(1, 4)
+              .map((h) => h.title)
+              .filter(Boolean);
+            const extraSection =
+              otherMeanings.length > 0
+                ? `\n\nOther related answers/meanings: **${otherMeanings.join('**, **')}**.`
+                : '';
+            return `**${summaryData.title || topTitle}**: ${summaryData.extract}${extraSection}`;
           }
         }
       }
@@ -1045,9 +1314,6 @@ async function fetchContextAwareKnowledgeFallback(
   return null;
 }
 
-/**
- * Fetches live Google News headlines ONLY when Today's News is clicked.
- */
 async function fetchFreeLiveGoogleGrounding(
   userQuery: string
 ): Promise<{ contextText: string; sources: Array<{ uri: string; title: string }> }> {
@@ -1123,20 +1389,37 @@ function sanitizeNaturalResponse(rawText: string): string {
     .trim();
 }
 
-/**
- * Multi-Model Parallel AI Synthesizer:
- * - Passes the last 10 turns of conversation history so follow-ups are always understood.
- * - Races 4 parallel requests (`openai`, `mistral`, `llama` POST + compact GET) with a 10s window
- *   so responses are complete and accurate.
- * - Falls back seamlessly to the Context-Aware Letter Composer or Context-Aware Knowledge Resolver.
- */
+function buildQuantityDirectiveForTurn(
+  conversationHistory: Array<{ role: string; content: string }>
+): string {
+  const ctx = analyzeConversationContext(conversationHistory);
+  const qtyPref = detectAnswerQuantityPreference(ctx.latestMessage);
+
+  if (qtyPref.wantsOnlyOne) {
+    return 'IMPORTANT INSTRUCTION: The user explicitly requested ONLY ONE answer. Provide strictly ONE single clear, direct answer and do NOT list multiple answers.';
+  }
+
+  if (ctx.isFollowUp && qtyPref.wantsMoreOrAll) {
+    return `IMPORTANT INSTRUCTION: The user is asking for MORE / ALL possible answers to their previous question ("${ctx.lastMeaningfulUserQuestion}"). List ALL remaining and possible answers clearly as a numbered list. NEVER define the word "answer".`;
+  }
+
+  return 'IMPORTANT INSTRUCTION: If this question has multiple valid answers, meanings, or full forms, list ALL major answers clearly in a numbered list rather than giving only one.';
+}
+
 async function synthesizeWithFreeFallbackEngine(
   conversationHistory: Array<{ role: string; content: string }>,
   systemInstructions: string,
   liveGroundingContext: string,
   liveSources: Array<{ uri: string; title: string }>
 ): Promise<string> {
+  // Fast deterministic resolution for multi-answer / single-answer / follow-up acronym queries
+  const curatedMatch = resolveCuratedMultiAnswerKnowledge(conversationHistory);
+  if (curatedMatch && !liveGroundingContext) {
+    return curatedMatch;
+  }
+
   const ctx = analyzeConversationContext(conversationHistory);
+  const quantityDirective = buildQuantityDirectiveForTurn(conversationHistory);
 
   const recentTurns = conversationHistory.slice(-10).map((msg, idx, arr) => {
     const isLast = idx === arr.length - 1 && msg.role === 'user';
@@ -1144,6 +1427,12 @@ async function synthesizeWithFreeFallbackEngine(
       return {
         role: 'user',
         content: `${liveGroundingContext}\n\nSummarize these news headlines clearly: ${msg.content}`,
+      };
+    }
+    if (isLast && ctx.isFollowUp) {
+      return {
+        role: 'user',
+        content: `Follow-up to "${ctx.lastMeaningfulUserQuestion}": ${msg.content}\n(${quantityDirective})`,
       };
     }
     return {
@@ -1155,7 +1444,7 @@ async function synthesizeWithFreeFallbackEngine(
   const messagesPayload: Array<{ role: string; content: string }> = [
     {
       role: 'system',
-      content: systemInstructions.slice(0, 1400),
+      content: `${systemInstructions}\n\n${quantityDirective}`.slice(0, 1800),
     },
     ...recentTurns,
   ];
@@ -1179,8 +1468,13 @@ async function synthesizeWithFreeFallbackEngine(
       choices?: Array<{ message?: { content?: string } }>;
     };
     const content = data.choices?.[0]?.message?.content?.trim() || '';
-    if (!content || content.startsWith('<html') || content.startsWith('<!DOCTYPE')) {
-      throw new Error(`Empty ${modelName} response`);
+    if (
+      !content ||
+      content.startsWith('<html') ||
+      content.startsWith('<!DOCTYPE') ||
+      /answer commonly refers to a response/i.test(content)
+    ) {
+      throw new Error(`Invalid ${modelName} response`);
     }
     return sanitizeNaturalResponse(content);
   };
@@ -1189,18 +1483,25 @@ async function synthesizeWithFreeFallbackEngine(
     const contextAwarePrompt = liveGroundingContext
       ? `${liveGroundingContext}\n\nSummarize clearly: ${ctx.latestMessage}`
       : ctx.isFollowUp
-        ? `Previous context: ${ctx.previousUserMessages.slice(-2).join(' | ')}\nFollow-up question: ${ctx.latestMessage}\nGive a complete, accurate answer.`
-        : `Give a complete, accurate answer: ${ctx.latestMessage}`;
+        ? `Original question: "${ctx.lastMeaningfulUserQuestion}"\nPrevious answer given: "${
+            ctx.previousAssistantMessages[ctx.previousAssistantMessages.length - 1] || 'None'
+          }"\nUser follow-up: "${ctx.latestMessage}"\n${quantityDirective}`
+        : `Question: "${ctx.latestMessage}"\n${quantityDirective}`;
 
     const res = await fetchWithTimeout(
-      `https://text.pollinations.ai/${encodeURIComponent(contextAwarePrompt.slice(0, 650))}?model=openai`,
+      `https://text.pollinations.ai/${encodeURIComponent(contextAwarePrompt.slice(0, 750))}?model=openai`,
       {},
       10000
     );
     if (!res.ok) throw new Error('GET endpoint failed');
     const text = (await res.text()).trim();
-    if (!text || text.startsWith('<html') || text.startsWith('<!DOCTYPE')) {
-      throw new Error('Empty GET response');
+    if (
+      !text ||
+      text.startsWith('<html') ||
+      text.startsWith('<!DOCTYPE') ||
+      /answer commonly refers to a response/i.test(text)
+    ) {
+      throw new Error('Invalid GET response');
     }
     return sanitizeNaturalResponse(text);
   };
@@ -1213,19 +1514,16 @@ async function synthesizeWithFreeFallbackEngine(
       queryDirectGetWithContext(),
     ]);
   } catch {
-    // 1. Context-Aware Letter & Application Composer
     const composedLetter = generateContextAwareLetterOrApplication(conversationHistory);
     if (composedLetter) {
       return composedLetter;
     }
 
-    // 2. Context-Aware Acronym & Knowledge Resolver
     const smartKnowledge = await fetchContextAwareKnowledgeFallback(conversationHistory);
     if (smartKnowledge) {
       return smartKnowledge;
     }
 
-    // 3. News headlines if Today's News was explicitly requested
     if (liveSources.length > 0) {
       return liveSources
         .map((src, index) => `${index + 1}. **[${src.title}](${src.uri})**`)
@@ -1499,16 +1797,26 @@ async function revokeAccountSession(): Promise<void> {
 // ============================================================================
 
 export default function App() {
-  const [isMobileView, setIsMobileView] = useState(
-    () => typeof window !== 'undefined' && window.innerWidth < 768
-  );
+  // Vertical / Portrait Screen Detection:
+  // Activates the neon vertical dashboard on phones or any vertical screen (height > width),
+  // while keeping Chromebooks, laptops, and desktop landscape screens unchanged.
+  const [isVerticalScreen, setIsVerticalScreen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerHeight > window.innerWidth || window.innerWidth < 768;
+  });
 
   useEffect(() => {
-    const handleResize = () => {
-      setIsMobileView(window.innerWidth < 768);
+    const checkOrientation = () => {
+      setIsVerticalScreen(
+        window.innerHeight > window.innerWidth || window.innerWidth < 768
+      );
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
   }, []);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -1522,7 +1830,9 @@ export default function App() {
   const [accountNotice, setAccountNotice] = useState('');
 
   const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof window !== 'undefined' && window.innerWidth >= 768
+    () =>
+      typeof window !== 'undefined' &&
+      !(window.innerHeight > window.innerWidth || window.innerWidth < 768)
   );
   const [isLoading, setIsLoading] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -1536,7 +1846,15 @@ export default function App() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
-  const [mobileToolsDrawerOpen, setMobileToolsDrawerOpen] = useState(false);
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+
+  // Vertical Neon Prompt Card State
+  const [verticalInput, setVerticalInput] = useState('');
+  const [verticalAttachments, setVerticalAttachments] = useState<Attachment[]>([]);
+  const [verticalDictating, setVerticalDictating] = useState(false);
+  const verticalFileInputRef = useRef<HTMLInputElement>(null);
 
   const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
     try {
@@ -1625,6 +1943,15 @@ export default function App() {
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const liveVoiceOpenRef = useRef(false);
   const voiceAutoLoopRef = useRef(true);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
 
   useEffect(() => {
     liveVoiceOpenRef.current = liveVoiceOpen;
@@ -1881,7 +2208,7 @@ export default function App() {
         setImageStudioOpen(false);
         setWorkbenchOpen(false);
         setMemoryModalOpen(false);
-        setMobileToolsDrawerOpen(false);
+        setSetupModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1907,7 +2234,7 @@ export default function App() {
   const handleNewChat = () => {
     stopSpeaking();
     setActiveChatId(null);
-    if (isMobileView) {
+    if (isVerticalScreen) {
       setSidebarOpen(false);
     }
   };
@@ -1915,7 +2242,7 @@ export default function App() {
   const handleSelectChat = (id: string) => {
     stopSpeaking();
     setActiveChatId(id);
-    if (isMobileView) {
+    if (isVerticalScreen) {
       setSidebarOpen(false);
     }
   };
@@ -2015,7 +2342,7 @@ export default function App() {
   ) => {
     if (!text.trim() && attachments.length === 0) return;
 
-    if (isMobileView && sidebarOpen) {
+    if (isVerticalScreen && sidebarOpen) {
       setSidebarOpen(false);
     }
 
@@ -2059,7 +2386,6 @@ export default function App() {
       setConversations(updatedConversations);
     }
 
-    // Instant < 50ms reply for simple greetings with zero Google grounding
     if (attachments.length === 0) {
       const instantGreeting = getInstantGreetingReply(text);
       if (instantGreeting) {
@@ -2096,9 +2422,10 @@ export default function App() {
         ));
     const weatherRequest = getWeatherRequest(text);
 
-    // Strictly run Google Grounding ONLY when Today's News is clicked or explicitly asked
     const shouldUseGoogleGrounding =
-      Boolean(options?.forceGoogleGrounding) || explicitGoogleGroundingRequested(text);
+      Boolean(options?.forceGoogleGrounding) ||
+      Boolean(settings.webSearchEnabled) ||
+      explicitGoogleGroundingRequested(text);
 
     setIsLoading(true);
 
@@ -2183,23 +2510,33 @@ export default function App() {
           content: m.content,
         }));
 
-        const backendMessages = cleanHistory.map((m, index) => {
-          const isLastUserTurn = index === cleanHistory.length - 1 && m.role === 'user';
-          if (!isLastUserTurn) return m;
-          if (liveWeb.contextText) {
-            return {
-              role: 'user',
-              content: `${liveWeb.contextText}\n\nUser Question: ${m.content}`,
-            };
-          }
-          return m;
-        });
+        const quantityDirective = buildQuantityDirectiveForTurn(cleanHistory);
+        const fullSystemInstructions = `${systemInstructions}\n\n${quantityDirective}`;
+
+        const curatedDirect =
+          attachments.length === 0 && !liveWeb.contextText
+            ? resolveCuratedMultiAnswerKnowledge(cleanHistory)
+            : null;
 
         let replyText = '';
         let replyImageUrl: string | undefined;
 
-        if (cachedBackendAvailable !== false) {
+        if (curatedDirect) {
+          replyText = curatedDirect;
+        } else if (cachedBackendAvailable !== false) {
           try {
+            const backendMessages = cleanHistory.map((m, index) => {
+              const isLastUserTurn = index === cleanHistory.length - 1 && m.role === 'user';
+              if (!isLastUserTurn) return m;
+              if (liveWeb.contextText) {
+                return {
+                  role: 'user',
+                  content: `${liveWeb.contextText}\n\nUser Question: ${m.content}`,
+                };
+              }
+              return m;
+            });
+
             const res = await fetchWithTimeout(
               '/api/chat',
               {
@@ -2207,8 +2544,8 @@ export default function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   messages: backendMessages,
-                  systemInstruction: systemInstructions,
-                  webSearch: false,
+                  systemInstruction: fullSystemInstructions,
+                  webSearch: Boolean(settings.webSearchEnabled),
                   model: settings.dualEngineEnabled ? 'jarvis-deep' : settings.selectedModel,
                   attachments: attachments.map((a) => ({
                     name: a.name,
@@ -2306,6 +2643,95 @@ export default function App() {
   };
 
   // ==========================================================================
+  // VERTICAL DASHBOARD PROMPT HANDLERS (FILES, MIC, SEND, INSTALL)
+  // ==========================================================================
+
+  const handleVerticalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).slice(0, 10 - verticalAttachments.length);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setVerticalAttachments((prev) =>
+            prev.length >= 10
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    name: file.name,
+                    type: file.type || 'application/octet-stream',
+                    data: reader.result as string,
+                  },
+                ]
+          );
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleVerticalMicDictate = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecCtor =
+      (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
+        .SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionInstance })
+        .webkitSpeechRecognition;
+
+    if (!SpeechRecCtor) {
+      openLiveVoiceSession();
+      return;
+    }
+
+    if (verticalDictating) {
+      stopVoiceRecognition();
+      setVerticalDictating(false);
+      return;
+    }
+
+    const rec = new SpeechRecCtor();
+    rec.lang = voiceLang;
+    rec.interimResults = false;
+    rec.onstart = () => setVerticalDictating(true);
+    rec.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript || '';
+      if (transcript) {
+        setVerticalInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      }
+    };
+    rec.onerror = () => setVerticalDictating(false);
+    rec.onend = () => setVerticalDictating(false);
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+    } catch {
+      setVerticalDictating(false);
+    }
+  };
+
+  const handleVerticalSubmit = () => {
+    if ((!verticalInput.trim() && verticalAttachments.length === 0) || isLoading) return;
+    const textToSend = verticalInput;
+    const filesToSend = [...verticalAttachments];
+    setVerticalInput('');
+    setVerticalAttachments([]);
+    void handleSendMessage(textToSend, filesToSend);
+  };
+
+  const handleInstallApp = async () => {
+    if (deferredInstallPrompt) {
+      await deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      setDeferredInstallPrompt(null);
+      return;
+    }
+    setAccountNotice(
+      'To install JARVIS AI on your phone: tap your browser menu (⋮ or Share) and select "Add to Home Screen" or "Install App".'
+    );
+  };
+
+  // ==========================================================================
   // LIVE TWO-WAY VOICE CONVERSATION ENGINE
   // ==========================================================================
 
@@ -2391,11 +2817,6 @@ export default function App() {
             ? await fetchFreeLiveGoogleGrounding(trimmed)
             : { contextText: '', sources: [] };
 
-          const systemInstructions = `${buildSystemInstructions(
-            activeProfession,
-            memories
-          )}\nRespond naturally and concisely as if speaking out loud.`;
-
           const historyPayload = voiceTurns.slice(-8).map((t) => ({
             role: t.role,
             content: t.text,
@@ -2405,7 +2826,19 @@ export default function App() {
             content: trimmed,
           });
 
-          if (cachedBackendAvailable !== false) {
+          const quantityDirective = buildQuantityDirectiveForTurn(historyPayload);
+          const systemInstructions = `${buildSystemInstructions(
+            activeProfession,
+            memories
+          )}\n${quantityDirective}\nRespond clearly as if speaking out loud.`;
+
+          const curatedDirect = !liveWeb.contextText
+            ? resolveCuratedMultiAnswerKnowledge(historyPayload)
+            : null;
+
+          if (curatedDirect) {
+            reply = curatedDirect;
+          } else if (cachedBackendAvailable !== false) {
             try {
               const backendPayload = historyPayload.map((m, idx) =>
                 idx === historyPayload.length - 1 && liveWeb.contextText
@@ -2550,7 +2983,6 @@ export default function App() {
 
   const openLiveVoiceSession = () => {
     stopSpeaking();
-    setMobileToolsDrawerOpen(false);
     setLiveVoiceOpen(true);
     setVoiceError('');
     window.setTimeout(() => {
@@ -2641,11 +3073,10 @@ export default function App() {
   };
 
   const handleCaptureScreenVision = async () => {
-    setMobileToolsDrawerOpen(false);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         setAccountNotice(
-          'Screen capture is not supported in this mobile browser. Use the paperclip icon in chat to upload a screenshot.'
+          'Screen sharing is unavailable in this mobile browser. Tap the paperclip (📎) icon to upload a screenshot for JARVIS Vision.'
         );
         return;
       }
@@ -2871,8 +3302,12 @@ export default function App() {
     activeProfession.id === 'medical' || activeProfession.id === 'pharmacology';
   const isEngineeringRole = activeProfession.id.endsWith('-eng');
 
+  // ==========================================================================
+  // RENDER: VERTICAL / MOBILE NEON FUTURISTIC DASHBOARD VS DESKTOP WORKSPACE
+  // ==========================================================================
+
   return (
-    <div className="flex h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-[#060b13] text-slate-100 antialiased font-sans">
+    <div className="flex h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-[#040914] text-slate-100 antialiased font-sans">
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -2891,431 +3326,932 @@ export default function App() {
         onShare={() => setShareModalOpen(true)}
       />
 
-      <div className="flex-1 flex flex-col h-[100dvh] min-w-0 max-w-full overflow-hidden relative">
-        <Header
-          onToggleSidebar={() => setSidebarOpen((open) => !open)}
-          isSidebarOpen={sidebarOpen}
-          selectedModel={settings.selectedModel}
-          onSelectModel={(model: AIModelId) =>
-            setSettings((prev) => ({ ...prev, selectedModel: model }))
-          }
-          voiceEnabled={settings.voiceEnabled}
-          onToggleVoice={() => {
-            if (settings.voiceEnabled) stopSpeaking();
-            setSettings((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }));
-          }}
-          user={user}
-          onOpenAuth={() => setAuthModalOpen(true)}
-          isOnline={isOnline}
-          aiConfigured={aiConfigured}
-          onOpenTools={() => setToolsModalOpen(true)}
-          onExport={() => setExportModalOpen(true)}
-          hasMessages={(activeConversation?.messages?.length || 0) > 0}
-        />
-
-        {/* MOBILE PHONE COMPACT ACTION BAR (< 768px ONLY) */}
-        <div className="flex md:hidden bg-[#08101d]/95 border-b border-cyan-500/25 px-2 py-1.5 items-center justify-between gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={openLiveVoiceSession}
-            className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 border border-cyan-400/40 text-cyan-200 text-[11px] font-medium active:scale-95 transition"
-          >
-            <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse shrink-0" />
-            <span className="truncate">Voice</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setNewsModalOpen(true)}
-            className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg bg-slate-900 border border-slate-700/80 text-slate-200 text-[11px] font-medium active:scale-95 transition"
-          >
-            <Newspaper className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="truncate">News</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setProfessionsModalOpen(true)}
-            className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border text-[11px] font-medium active:scale-95 transition ${activeProfession.badgeColor}`}
-          >
-            {isMedicalRole ? (
-              <Stethoscope className="w-3.5 h-3.5 shrink-0" />
-            ) : isEngineeringRole ? (
-              <Cpu className="w-3.5 h-3.5 shrink-0" />
-            ) : (
-              <Briefcase className="w-3.5 h-3.5 shrink-0" />
-            )}
-            <span className="truncate">{activeProfession.shortName}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setMobileToolsDrawerOpen(true)}
-            className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg bg-slate-900 border border-cyan-500/35 text-cyan-300 text-[11px] font-medium active:scale-95 transition shrink-0"
-          >
-            <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-            <span>Tools</span>
-          </button>
-        </div>
-
-        {/* LAPTOP / CHROMEBOOK / MACBOOK COMMAND DOCK (>= 768px ONLY) */}
-        <div className="hidden md:flex bg-[#08101d]/95 border-b border-cyan-500/20 px-4 py-1.5 items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={openLiveVoiceSession}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-200 text-xs font-medium transition shadow-sm"
-            >
-              <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              <span>Live Voice</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setNewsModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-            >
-              <Newspaper className="w-3.5 h-3.5 text-amber-400" />
-              <span>Today's News</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setProfessionsModalOpen(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition ${activeProfession.badgeColor}`}
-            >
-              {isMedicalRole ? (
-                <Stethoscope className="w-3.5 h-3.5" />
-              ) : isEngineeringRole ? (
-                <Cpu className="w-3.5 h-3.5" />
-              ) : (
-                <Briefcase className="w-3.5 h-3.5" />
-              )}
-              <span>{activeProfession.shortName}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setImageStudioOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-            >
-              <ImageIcon className="w-3.5 h-3.5 text-fuchsia-400" />
-              <span>Image Studio</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setWorkbenchOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-            >
-              <Calculator className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Eng & Med Lab</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void handleCaptureScreenVision()}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-            >
-              <Monitor className="w-3.5 h-3.5 text-sky-400" />
-              <span>Screen Vision</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setMemoryModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-            >
-              <Brain className="w-3.5 h-3.5 text-violet-400" />
-              <span>Memory ({memories.length})</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
-            <span className="hidden xl:flex items-center gap-1 text-cyan-300/80">
-              <Clock className="w-3 h-3" />
-              {liveClock.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}{' '}
-              {liveClock.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
-            <button
-              type="button"
-              onClick={() => setCommandPaletteOpen(true)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
-            >
-              <Command className="w-3 h-3 text-cyan-400" />
-              <span>Ctrl+P</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Active Profession Disclaimer Banner */}
-        {activeProfession.disclaimer && (
-          <div className="bg-emerald-950/50 border-b border-emerald-500/25 px-3 md:px-4 py-1 flex items-center justify-between text-[11px] text-emerald-200/90 shrink-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <ShieldAlert className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="truncate md:whitespace-normal">{activeProfession.disclaimer}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setActiveProfessionId('general')}
-              className="text-emerald-300 hover:text-white underline ml-2 shrink-0"
-            >
-              Reset
-            </button>
-          </div>
-        )}
-
-        {!isOnline && (
-          <div className="bg-amber-500/20 border-b border-amber-500/30 px-3 md:px-4 py-1.5 flex items-center justify-between text-xs text-amber-300 shrink-0">
-            <div className="flex items-center gap-2">
-              <WifiOff className="w-4 h-4 shrink-0" />
-              <span>
-                <strong>Offline:</strong> AI replies require an internet connection.
-              </span>
-            </div>
-          </div>
-        )}
-
-        {accountNotice && (
-          <div
-            role="status"
-            className="bg-slate-900 border-b border-slate-700 px-3 md:px-4 py-2 flex items-center justify-between gap-3 text-xs text-slate-300 shrink-0"
-          >
-            <span className="line-clamp-2">{accountNotice}</span>
-            <button
-              type="button"
-              onClick={() => setAccountNotice('')}
-              className="text-slate-400 hover:text-white shrink-0"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {!user.isGuest && (
-          <div className="bg-cyan-950/80 border-b border-cyan-500/30 px-3 md:px-4 py-1.5 flex items-center justify-between gap-2 text-xs text-cyan-300 shrink-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <p className="truncate">
-                <strong>Signed in:</strong> conversations are saved to your account.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* MAIN CHAT & WELCOME VIEWPORT */}
+      {isVerticalScreen ? (
+        /* ====================================================================
+           FUTURISTIC NEON VERTICAL / PORTRAIT DASHBOARD (MOBILE & PORTRAIT)
+           ==================================================================== */
         <div
-          ref={chatScrollContainerRef}
-          onScroll={handleScroll}
-          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col relative"
-          style={
-            isWelcomeScreen
-              ? {
-                  backgroundImage:
-                    "linear-gradient(rgba(6, 11, 19, 0.28), rgba(6, 11, 19, 0.55)), url('./jarvis-welcome-bg.png')",
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat',
-                  backgroundSize: 'cover',
-                }
-              : undefined
-          }
+          className="flex-1 flex flex-col h-[100dvh] w-full max-w-full overflow-hidden relative"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 50% 42%, rgba(6, 182, 212, 0.22) 0%, rgba(4, 9, 20, 0.86) 62%, rgba(2, 6, 14, 0.97) 100%), url('./jarvis-welcome-bg.png')",
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: 'cover',
+          }}
         >
-          {isWelcomeScreen ? (
-            <WelcomeHero onSelectPrompt={handleSelectPrompt} />
-          ) : (
-            <div className="flex-1 py-3 md:py-4 space-y-1 w-full max-w-full overflow-x-hidden">
-              {activeConversation.messages.map((msg) => (
-                <MessageItem
-                  key={msg.id}
-                  message={msg}
-                  onSpeak={handleToggleSpeakMessage}
-                  isSpeaking={speakingMessageId === msg.id}
-                />
-              ))}
+          {/* TOP NEON HEADER BAR */}
+          <header className="px-3.5 pt-3 pb-2 flex items-center justify-between gap-2 shrink-0 z-10">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+                className="w-10 h-10 rounded-xl bg-[#071326]/90 border border-cyan-400/50 shadow-[0_0_14px_rgba(34,211,238,0.3)] flex items-center justify-center text-cyan-300 active:scale-95 transition shrink-0"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
 
-              {isLoading && (
-                <div className="py-3 md:py-4 px-3 md:px-6 bg-slate-900/30 border-y border-slate-800/40">
-                  <div className="max-w-4xl mx-auto flex gap-3 md:gap-4 items-center">
-                    <ArcReactorLogo glow={true} size="sm" />
-                    <div className="flex items-center gap-2 text-xs md:text-sm text-cyan-300">
-                      <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
-                      <span className="font-mono">JARVIS is thinking...</span>
-                    </div>
-                  </div>
+              <div className="relative flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-full border-2 border-cyan-400/75 shadow-[0_0_18px_rgba(34,211,238,0.55)] flex items-center justify-center bg-cyan-950/70">
+                  <ArcReactorLogo glow={true} size="sm" />
                 </div>
-              )}
+              </div>
 
-              <div ref={messagesEndRef} className="h-4" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base font-extrabold tracking-wide text-white truncate">
+                    JARVIS AI
+                  </span>
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border border-cyan-400/60 bg-cyan-500/15 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.35)]">
+                    PRO
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300/80 leading-none mt-0.5 truncate">
+                  AI workspace
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setMemoryModalOpen(true)}
+                aria-label="Memory & Notifications"
+                className="relative w-10 h-10 rounded-full bg-[#071326]/90 border border-cyan-400/40 flex items-center justify-center text-slate-200 active:scale-95 transition"
+              >
+                <Bell className="w-4 h-4" />
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shadow">
+                  {memories.length > 0 ? memories.length : 3}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAuthModalOpen(true)}
+                aria-label="Account profile"
+                className="w-10 h-10 rounded-full bg-gradient-to-b from-cyan-500/30 to-blue-700/40 border-2 border-cyan-400/70 shadow-[0_0_15px_rgba(34,211,238,0.45)] flex items-center justify-center text-cyan-200 active:scale-95 transition"
+              >
+                <UserIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </header>
+
+          {/* 3-ROW NEON ACTION PILL GRID */}
+          <section className="px-3.5 py-1.5 space-y-2 shrink-0 z-10">
+            {/* Row 1: Live Voice | Today's News | Image Studio */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={openLiveVoiceSession}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/50 shadow-[0_0_14px_rgba(34,211,238,0.2)] active:scale-95 transition text-left"
+              >
+                <Mic className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span className="text-[11px] font-medium text-slate-100 leading-tight">
+                  Live Voice
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setNewsModalOpen(true)}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.16)] active:scale-95 transition text-left"
+              >
+                <Newspaper className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-[11px] font-medium text-slate-100 leading-tight">
+                  Today's News
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setImageStudioOpen(true)}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-purple-400/50 shadow-[0_0_14px_rgba(192,132,252,0.2)] active:scale-95 transition text-left"
+              >
+                <ImageIcon className="w-4 h-4 text-fuchsia-400 shrink-0" />
+                <span className="text-[11px] font-medium text-slate-100 leading-tight">
+                  Image Studio
+                </span>
+              </button>
+            </div>
+
+            {/* Row 2: All-Domain Core | Eng & Med Lab | Screen Vision */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setProfessionsModalOpen(true)}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.16)] active:scale-95 transition text-left"
+              >
+                <Box className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span className="text-[11px] font-medium text-slate-100 leading-tight line-clamp-2">
+                  {activeProfession.shortName}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWorkbenchOpen(true)}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-emerald-400/45 shadow-[0_0_14px_rgba(52,211,153,0.16)] active:scale-95 transition text-left"
+              >
+                <FlaskConical className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-[11px] font-medium text-slate-100 leading-tight">
+                  Eng & Med Lab
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleCaptureScreenVision()}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-2xl bg-[#071529]/85 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.16)] active:scale-95 transition text-left"
+              >
+                <Scan className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span className="text-[11px] font-medium text-slate-100 leading-tight">
+                  Screen Vision
+                </span>
+              </button>
+            </div>
+
+            {/* Row 3: Tools | Export | Install | Setup */}
+            <div className="grid grid-cols-4 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setToolsModalOpen(true)}
+                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-purple-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
+              >
+                <Wrench className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span>Tools</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setExportModalOpen(true)}
+                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-emerald-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Export</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleInstallApp()}
+                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-cyan-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span>Install</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSetupModalOpen(true)}
+                className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-full bg-[#071529]/85 border border-amber-400/40 text-[11px] font-medium text-slate-100 active:scale-95 transition"
+              >
+                <Settings className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Setup</span>
+              </button>
+            </div>
+          </section>
+
+          {/* Status Notices if Offline or Account Alert */}
+          {!isOnline && (
+            <div className="mx-3.5 mt-1 px-3 py-1 rounded-xl bg-amber-500/20 border border-amber-400/40 text-[11px] text-amber-200 flex items-center gap-1.5 shrink-0">
+              <WifiOff className="w-3.5 h-3.5 shrink-0" />
+              <span>Offline: AI replies require an internet connection.</span>
             </div>
           )}
-        </div>
 
-        {/* EXISTING PROMPT BAR (UNCHANGED) */}
-        <div className="shrink-0 w-full max-w-full jarvis-mobile-safe-bottom bg-[#060b13]">
-          <PromptBar
-            onSendMessage={handleSendMessage}
-            isLoading={isLoading}
-            webSearchEnabled={Boolean(settings.webSearchEnabled)}
-            onToggleWebSearch={() =>
-              setSettings((prev) => ({
-                ...prev,
-                webSearchEnabled: !prev.webSearchEnabled,
-              }))
+          {accountNotice && (
+            <div className="mx-3.5 mt-1 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 text-[11px] text-cyan-100 flex items-center justify-between gap-2 shrink-0">
+              <span className="line-clamp-2">{accountNotice}</span>
+              <button
+                type="button"
+                onClick={() => setAccountNotice('')}
+                className="text-cyan-400 font-semibold shrink-0"
+              >
+                OK
+              </button>
+            </div>
+          )}
+
+          {/* MAIN SCROLLABLE VIEWPORT: HOME HERO + PROMPT + 2x2 CARDS OR ACTIVE CHAT */}
+          <div
+            ref={chatScrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3.5 flex flex-col justify-between"
+          >
+            {isWelcomeScreen ? (
+              <div className="flex-1 flex flex-col justify-between py-2 gap-3">
+                {/* Holographic Arc Reactor Centerpiece */}
+                <div className="flex flex-col items-center text-center pt-1">
+                  <div className="relative w-28 h-28 flex items-center justify-center mb-2">
+                    <div className="absolute inset-0 rounded-full border-2 border-cyan-400/60 shadow-[0_0_45px_rgba(34,211,238,0.65)] animate-pulse" />
+                    <div className="absolute inset-2 rounded-full border border-cyan-300/40" />
+                    <ArcReactorLogo glow={true} size="lg" />
+                  </div>
+
+                  <h1 className="text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.8)]">
+                    Hello, I am{' '}
+                    <span className="text-cyan-300 drop-shadow-[0_0_16px_rgba(34,211,238,0.85)]">
+                      JARVIS
+                    </span>
+                  </h1>
+
+                  <p className="text-xs text-slate-200/90 max-w-xs mt-1 leading-relaxed">
+                    Ask questions, search the web,{' '}
+                    <span className="text-cyan-300 font-semibold">generate AI artwork</span>,
+                    solve math, or upload up to{' '}
+                    <span className="text-cyan-300 font-semibold">10 files!</span>
+                  </p>
+                </div>
+
+                {/* NEON GLOWING PROMPT INPUT CARD */}
+                <div className="rounded-2xl bg-[#061224]/90 border-2 border-cyan-400/75 shadow-[0_0_26px_rgba(34,211,238,0.38)] p-3 space-y-2.5">
+                  {verticalAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {verticalAttachments.map((att, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-[10px] text-cyan-200"
+                        >
+                          <span className="truncate max-w-[110px]">{att.name}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVerticalAttachments((prev) =>
+                                prev.filter((_, idx) => idx !== i)
+                              )
+                            }
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={verticalInput}
+                      onChange={(e) => setVerticalInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleVerticalSubmit();
+                        }
+                      }}
+                      placeholder="Ask JARVIS anything..."
+                      className="flex-1 bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none min-w-0"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleVerticalSubmit}
+                      disabled={
+                        isLoading ||
+                        (!verticalInput.trim() && verticalAttachments.length === 0)
+                      }
+                      aria-label="Send message"
+                      className="w-10 h-10 rounded-full bg-gradient-to-b from-cyan-400 to-cyan-600 disabled:opacity-45 text-slate-950 flex items-center justify-center shadow-[0_0_18px_rgba(34,211,238,0.75)] active:scale-95 transition shrink-0"
+                    >
+                      <ArrowUp className="w-5 h-5 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <input
+                      ref={verticalFileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={handleVerticalFileSelect}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => verticalFileInputRef.current?.click()}
+                      aria-label="Attach files"
+                      className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-300 active:scale-95 transition"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleVerticalMicDictate}
+                      aria-label="Voice dictation"
+                      className={`p-1.5 rounded-lg transition active:scale-95 ${
+                        verticalDictating
+                          ? 'text-rose-400 animate-pulse'
+                          : 'text-slate-300 hover:text-cyan-300'
+                      }`}
+                    >
+                      <Mic className="w-4 h-4" />
+                    </button>
+
+                    <div className="h-4 w-px bg-slate-700" />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          webSearchEnabled: !prev.webSearchEnabled,
+                        }))
+                      }
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition ${
+                        settings.webSearchEnabled
+                          ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]'
+                          : 'bg-slate-900/90 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Web</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          dualEngineEnabled: !prev.dualEngineEnabled,
+                        }))
+                      }
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition truncate ${
+                        settings.dualEngineEnabled
+                          ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]'
+                          : 'bg-slate-900/90 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <Cpu className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="truncate">Dual Engine</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2x2 NEON QUICK SUGGESTION CARDS */}
+                <div className="grid grid-cols-2 gap-2.5 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPrompt('What is full form of DHA?')}
+                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-cyan-400/50 shadow-[0_0_14px_rgba(34,211,238,0.2)] active:scale-95 transition text-left"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center shrink-0">
+                        <MessageSquare className="w-4 h-4 text-cyan-400" />
+                      </div>
+                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
+                        What is full form of DHA?
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setImageStudioOpen(true)}
+                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-purple-400/50 shadow-[0_0_14px_rgba(192,132,252,0.2)] active:scale-95 transition text-left"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-fuchsia-500/15 border border-fuchsia-400/40 flex items-center justify-center shrink-0">
+                        <Palette className="w-4 h-4 text-fuchsia-400" />
+                      </div>
+                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
+                        Generate AI Artwork
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleSendMessage(
+                        'Give me today’s latest Elon Musk and technology news from Google grounding.',
+                        [],
+                        { forceGoogleGrounding: true }
+                      )
+                    }
+                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-cyan-400/45 shadow-[0_0_14px_rgba(34,211,238,0.18)] active:scale-95 transition text-left"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center shrink-0">
+                        <Music className="w-4 h-4 text-cyan-400" />
+                      </div>
+                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
+                        Elon Musk & Tech News
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSelectPrompt('Write a leave application to my principal')
+                    }
+                    className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-[#071529]/90 border border-amber-400/45 shadow-[0_0_14px_rgba(251,191,36,0.18)] active:scale-95 transition text-left"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center shrink-0">
+                        <FileEdit className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <span className="text-[11px] font-medium text-slate-100 leading-snug">
+                        Draft a Leave Application / Letter
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-cyan-400 shrink-0" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ACTIVE CONVERSATION STREAM IN VERTICAL MODE */
+              <div className="flex-1 flex flex-col justify-between py-2 gap-2">
+                <div className="space-y-1 -mx-3.5">
+                  {activeConversation.messages.map((msg) => (
+                    <MessageItem
+                      key={msg.id}
+                      message={msg}
+                      onSpeak={handleToggleSpeakMessage}
+                      isSpeaking={speakingMessageId === msg.id}
+                    />
+                  ))}
+
+                  {isLoading && (
+                    <div className="py-3 px-4 bg-slate-900/60 border-y border-cyan-500/20">
+                      <div className="flex gap-3 items-center">
+                        <ArcReactorLogo glow={true} size="sm" />
+                        <div className="flex items-center gap-2 text-xs text-cyan-300">
+                          <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
+                          <span className="font-mono">JARVIS is thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} className="h-2" />
+                </div>
+
+                {/* Compact Neon Prompt Input Card pinned at bottom of active chat */}
+                <div className="sticky bottom-1 rounded-2xl bg-[#061224]/95 border-2 border-cyan-400/75 shadow-[0_0_24px_rgba(34,211,238,0.35)] p-2.5 space-y-2">
+                  {verticalAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {verticalAttachments.map((att, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/20 text-[10px] text-cyan-200"
+                        >
+                          <span className="truncate max-w-[100px]">{att.name}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVerticalAttachments((prev) =>
+                                prev.filter((_, idx) => idx !== i)
+                              )
+                            }
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      ref={verticalFileInputRef}
+                      onChange={handleVerticalFileSelect}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => verticalFileInputRef.current?.click()}
+                      className="p-1.5 text-slate-300 hover:text-cyan-300 shrink-0"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleVerticalMicDictate}
+                      className={`p-1.5 shrink-0 ${
+                        verticalDictating ? 'text-rose-400 animate-pulse' : 'text-slate-300'
+                      }`}
+                    >
+                      <Mic className="w-4 h-4" />
+                    </button>
+
+                    <input
+                      type="text"
+                      value={verticalInput}
+                      onChange={(e) => setVerticalInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleVerticalSubmit();
+                        }
+                      }}
+                      placeholder="Ask JARVIS anything..."
+                      className="flex-1 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none min-w-0"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleVerticalSubmit}
+                      disabled={
+                        isLoading ||
+                        (!verticalInput.trim() && verticalAttachments.length === 0)
+                      }
+                      className="w-9 h-9 rounded-full bg-gradient-to-b from-cyan-400 to-cyan-600 disabled:opacity-45 text-slate-950 flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.7)] shrink-0"
+                    >
+                      <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* BOTTOM 4-TAB NEON DOCK BAR (Home | History | Settings | Upgrade) */}
+          <nav className="px-2 pt-1.5 pb-2 bg-[#040c1a]/95 border-t border-cyan-500/35 shadow-[0_-6px_24px_rgba(6,182,212,0.18)] grid grid-cols-4 gap-1 shrink-0 z-10 jarvis-mobile-safe-bottom">
+            <button
+              type="button"
+              onClick={handleNewChat}
+              className={`relative flex flex-col items-center justify-center py-1.5 rounded-2xl transition ${
+                isWelcomeScreen && !sidebarOpen
+                  ? 'bg-cyan-500/15 border border-cyan-400/50 text-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.3)]'
+                  : 'text-slate-400 hover:text-cyan-200'
+              }`}
+            >
+              <Home className="w-5 h-5" />
+              <span className="text-[11px] font-semibold mt-0.5">Home</span>
+              {isWelcomeScreen && !sidebarOpen && (
+                <span className="absolute bottom-0 w-10 h-0.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className={`flex flex-col items-center justify-center py-1.5 rounded-2xl transition ${
+                sidebarOpen
+                  ? 'bg-cyan-500/15 border border-cyan-400/50 text-cyan-300'
+                  : 'text-slate-400 hover:text-cyan-200'
+              }`}
+            >
+              <History className="w-5 h-5" />
+              <span className="text-[11px] font-medium mt-0.5">History</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSetupModalOpen(true)}
+              className={`flex flex-col items-center justify-center py-1.5 rounded-2xl transition ${
+                setupModalOpen
+                  ? 'bg-cyan-500/15 border border-cyan-400/50 text-cyan-300'
+                  : 'text-slate-400 hover:text-cyan-200'
+              }`}
+            >
+              <Settings className="w-5 h-5" />
+              <span className="text-[11px] font-medium mt-0.5">Settings</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAuthModalOpen(true)}
+              className="flex flex-col items-center justify-center py-1.5 rounded-2xl text-amber-400 hover:text-amber-300 transition"
+            >
+              <Crown className="w-5 h-5" />
+              <span className="text-[11px] font-semibold mt-0.5">Upgrade</span>
+            </button>
+          </nav>
+        </div>
+      ) : (
+        /* ====================================================================
+           BIG SCREEN / CHROMEBOOK / LAPTOP WORKSPACE
+           ==================================================================== */
+        <div className="flex-1 flex flex-col h-[100dvh] min-w-0 max-w-full overflow-hidden relative bg-[#060b13]">
+          <Header
+            onToggleSidebar={() => setSidebarOpen((open) => !open)}
+            isSidebarOpen={sidebarOpen}
+            selectedModel={settings.selectedModel}
+            onSelectModel={(model: AIModelId) =>
+              setSettings((prev) => ({ ...prev, selectedModel: model }))
             }
-            dualEngineEnabled={Boolean(settings.dualEngineEnabled)}
-            onToggleDualEngine={() =>
-              setSettings((prev) => ({
-                ...prev,
-                dualEngineEnabled: !prev.dualEngineEnabled,
-              }))
-            }
-            showScrollBottom={showScrollBottom}
-            onScrollToBottom={scrollToBottom}
+            voiceEnabled={settings.voiceEnabled}
+            onToggleVoice={() => {
+              if (settings.voiceEnabled) stopSpeaking();
+              setSettings((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }));
+            }}
+            user={user}
+            onOpenAuth={() => setAuthModalOpen(true)}
+            isOnline={isOnline}
+            aiConfigured={aiConfigured}
+            onOpenTools={() => setToolsModalOpen(true)}
+            onExport={() => setExportModalOpen(true)}
+            hasMessages={(activeConversation?.messages?.length || 0) > 0}
           />
-        </div>
-      </div>
 
-      {/* MOBILE FULL-SCREEN TOOLS DRAWER (< 768px) */}
-      {mobileToolsDrawerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end md:hidden">
-          <div className="bg-[#0b1322] border-t border-cyan-500/40 rounded-t-3xl p-5 space-y-4 max-h-[85dvh] overflow-y-auto jarvis-mobile-safe-bottom">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <LayoutGrid className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-base font-semibold text-white">JARVIS Mobile Command Suite</h3>
+          <div className="flex bg-[#08101d]/95 border-b border-cyan-500/20 px-4 py-1.5 items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={openLiveVoiceSession}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-200 text-xs font-medium transition shadow-sm"
+              >
+                <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                <span>Live Voice</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setNewsModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
+              >
+                <Newspaper className="w-3.5 h-3.5 text-amber-400" />
+                <span>Today's News</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setProfessionsModalOpen(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition ${activeProfession.badgeColor}`}
+              >
+                {isMedicalRole ? (
+                  <Stethoscope className="w-3.5 h-3.5" />
+                ) : isEngineeringRole ? (
+                  <Cpu className="w-3.5 h-3.5" />
+                ) : (
+                  <Briefcase className="w-3.5 h-3.5" />
+                )}
+                <span>{activeProfession.shortName}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setImageStudioOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
+              >
+                <ImageIcon className="w-3.5 h-3.5 text-fuchsia-400" />
+                <span>Image Studio</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWorkbenchOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
+              >
+                <Calculator className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Eng & Med Lab</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleCaptureScreenVision()}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
+              >
+                <Monitor className="w-3.5 h-3.5 text-sky-400" />
+                <span>Screen Vision</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMemoryModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
+              >
+                <Brain className="w-3.5 h-3.5 text-violet-400" />
+                <span>Memory ({memories.length})</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
+              <span className="hidden xl:flex items-center gap-1 text-cyan-300/80">
+                <Clock className="w-3 h-3" />
+                {liveClock.toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}{' '}
+                {liveClock.toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCommandPaletteOpen(true)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
+              >
+                <Command className="w-3 h-3 text-cyan-400" />
+                <span>Ctrl+P</span>
+              </button>
+            </div>
+          </div>
+
+          {activeProfession.disclaimer && (
+            <div className="bg-emerald-950/50 border-b border-emerald-500/25 px-4 py-1 flex items-center justify-between text-[11px] text-emerald-200/90 shrink-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <ShieldAlert className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>{activeProfession.disclaimer}</span>
               </div>
               <button
                 type="button"
-                onClick={() => setMobileToolsDrawerOpen(false)}
-                className="p-2 rounded-full bg-slate-800 text-slate-300"
+                onClick={() => setActiveProfessionId('general')}
+                className="text-emerald-300 hover:text-white underline ml-2 shrink-0"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+
+          {!isOnline && (
+            <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-300 shrink-0">
+              <div className="flex items-center gap-2">
+                <WifiOff className="w-4 h-4 shrink-0" />
+                <span>
+                  <strong>Offline:</strong> AI replies require an internet connection.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {accountNotice && (
+            <div
+              role="status"
+              className="bg-slate-900 border-b border-slate-700 px-4 py-2 flex items-center justify-between gap-3 text-xs text-slate-300 shrink-0"
+            >
+              <span>{accountNotice}</span>
+              <button
+                type="button"
+                onClick={() => setAccountNotice('')}
+                className="text-slate-400 hover:text-white shrink-0"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {!user.isGuest && (
+            <div className="bg-cyan-950/80 border-b border-cyan-500/30 px-4 py-1.5 flex items-center justify-between gap-2 text-xs text-cyan-300 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <p className="truncate">
+                  <strong>Signed in:</strong> conversations are saved to your account.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div
+            ref={chatScrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col relative"
+            style={
+              isWelcomeScreen
+                ? {
+                    backgroundImage:
+                      "linear-gradient(rgba(6, 11, 19, 0.28), rgba(6, 11, 19, 0.55)), url('./jarvis-welcome-bg.png')",
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: 'cover',
+                  }
+                : undefined
+            }
+          >
+            {isWelcomeScreen ? (
+              <WelcomeHero onSelectPrompt={handleSelectPrompt} />
+            ) : (
+              <div className="flex-1 py-4 space-y-1 w-full max-w-full overflow-x-hidden">
+                {activeConversation.messages.map((msg) => (
+                  <MessageItem
+                    key={msg.id}
+                    message={msg}
+                    onSpeak={handleToggleSpeakMessage}
+                    isSpeaking={speakingMessageId === msg.id}
+                  />
+                ))}
+
+                {isLoading && (
+                  <div className="py-4 px-6 bg-slate-900/30 border-y border-slate-800/40">
+                    <div className="max-w-4xl mx-auto flex gap-4 items-center">
+                      <ArcReactorLogo glow={true} size="sm" />
+                      <div className="flex items-center gap-2 text-sm text-cyan-300">
+                        <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
+                        <span className="font-mono">JARVIS is thinking...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} className="h-4" />
+              </div>
+            )}
+          </div>
+
+          <div className="shrink-0 w-full max-w-full bg-[#060b13]">
+            <PromptBar
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              webSearchEnabled={Boolean(settings.webSearchEnabled)}
+              onToggleWebSearch={() =>
+                setSettings((prev) => ({
+                  ...prev,
+                  webSearchEnabled: !prev.webSearchEnabled,
+                }))
+              }
+              dualEngineEnabled={Boolean(settings.dualEngineEnabled)}
+              onToggleDualEngine={() =>
+                setSettings((prev) => ({
+                  ...prev,
+                  dualEngineEnabled: !prev.dualEngineEnabled,
+                }))
+              }
+              showScrollBottom={showScrollBottom}
+              onScrollToBottom={scrollToBottom}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* SETUP & SYSTEM SETTINGS MODAL */}
+      {setupModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0b1322] border border-cyan-500/40 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-semibold text-white">JARVIS Setup & Controls</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSetupModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  openLiveVoiceSession();
-                }}
-                className="p-3.5 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex flex-col items-start gap-1.5 text-left"
-              >
-                <Radio className="w-5 h-5 text-cyan-400" />
-                <span className="text-xs font-semibold text-white">Live Voice Chat</span>
-                <span className="text-[10px] text-cyan-200/80">Hands-free two-way talk</span>
-              </button>
+            <div className="space-y-3 text-xs">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
+                <div>
+                  <div className="font-semibold text-white">Auto-Speak Replies</div>
+                  <div className="text-slate-400 text-[11px]">Read JARVIS answers aloud</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.voiceEnabled}
+                  onChange={() => {
+                    if (settings.voiceEnabled) stopSpeaking();
+                    setSettings((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }));
+                  }}
+                  className="w-4 h-4 accent-cyan-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
+                <div>
+                  <div className="font-semibold text-white">Live Web Grounding</div>
+                  <div className="text-slate-400 text-[11px]">Include Google News context</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={Boolean(settings.webSearchEnabled)}
+                  onChange={() =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      webSearchEnabled: !prev.webSearchEnabled,
+                    }))
+                  }
+                  className="w-4 h-4 accent-cyan-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
+                <div>
+                  <div className="font-semibold text-white">Dual Engine Pro</div>
+                  <div className="text-slate-400 text-[11px]">Parallel multi-model synthesis</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={Boolean(settings.dualEngineEnabled)}
+                  onChange={() =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      dualEngineEnabled: !prev.dualEngineEnabled,
+                    }))
+                  }
+                  className="w-4 h-4 accent-cyan-400"
+                />
+              </div>
 
               <button
                 type="button"
                 onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  setNewsModalOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
-              >
-                <Newspaper className="w-5 h-5 text-amber-400" />
-                <span className="text-xs font-semibold text-white">Today's News</span>
-                <span className="text-[10px] text-slate-400">Live Google briefings</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  setProfessionsModalOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
-              >
-                <Briefcase className="w-5 h-5 text-emerald-400" />
-                <span className="text-xs font-semibold text-white">16 Professions</span>
-                <span className="text-[10px] text-slate-400">{activeProfession.shortName}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  setImageStudioOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
-              >
-                <ImageIcon className="w-5 h-5 text-fuchsia-400" />
-                <span className="text-xs font-semibold text-white">Image Studio</span>
-                <span className="text-[10px] text-slate-400">Free AI art & renders</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  setWorkbenchOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
-              >
-                <Calculator className="w-5 h-5 text-emerald-400" />
-                <span className="text-xs font-semibold text-white">Eng & Med Lab</span>
-                <span className="text-[10px] text-slate-400">Calc, Ohm's, BMI & Labs</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
+                  setSetupModalOpen(false);
                   setMemoryModalOpen(true);
                 }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
+                className="w-full py-2.5 rounded-xl bg-violet-600/25 border border-violet-400/50 text-violet-200 font-medium"
               >
-                <Brain className="w-5 h-5 text-violet-400" />
-                <span className="text-xs font-semibold text-white">Neural Memory</span>
-                <span className="text-[10px] text-slate-400">{memories.length} saved notes</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  setToolsModalOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
-              >
-                <Wrench className="w-5 h-5 text-sky-400" />
-                <span className="text-xs font-semibold text-white">Prompt Templates</span>
-                <span className="text-[10px] text-slate-400">Quick power prompts</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  setExportModalOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left"
-              >
-                <FileDown className="w-5 h-5 text-cyan-400" />
-                <span className="text-xs font-semibold text-white">Export Chat</span>
-                <span className="text-[10px] text-slate-400">Download transcript</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileToolsDrawerOpen(false);
-                  setShareModalOpen(true);
-                }}
-                className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-start gap-1.5 text-left col-span-2"
-              >
-                <Share2 className="w-5 h-5 text-indigo-400" />
-                <span className="text-xs font-semibold text-white">Share Chat</span>
-                <span className="text-[10px] text-slate-400">Share conversation link or summary</span>
+                Manage Neural Memory ({memories.length} saved)
               </button>
             </div>
           </div>
