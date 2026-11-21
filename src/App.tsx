@@ -168,7 +168,7 @@ let cachedBackendAvailable: boolean | null = null;
 
 const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, accurate, and helpful AI assistant like ChatGPT and Gemini.
 Core rules:
-1. Conversation Context Awareness: Always read the full conversation history before answering. Determine whether the user's latest message is a follow-up/refinement to the previous message (for example: "about housing", "make it shorter", "explain the second one", "in Urdu", "what about in Pakistan?") or a completely new topic. If it is a follow-up, answer in direct relation to the earlier messages.
+1. Conversation Context Awareness: Always read the full conversation history before answering. Determine whether the user's latest message is a follow-up/refinement to the previous message (for example: "about housing", "make it shorter", "explain the second one", "in Urdu", "what about in Pakistan?") or a completely new topic (for example: "full form of DHA" after writing a letter). If it is a follow-up, answer in direct relation to the earlier messages; if it is a new topic, answer the new topic cleanly without repeating earlier answers.
 2. Complete & Accurate Answers: Provide thorough, complete, accurate answers—never stop mid-explanation or give vague guesses.
    - When asked for the "full form" of an abbreviation/acronym (like DHA), list all major well-known full forms clearly with brief descriptions, and if a specific domain is mentioned (e.g., housing), focus on that exact expansion (e.g., Defence Housing Authority).
    - When asked to write a letter or application, include every specific detail the user asked for (such as coming home today, school fee, leave reason, dates, or amounts) in clean, polite standard letter format with bold placeholders (**[Your Address]**, **[Date]**, **Dear Dad,**, **With love,**, **[Your Name]**).
@@ -652,9 +652,9 @@ function raceToFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
 }
 
 /**
- * Determines whether the latest user message is a follow-up to the previous
- * conversation turns (e.g., "about housing", "make it shorter", "explain more")
- * or an independent new request.
+ * Determines whether the latest user message is a true follow-up/refinement
+ * to the previous message (e.g., "about housing", "make it shorter", "in Urdu")
+ * or a standalone new question/command (e.g., "full form of DHA").
  */
 function analyzeConversationContext(
   conversationHistory: Array<{ role: string; content: string }>
@@ -681,31 +681,37 @@ function analyzeConversationContext(
     };
   }
 
-  const lower = latestMessage.toLowerCase();
-  const wordCount = latestMessage.split(/\s+/).filter(Boolean).length;
+  const lower = latestMessage.toLowerCase().trim();
+  const wordCount = lower.split(/\s+/).filter(Boolean).length;
 
-  // Explicit new-topic starters are NOT follow-ups
-  const isExplicitNewTopic =
-    /^(?:write\s+(?:a|an)\b|create\b|generate\b|calculate\b|solve\b|translate\b|hi\b|hello\b)/i.test(
+  // Standalone new questions/commands that contain their own subject
+  const isStandaloneRequest =
+    /^(?:write\s+(?:a|an)\b|draft\b|compose\b|create\b|generate\b|calculate\b|solve\b|translate\b|hi\b|hello\b)/i.test(
+      lower
+    ) ||
+    /\b(?:full\s*form|fully\s*form|stand\s*for|stands\s*for|meaning)\s+(?:of\s+)?[a-z0-9]{2,}\b/i.test(
+      lower
+    ) ||
+    /^(?:what|who|when|where|define)\s+(?:is|are|was|were)\s+(?!it\b|this\b|that\b|these\b|those\b)[a-z0-9]{2,}/i.test(
       lower
     );
 
-  // Follow-up indicators: short fragments ("about housing"), pronouns ("it", "that", "this"),
-  // refinements ("i mean", "make it", "in detail", "all possible", "for pakistan")
+  // Explicit follow-up / refinement cues that depend on the previous turn
   const hasFollowUpCue =
-    /^(?:about|regarding|for|in|on|with|and|or|also|what about|how about|i mean|i means|meaning|more|explain|elaborate|shorten|make it|change it|rewrite|why|how)\b/i.test(
+    /^(?:about|regarding|for|in|on|with|and|or|also|what about|how about|i mean|i means|specifically|especially|only|more|explain|elaborate|shorten|shorter|longer|brief|summarize|rewrite|change|update|modify|make it|all possible|why|how|what else)\b/i.test(
       lower
     ) ||
-    /\b(?:it|this|that|these|those|above|previous|first one|second one|last one)\b/i.test(
+    /\b(?:it|this|that|these|those|above|previous|first one|second one|third one|last one)\b/i.test(
       lower
     ) ||
-    (wordCount <= 4 && !isExplicitNewTopic);
+    (wordCount <= 2 && !isStandaloneRequest);
 
-  const isFollowUp = !isExplicitNewTopic && hasFollowUpCue;
+  const isFollowUp = !isStandaloneRequest && hasFollowUpCue;
   const lastMeaningfulPrev =
     [...previousUserMessages]
       .reverse()
-      .find((m) => !getInstantGreetingReply(m)) || previousUserMessages[previousUserMessages.length - 1];
+      .find((m) => !getInstantGreetingReply(m)) ||
+    previousUserMessages[previousUserMessages.length - 1];
 
   const combinedTopicContext = isFollowUp
     ? `${lastMeaningfulPrev} — ${latestMessage}`
@@ -721,15 +727,25 @@ function analyzeConversationContext(
 
 /**
  * Context-Aware Letter & Application Composer:
- * Extracts the user's actual topic (e.g., "that I am comming home today",
- * "asking to pay his school fee") and handles follow-up refinements.
+ * Runs only when the latest turn explicitly asks for a letter/application or is a
+ * direct follow-up modification to a previous letter/application.
  */
 function generateContextAwareLetterOrApplication(
   conversationHistory: Array<{ role: string; content: string }>
 ): string | null {
   const ctx = analyzeConversationContext(conversationHistory);
-  const combinedLower = ctx.combinedTopicContext.toLowerCase();
   const latestLower = ctx.latestMessage.toLowerCase();
+  const combinedLower = ctx.combinedTopicContext.toLowerCase();
+
+  const latestIsLetterOrApp =
+    /\b(?:write|draft|compose)\s+(?:a|an)?\s*(?:letter|application)\b|\bletter\s+to\b|\bapplication\s+to\b/.test(
+      latestLower
+    );
+
+  // Only inherit a previous letter/application if this message is a true follow-up modification
+  if (!latestIsLetterOrApp && !ctx.isFollowUp) {
+    return null;
+  }
 
   const isLetter = /\bwrite\s+(?:a\s+)?letter\b|\bletter\s+to\b/.test(combinedLower);
   const isApplication = /\bwrite\s+(?:an?\s+)?application\b|\bapplication\s+to\b/.test(
@@ -890,7 +906,7 @@ async function fetchContextAwareKnowledgeFallback(
       fullLower
     );
 
-  // Extract uppercase acronym token (e.g., DHA, NADRA, MBBS, CPU) from current or previous turns
+  // Extract uppercase acronym token (e.g., DHA, NADRA, MBBS, CPU) from current or combined context
   const acronymMatch =
     ctx.latestMessage.match(/\b([A-Z]{2,8})\b/) ||
     fullContext.match(/\b([A-Z]{2,8})\b/) ||
