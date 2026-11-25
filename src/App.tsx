@@ -4,11 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { WelcomeHero } from './components/WelcomeHero';
 import { MessageItem } from './components/MessageItem';
-import { PromptBar } from './components/PromptBar';
 import { AuthModal } from './components/AuthModal';
 import { ShareModal } from './components/ShareModal';
 import { ExportModal } from './components/ExportModal';
@@ -41,7 +38,7 @@ import {
   Mic,
   MicOff,
   Volume2,
-  Radio,
+  VolumeX,
   Newspaper,
   Stethoscope,
   Cpu,
@@ -53,7 +50,6 @@ import {
   Monitor,
   Command,
   X,
-  Send,
   ChevronRight,
   Clock,
   Activity,
@@ -64,13 +60,80 @@ import {
   Search,
   RefreshCw,
   Wrench,
-  PhoneOff,
-  Save,
   Menu,
   Paperclip,
   Globe,
   ArrowUp,
+  LogIn,
+  LogOut,
+  Calendar as CalendarIcon,
+  Keyboard,
+  CheckCircle2,
+  Plus,
+  Home,
 } from 'lucide-react';
+
+// ============================================================================
+// ERROR BOUNDARY (PREVENTS BLANK WHITE SCREENS ON RUNTIME ERRORS)
+// ============================================================================
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  errorMessage: string;
+}
+
+class JarvisErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return {
+      hasError: true,
+      errorMessage: error?.message || 'Unexpected rendering error occurred.',
+    };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-[100dvh] w-full bg-[#030914] text-slate-100 flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-slate-900/95 border border-cyan-500/40 rounded-2xl p-6 space-y-4 shadow-2xl">
+            <h2 className="text-lg font-bold text-cyan-300">
+              JARVIS HUD Recovery
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              A display error occurred instead of showing a blank screen:
+            </p>
+            <div className="p-3 rounded-xl bg-slate-950 border border-rose-500/40 text-xs font-mono text-rose-300 break-words">
+              {this.state.errorMessage}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.removeItem('jarvis_active_profession_v1');
+                } catch {
+                  // Ignore storage restrictions
+                }
+                window.location.reload();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition"
+            >
+              Reset Cache & Reload JARVIS
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // ============================================================================
 // TYPES & CONSTANTS
@@ -120,13 +183,6 @@ interface GeneratedArtItem {
   aspectRatio: string;
   imageUrl: string;
   createdAt: number;
-}
-
-interface VoiceTurn {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  timestamp: number;
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -184,7 +240,7 @@ const NATURAL_CHAT_SYSTEM_PROMPT = `You are JARVIS, an intelligent, accurate, an
 Core rules:
 1. Clean Notebook Writing Style (Strict):
    - Always write answers neatly just like a person writes by hand in a school or college notebook.
-   - NEVER use LaTeX or formatting symbols such as $, $$, \\frac, \\times, **, *, #, ##, ###, ^, //, @, or backticks.
+   - NEVER use LaTeX or formatting symbols such as $,$$, \\frac, \\times, **, *, #, ##, ###, ^, //, @, or backticks.
    - Write fractions simply with a slash like 1/2 or 4/8, powers like x² or x³, multiplication as ×, and division as ÷.
    - Write clear plain headings and numbered steps (Step 1:, Step 2:, 1., 2., 3.) without asterisks or hash symbols.
 2. Single Standard/Formal Response by Default:
@@ -617,12 +673,6 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
       details:
         'A unit of pressure defined as 101,325 pascals (Pa), approximately equal to Earth’s average atmospheric pressure at sea level.',
     },
-    {
-      expansion: 'Ataxia Telangiectasia Mutated',
-      domain: 'genetics biology medicine dna',
-      details:
-        'A serine/threonine protein kinase gene involved in repairing DNA double-strand breaks and regulating cell cycle checkpoints.',
-    },
   ],
   SIM: [
     {
@@ -636,12 +686,6 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
       domain: 'optics physics biology imaging',
       details:
         'A super-resolution fluorescence microscopy technique that bypasses the classical optical diffraction limit.',
-    },
-    {
-      expansion: 'Society for Information Management',
-      domain: 'business technology leadership',
-      details:
-        'A professional organization of senior IT executives, CIOs, and technology leaders.',
     },
   ],
   PIN: [
@@ -657,12 +701,6 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
       details:
         'A 6-digit postal code numbering system used by India Post to identify delivery post offices.',
     },
-    {
-      expansion: 'Positive-Intrinsic-Negative (Diode)',
-      domain: 'electronics physics semiconductor',
-      details:
-        'A semiconductor diode with a wide undoped intrinsic region between p-type and n-type layers, used in RF switches and photodetectors.',
-    },
   ],
   CSS: [
     {
@@ -677,12 +715,6 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
       details:
         'A premier competitive examination conducted by the Federal Public Service Commission (FPSC) in Pakistan for recruitment into federal bureaucratic services.',
     },
-    {
-      expansion: 'Content Scramble System',
-      domain: 'dvd encryption media drm',
-      details:
-        'A digital rights management (DRM) and encryption system used on commercial DVD-Video discs.',
-    },
   ],
   RAM: [
     {
@@ -690,12 +722,6 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
       domain: 'computer hardware memory electronics',
       details:
         'Volatile high-speed computer memory that temporarily stores active operating system data, applications, and variables for fast CPU access.',
-    },
-    {
-      expansion: 'Reliability, Availability, and Maintainability',
-      domain: 'engineering systems reliability',
-      details:
-        'An engineering discipline used to measure and optimize the operational uptime and dependability of complex industrial systems.',
     },
   ],
   API: [
@@ -711,12 +737,6 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
       details:
         'The biologically active chemical substance in a pharmaceutical drug that produces the intended therapeutic effect.',
     },
-    {
-      expansion: 'American Petroleum Institute',
-      domain: 'oil gas energy engineering',
-      details:
-        'The largest U.S. trade association for the oil and natural gas industry, known for engineering and motor oil standards.',
-    },
   ],
   ICU: [
     {
@@ -724,12 +744,6 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
       domain: 'hospital medicine healthcare',
       details:
         'A specialized hospital department providing continuous monitoring and life-support care for critically ill or injured patients.',
-    },
-    {
-      expansion: 'International Components for Unicode',
-      domain: 'software programming localization',
-      details:
-        'An open-source set of C/C++ and Java libraries providing Unicode and globalization support for software applications.',
     },
   ],
 };
@@ -770,7 +784,6 @@ function formatAsCleanNotebookText(rawText: string): string {
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/?p>/gi, '\n');
 
-  // Protect valid URLs (http:// or https://) before removing //
   const preservedUrls: string[] = [];
   text = text.replace(/https?:\/\/[^\s)\]]+/g, (url) => {
     const token = `JARVISURLTOKEN${preservedUrls.length}END`;
@@ -778,7 +791,6 @@ function formatAsCleanNotebookText(rawText: string): string {
     return token;
   });
 
-  // Convert LaTeX \frac{a}{b} (repeatedly for nested braces) into clean notebook fractions
   for (let pass = 0; pass < 3; pass++) {
     text = text.replace(
       /\\(?:d|t)?frac\{([^{}]+)\}\{([^{}]+)\}/g,
@@ -795,7 +807,6 @@ function formatAsCleanNotebookText(rawText: string): string {
     );
   }
 
-  // Convert common LaTeX commands into plain notebook notation
   text = text
     .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
     .replace(/\\(?:text|mathrm|mathbf|mathit|operatorname)\{([^{}]+)\}/g, '$1')
@@ -822,19 +833,15 @@ function formatAsCleanNotebookText(rawText: string): string {
     .replace(/\\;/g, ' ')
     .replace(/\\!/g, '');
 
-  // Remove $$ and $ math delimiters
   text = text.replace(/\$\$/g, '').replace(/\$/g, '');
 
-  // Convert exponents x^{2} or x^2 into Unicode superscripts and remove ^
   text = text
     .replace(/\^\{([^{}]+)\}/g, (_m, exp: string) => toUnicodeSuperscript(exp))
     .replace(/\^([0-9+-]+)/g, (_m, exp: string) => toUnicodeSuperscript(exp))
     .replace(/\^/g, '');
 
-  // Remove remaining curly braces from LaTeX grouping
   text = text.replace(/[{}]/g, '');
 
-  // Remove Markdown heading hashes (#, ##, ###), bold/italic asterisks (*, **), backticks (`), //, and @
   text = text
     .replace(/^\s*#{1,6}\s*/gm, '')
     .replace(/#/g, '')
@@ -843,13 +850,11 @@ function formatAsCleanNotebookText(rawText: string): string {
     .replace(/\/\//g, ' ')
     .replace(/@/g, '');
 
-  // Restore protected URLs
   text = text.replace(/JARVISURLTOKEN(\d+)END/g, (_m, idxStr: string) => {
     const index = Number(idxStr);
     return preservedUrls[index] || '';
   });
 
-  // Clean extra spaces and blank lines
   text = text
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
@@ -869,6 +874,286 @@ interface FractionValue {
 
 function gcd(a: number, b: number): number {
   let x = Math.abs(Math.round(a));
+  let y = Math.abs(Math.round(b));
+  while (y !== 0) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x || 1;
+}
+
+function makeFraction(numerator: number, denominator = 1): FractionValue {
+  if (denominator === 0) {
+    return { n: NaN, d: 1 };
+  }
+  if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) {
+    const scale = 1000000;
+    const nScaled = Math.round(numerator * scale);
+    const dScaled = Math.round(denominator * scale);
+    const g = gcd(nScaled, dScaled);
+    const sign = dScaled < 0 ? -1 : 1;
+    return { n: (sign * nScaled) / g, d: Math.abs(dScaled) / g };
+  }
+  if (numerator === 0) return { n: 0, d: 1 };
+  const sign = denominator < 0 ? -1 : 1;
+  const g = gcd(numerator, denominator);
+  return {
+    n: (sign * numerator) / g,
+    d: Math.abs(denominator) / g,
+  };
+}
+
+function addFractions(a: FractionValue, b: FractionValue): FractionValue {
+  return makeFraction(a.n * b.d + b.n * a.d, a.d * b.d);
+}
+
+function subFractions(a: FractionValue, b: FractionValue): FractionValue {
+  return makeFraction(a.n * b.d - b.n * a.d, a.d * b.d);
+}
+
+function divFractions(a: FractionValue, b: FractionValue): FractionValue {
+  return makeFraction(a.n * b.d, a.d * b.n);
+}
+
+function formatFractionNotebook(f: FractionValue): string {
+  if (!Number.isFinite(f.n) || !Number.isFinite(f.d) || f.d === 0) return 'undefined';
+  if (f.n === 0) return '0';
+  if (f.d === 1) return String(f.n);
+  const decimal = f.n / f.d;
+  const cleanDec = Number(decimal.toPrecision(6)).toString();
+  if (cleanDec.length <= 6 && !cleanDec.includes('e')) {
+    return `${f.n}/${f.d} (or ${cleanDec})`;
+  }
+  return `${f.n}/${f.d}`;
+}
+
+function formatFractionShort(f: FractionValue): string {
+  if (f.n === 0) return '0';
+  if (f.d === 1) return String(f.n);
+  return `${f.n}/${f.d}`;
+}
+
+function normalizeImplicitMultiplication(expr: string): string {
+  return expr
+    .replace(/×/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/−/g, '-')
+    .replace(/(\d)\s*\(/g, '$1*(') .replace(/\)\s*(\d)/g, ')*$1')
+    .replace(/\)\s*\(/g, ')*(')
+    .replace(/(\d)\s*(pi|e|sin|cos|tan|sqrt|log|ln|abs)\b/gi, '$1*$2');
+}
+
+function evaluateSafeMathExpression(rawExpr: string): number {
+  const sanitized = normalizeImplicitMultiplication(rawExpr)
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/π/g, 'pi')
+    .replace(/\*\*/g, '^');
+
+  if (!sanitized) throw new Error('Enter a mathematical expression.');
+  if (!/^[0-9a-z+\-*/^().]+$/.test(sanitized)) {
+    throw new Error('Unsupported characters in expression.');
+  }
+
+  let pos = 0;
+  const peek = () => sanitized[pos] || '';
+  const consume = () => sanitized[pos++];
+
+  const parseExpression = (): number => {
+    let value = parseTerm();
+    while (peek() === '+' || peek() === '-') {
+      const op = consume();
+      const right = parseTerm();
+      value = op === '+' ? value + right : value - right;
+    }
+    return value;
+  };
+
+  const parseTerm = (): number => {
+    let value = parsePower();
+    while (peek() === '*' || peek() === '/') {
+      const op = consume();
+      const right = parsePower();
+      if (op === '/') {
+        if (right === 0) throw new Error('Division by zero.');
+        value /= right;
+      } else {
+        value *= right;
+      }
+    }
+    return value;
+  };
+
+  const parsePower = (): number => {
+    let base = parseUnary();
+    if (peek() === '^') {
+      consume();
+      const exponent = parsePower();
+      base = Math.pow(base, exponent);
+    }
+    return base;
+  };
+
+  const parseUnary = (): number => {
+    if (peek() === '+') {
+      consume();
+      return parseUnary();
+    }
+    if (peek() === '-') {
+      consume();
+      return -parseUnary();
+    }
+    return parsePrimary();
+  };
+
+  const parsePrimary = (): number => {
+    if (peek() === '(') {
+      consume();
+      const inside = parseExpression();
+      if (peek() !== ')') throw new Error('Mismatched parentheses.');
+      consume();
+      return inside;
+    }
+
+    if (/[a-z]/.test(peek())) {
+      let ident = '';
+      while (/[a-z]/.test(peek())) {
+        ident += consume();
+      }
+      if (ident === 'pi') return Math.PI;
+      if (ident === 'e') return Math.E;
+
+      if (peek() !== '(') throw new Error(`Expected '(' after function ${ident}.`);
+      consume();
+      const arg = parseExpression();
+      if (peek() !== ')') throw new Error(`Expected ')' after ${ident}(...).`);
+      consume();
+
+      switch (ident) {
+        case 'sin':
+          return Math.sin(arg);
+        case 'cos':
+          return Math.cos(arg);
+        case 'tan':
+          return Math.tan(arg);
+        case 'sqrt':
+          if (arg < 0) throw new Error('Square root of negative number.');
+          return Math.sqrt(arg);
+        case 'log':
+          if (arg <= 0) throw new Error('Logarithm requires positive input.');
+          return Math.log10(arg);
+        case 'ln':
+          if (arg <= 0) throw new Error('Natural log requires positive input.');
+          return Math.log(arg);
+        case 'abs':
+          return Math.abs(arg);
+        default:
+          throw new Error(`Unknown function: ${ident}`);
+      }
+    }
+
+    let numStr = '';
+    while (/[0-9.]/.test(peek())) {
+      numStr += consume();
+    }
+    if (!numStr) throw new Error(`Unexpected token near "${peek()}"`);
+    const parsed = Number(numStr);
+    if (!Number.isFinite(parsed)) throw new Error('Invalid numeric value.');
+    return parsed;
+  };
+
+  const result = parseExpression();
+  if (pos !== sanitized.length) {
+    throw new Error(`Unexpected trailing character "${peek()}"`);
+  }
+  if (!Number.isFinite(result)) {
+    throw new Error('Calculation overflow or undefined result.');
+  }
+  return result;
+}
+
+function formatCleanNumber(num: number): string {
+  if (Math.abs(num) < 1e-12) return '0';
+  if (Number.isInteger(num)) return String(num);
+  return Number(num.toPrecision(10)).toString();
+}
+
+function parseNumericOrFractionToken(token: string): FractionValue | null {
+  const fracMatch = token.match(/^([+-]?\d+)\/([+-]?\d+)$/);
+  if (fracMatch) {
+    const num = Number(fracMatch[1]);
+    const den = Number(fracMatch[2]);
+    if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return null;
+    return makeFraction(num, den);
+  }
+  const numVal = Number(token);
+  if (!Number.isFinite(numVal)) return null;
+  return makeFraction(numVal, 1);
+}
+
+function parseLinearSide(sideExpr: string): {
+  vars: Record<string, FractionValue>;
+  constant: FractionValue;
+  hadReducibleFraction: boolean;
+} | null {
+  const compact = sideExpr.replace(/−/g, '-').replace(/÷/g, '/').replace(/\s+/g, '');
+  if (!compact || /[()*^]/.test(compact)) return null;
+
+  const terms: string[] = [];
+  let current = '';
+  for (let i = 0; i < compact.length; i++) {
+    const ch = compact[i];
+    if ((ch === '+' || ch === '-') && i > 0) {
+      if (current) terms.push(current);
+      current = ch;
+    } else {
+      current += ch;
+    }
+  }
+  if (current) terms.push(current);
+  if (terms.length === 0) return null;
+
+  const vars: Record<string, FractionValue> = {};
+  let constant: FractionValue = { n: 0, d: 1 };
+  let hadReducibleFraction = false;
+
+  for (const term of terms) {
+    const varMatch = term.match(/^([+-]?(?:\d+(?:\/\d+|\.\d+)?)?)([a-zA-Z])$/);
+    if (varMatch) {
+      const coeffStr = varMatch[1];
+      const varName = varMatch[2].toLowerCase();
+      let coeff: FractionValue | null;
+      if (coeffStr === '' || coeffStr === '+') {
+        coeff = { n: 1, d: 1 };
+      } else if (coeffStr === '-') {
+        coeff = { n: -1, d: 1 };
+      } else {
+        coeff = parseNumericOrFractionToken(coeffStr);
+        if (coeff && coeffStr.includes('/') && coeff.d !== Number(coeffStr.split('/')[1])) {
+          hadReducibleFraction = true;
+        }
+      }
+      if (!coeff) return null;
+      vars[varName] = addFractions(vars[varName] || { n: 0, d: 1 }, coeff);
+      continue;
+    }
+
+    const parsedConst = parseNumericOrFractionToken(term);
+    if (!parsedConst) return null;
+    if (term.includes('/') && parsedConst.d !== Number(term.split('/')[1])) {
+      hadReducibleFraction = true;
+    }
+    constant = addFractions(constant, parsedConst);
+  }
+
+  return { vars, constant, hadReducibleFraction };
+}
+
+function solveMathOrEquation(rawInput: string): string | null {
+  const cleaned = rawInput
+    .trim()
+    .replace(/^(?:what\s+is|calculate|compute|solve|evaluate|simplify|check(?:\s+if)?)\s+/i, '')
   let y = Math.abs(Math.round(b));
   while (y !== 0) {
     const t = y;
@@ -1096,8 +1381,18 @@ function parseLinearSide(sideExpr: string): {
   const compact = sideExpr.replace(/−/g, '-').replace(/÷/g, '/').replace(/\s+/g, '');
   if (!compact || /[()*^]/.test(compact)) return null;
 
-  const withPlus = compact.replace(/(?<!^)-/g, '+-');
-  const terms = withPlus.split('+').filter(Boolean);
+  const terms: string[] = [];
+  let current = '';
+  for (let i = 0; i < compact.length; i++) {
+    const ch = compact[i];
+    if ((ch === '+' || ch === '-') && i > 0) {
+      if (current) terms.push(current);
+      current = ch;
+    } else {
+      current += ch;
+    }
+  }
+  if (current) terms.push(current);
   if (terms.length === 0) return null;
 
   const vars: Record<string, FractionValue> = {};
@@ -1145,13 +1440,11 @@ function solveMathOrEquation(rawInput: string): string | null {
 
   if (!cleaned) return null;
 
-  // 1. Equations containing '=' (e.g., 2+10-7=12-9 or 2x-9y+4=3y+6x+4/8)
   if (cleaned.includes('=')) {
     const parts = cleaned.split('=').map((p) => p.trim());
     if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
     const [lhsRaw, rhsRaw] = parts;
 
-    // 1A. Purely numeric equation verification (e.g., 2+10-7=12-9)
     try {
       const lhsVal = evaluateSafeMathExpression(lhsRaw);
       const rhsVal = evaluateSafeMathExpression(rhsRaw);
@@ -1171,7 +1464,6 @@ function solveMathOrEquation(rawInput: string): string | null {
       // Fall through to algebraic linear equation solver
     }
 
-    // 1B. Linear algebraic equation (1 or 2 variables, including fractions like 4/8)
     const lhsParsed = parseLinearSide(lhsRaw);
     const rhsParsed = parseLinearSide(rhsRaw);
     if (lhsParsed && rhsParsed) {
@@ -1241,7 +1533,6 @@ function solveMathOrEquation(rawInput: string): string | null {
           false
         )} = ${formatFractionShort(rhsC)}`;
 
-        // Solve for v2 (e.g., y)
         const v2RhsConst = divFractions(rhsC, c2);
         const v2Slope = divFractions({ n: -c1.n, d: c1.d }, c2);
         const v2SlopeStr =
@@ -1265,7 +1556,6 @@ function solveMathOrEquation(rawInput: string): string | null {
               : formatFractionShort(v2RhsConst);
         const solvedForV2 = `${v2} = ${v2SlopeStr}${v2ConstStr || '0'}`;
 
-        // Solve for v1 (e.g., x)
         const v1RhsConst = divFractions(rhsC, c1);
         const v1Slope = divFractions({ n: -c2.n, d: c2.d }, c1);
         const v1SlopeStr =
@@ -1314,7 +1604,6 @@ function solveMathOrEquation(rawInput: string): string | null {
     return null;
   }
 
-  // 2. Standalone arithmetic / math expression (e.g., 8/2+56(2), sqrt(144)+25)
   const strippedMathWords = cleaned
     .replace(/\b(?:pi|e|sin|cos|tan|sqrt|log|ln|abs)\b/gi, '')
     .trim();
@@ -2333,48 +2622,38 @@ async function revokeAccountSession(): Promise<void> {
 }
 
 // ============================================================================
-// MAIN APP COMPONENT
+// MAIN HUD WORKSPACE COMPONENT
 // ============================================================================
 
-export default function App() {
-  const [isMobileView, setIsMobileView] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth < 768;
-  });
-
-  useEffect(() => {
-    const checkViewport = () => {
-      setIsMobileView(window.innerWidth < 768);
-    };
-    window.addEventListener('resize', checkViewport);
-    window.addEventListener('orientationchange', checkViewport);
-    return () => {
-      window.removeEventListener('resize', checkViewport);
-      window.removeEventListener('orientationchange', checkViewport);
-    };
-  }, []);
-
+function JarvisWorkspace() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile>(defaultUser);
-  const [settings, setSettings] = useState<AppSettings>(() => ({
-    ...loadSettings(),
-    webSearchEnabled: false,
-  }));
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const loaded = loadSettings();
+    return {
+      selectedModel: loaded?.selectedModel || 'jarvis-turbo',
+      voiceEnabled: Boolean(loaded?.voiceEnabled),
+      webSearchEnabled: false,
+      dualEngineEnabled: Boolean(loaded?.dualEngineEnabled),
+    };
+  });
   const [directSignInUrl, setDirectSignInUrl] = useState<string | null>(null);
   const [accountNotice, setAccountNotice] = useState('');
 
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof window !== 'undefined' && window.innerWidth >= 768
-  );
+  // History Sidebar Drawer (collapsed by default so the 3-column HUD matches Image 2)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
   const [aiConfigured, setAiConfigured] = useState(false);
 
+  // Mobile HUD drawer tabs ('center' | 'left' | 'right')
+  const [mobileHudTab, setMobileHudTab] = useState<'center' | 'left' | 'right'>('center');
+
+  // Modals
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -2382,11 +2661,20 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(() => earlyDeferredInstallPrompt);
 
-  const [mobileInput, setMobileInput] = useState('');
-  const [mobileAttachments, setMobileAttachments] = useState<Attachment[]>([]);
-  const [mobileDictating, setMobileDictating] = useState(false);
-  const mobileFileInputRef = useRef<HTMLInputElement>(null);
+  // Bottom-Center Capsule State: Question Writing Mode vs Voice Conversation Allowed Mode
+  const [questionInput, setQuestionInput] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [voiceConversationAllowed, setVoiceConversationAllowed] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const [voiceInterimTranscript, setVoiceInterimTranscript] = useState('');
+  const [voiceError, setVoiceError] = useState('');
+  const [voiceAutoLoop, setVoiceAutoLoop] = useState(true);
+  const [voiceLang, setVoiceLang] = useState('en-US');
+
+  // Specialist Role, Memory & Gallery
   const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
     try {
       const saved = localStorage.getItem(JARVIS_PROFESSION_STORAGE_KEY) as ProfessionId | null;
@@ -2419,7 +2707,7 @@ export default function App() {
     }
   });
 
-  const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
+  // Feature Modals
   const [newsModalOpen, setNewsModalOpen] = useState(false);
   const [professionsModalOpen, setProfessionsModalOpen] = useState(false);
   const [imageStudioOpen, setImageStudioOpen] = useState(false);
@@ -2430,23 +2718,14 @@ export default function App() {
 
   const [liveClock, setLiveClock] = useState(() => new Date());
 
-  const [voiceListening, setVoiceListening] = useState(false);
-  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
-  const [voiceThinking, setVoiceThinking] = useState(false);
-  const [voiceInterimTranscript, setVoiceInterimTranscript] = useState('');
-  const [voiceTypedInput, setVoiceTypedInput] = useState('');
-  const [voiceTurns, setVoiceTurns] = useState<VoiceTurn[]>([]);
-  const [voiceError, setVoiceError] = useState('');
-  const [voiceAutoLoop, setVoiceAutoLoop] = useState(true);
-  const [voiceRate, setVoiceRate] = useState(1.05);
-  const [voiceLang, setVoiceLang] = useState('en-US');
-
+  // Image Studio State
   const [studioPrompt, setStudioPrompt] = useState('');
   const [studioStyle, setStudioStyle] = useState(IMAGE_STYLE_PRESETS[0].id);
   const [studioAspectRatio, setStudioAspectRatio] = useState<'1:1' | '16:9' | '9:16' | '4:3'>('1:1');
   const [studioGenerating, setStudioGenerating] = useState(false);
   const [studioError, setStudioError] = useState('');
 
+  // Workbench State
   const [workbenchTab, setWorkbenchTab] = useState<
     'calc' | 'ohms' | 'units' | 'materials' | 'clinical' | 'labs'
   >('calc');
@@ -2468,12 +2747,19 @@ export default function App() {
   const [professionSearch, setProfessionSearch] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatScrollContainerRef = useRef<HTMLDivElement>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const accountSaveQueue = useRef(Promise.resolve());
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  const liveVoiceOpenRef = useRef(false);
+  const voiceAllowedRef = useRef(false);
   const voiceAutoLoopRef = useRef(true);
+
+  useEffect(() => {
+    voiceAllowedRef.current = voiceConversationAllowed;
+  }, [voiceConversationAllowed]);
+
+  useEffect(() => {
+    voiceAutoLoopRef.current = voiceAutoLoop;
+  }, [voiceAutoLoop]);
 
   useEffect(() => {
     if (earlyDeferredInstallPrompt && !deferredInstallPrompt) {
@@ -2488,7 +2774,7 @@ export default function App() {
     const handleAppInstalled = () => {
       earlyDeferredInstallPrompt = null;
       setDeferredInstallPrompt(null);
-      setAccountNotice('JARVIS AI has been installed on your device!');
+      setAccountNotice('JARVIS AI HUD installed on your device!');
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
     window.addEventListener('appinstalled', handleAppInstalled);
@@ -2497,14 +2783,6 @@ export default function App() {
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, [deferredInstallPrompt]);
-
-  useEffect(() => {
-    liveVoiceOpenRef.current = liveVoiceOpen;
-  }, [liveVoiceOpen]);
-
-  useEffect(() => {
-    voiceAutoLoopRef.current = voiceAutoLoop;
-  }, [voiceAutoLoop]);
 
   useEffect(() => {
     try {
@@ -2548,6 +2826,27 @@ export default function App() {
     [activeProfessionId]
   );
 
+  // Calendar grid for Top-Left HUD Calendar widget
+  const calendarData = useMemo(() => {
+    const year = liveClock.getFullYear();
+    const month = liveClock.getMonth();
+    const today = liveClock.getDate();
+    const monthLabel = liveClock.toLocaleDateString('en-US', {
+      month: 'short',
+      year: 'numeric',
+    });
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells: Array<{ day: number | null; isToday: boolean }> = [];
+    for (let i = 0; i < firstDayIndex; i++) {
+      cells.push({ day: null, isToday: false });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({ day: d, isToday: d === today });
+    }
+    return { monthLabel, cells };
+  }, [liveClock]);
+
   useEffect(() => {
     const nonce = new URLSearchParams(window.location.hash.slice(1)).get('portable-import');
     const archiveWindow = window.parent !== window ? window.parent : window.opener;
@@ -2574,7 +2873,7 @@ export default function App() {
       setUser(defaultUser);
       setDirectSignInUrl(null);
       setAccountNotice(
-        'Conversation imported in a signed-out guest session. Guest chats are not saved after you close or refresh the app.'
+        'Conversation imported in a signed-out guest session.'
       );
       window.history.replaceState({}, '', window.location.pathname + window.location.search);
       archiveWindow.postMessage({ type: 'jarvis-portable-restored', nonce }, '*');
@@ -2759,36 +3058,43 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages]);
 
-  const handleScroll = () => {
-    if (!chatScrollContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } =
-      chatScrollContainerRef.current;
-    const isUp = scrollHeight - scrollTop - clientHeight > 160;
-    setShowScrollBottom(isUp);
-  };
+  const stopSpeaking = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setSpeakingMessageId(null);
+      setVoiceSpeaking(false);
+    }
+  }, []);
+
+  const stopVoiceRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+      } catch {
+        // Ignore
+      }
+      recognitionRef.current = null;
+    }
+    setVoiceListening(false);
+  }, []);
 
   const handleNewChat = () => {
     stopSpeaking();
     setActiveChatId(null);
-    if (isMobileView) {
-      setSidebarOpen(false);
-    }
+    setSidebarOpen(false);
+    setMobileHudTab('center');
   };
 
   const handleSelectChat = (id: string) => {
     stopSpeaking();
     setActiveChatId(id);
-    if (isMobileView) {
-      setSidebarOpen(false);
-    }
+    setSidebarOpen(false);
+    setMobileHudTab('center');
   };
 
   const handleDeleteChat = (id: string, e: React.MouseEvent) => {
@@ -2814,14 +3120,6 @@ export default function App() {
     );
   };
 
-  const stopSpeaking = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      setSpeakingMessageId(null);
-      setVoiceSpeaking(false);
-    }
-  };
-
   const pickPreferredJarvisVoice = () => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
     const voices = window.speechSynthesis.getVoices();
@@ -2839,301 +3137,341 @@ export default function App() {
     );
   };
 
-  const handleToggleSpeakMessage = (messageId: string, text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  const speakTextAloud = useCallback(
+    (text: string, messageId?: string, onDone?: () => void) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        onDone?.();
+        return;
+      }
+      window.speechSynthesis.cancel();
 
+      const cleanText = formatAsCleanNotebookText(text)
+        .replace(/\[.*?\]\(.*?\)/g, '')
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) {
+        onDone?.();
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = 1.04;
+      utterance.pitch = 0.96;
+      utterance.lang = voiceLang;
+
+      const jarvisVoice = pickPreferredJarvisVoice();
+      if (jarvisVoice) {
+        utterance.voice = jarvisVoice;
+      }
+
+      utterance.onstart = () => {
+        if (messageId) setSpeakingMessageId(messageId);
+        setVoiceSpeaking(true);
+      };
+      utterance.onend = () => {
+        setSpeakingMessageId(null);
+        setVoiceSpeaking(false);
+        onDone?.();
+      };
+      utterance.onerror = () => {
+        setSpeakingMessageId(null);
+        setVoiceSpeaking(false);
+        onDone?.();
+      };
+
+      activeUtteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+    },
+    [voiceLang]
+  );
+
+  const handleToggleSpeakMessage = (messageId: string, text: string) => {
     if (speakingMessageId === messageId) {
       stopSpeaking();
       return;
     }
-
-    stopSpeaking();
-
-    const cleanText = formatAsCleanNotebookText(text)
-      .replace(/\[.*?\]\(.*?\)/g, '')
-      .replace(/!\[.*?\]\(.*?\)/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!cleanText) return;
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = voiceRate;
-    utterance.pitch = 0.95;
-
-    const jarvisVoice = pickPreferredJarvisVoice();
-    if (jarvisVoice) {
-      utterance.voice = jarvisVoice;
-    }
-
-    utterance.onstart = () => setSpeakingMessageId(messageId);
-    utterance.onend = () => setSpeakingMessageId(null);
-    utterance.onerror = () => setSpeakingMessageId(null);
-
-    activeUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    speakTextAloud(text, messageId);
   };
 
   // ==========================================================================
   // CORE SEND MESSAGE ENGINE
   // ==========================================================================
 
-  const handleSendMessage = async (
-    text: string,
-    attachments: Attachment[] = [],
-    options?: { forceGoogleGrounding?: boolean }
-  ) => {
-    if (!text.trim() && attachments.length === 0) return;
+  const handleSendMessage = useCallback(
+    async (
+      text: string,
+      incomingAttachments: Attachment[] = [],
+      options?: { forceGoogleGrounding?: boolean; onVoiceReplyComplete?: () => void }
+    ) => {
+      if (!text.trim() && incomingAttachments.length === 0) return;
 
-    if (isMobileView && sidebarOpen) {
-      setSidebarOpen(false);
-    }
+      setMobileHudTab('center');
 
-    const userMessage: Message = {
-      id: Math.random().toString(36).substring(2, 9),
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
-      attachments: attachments.length > 0 ? attachments : undefined,
-    };
-
-    let currentConvId = activeChatId;
-    let updatedConversations = [...conversations];
-
-    if (!currentConvId) {
-      const title =
-        text.trim().slice(0, 36) + (text.length > 36 ? '...' : '') ||
-        'Vision & File Analysis';
-      const newConv: Conversation = {
+      const userMessage: Message = {
         id: Math.random().toString(36).substring(2, 9),
-        title,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        messages: [userMessage],
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+        attachments: incomingAttachments.length > 0 ? incomingAttachments : undefined,
       };
-      updatedConversations = [newConv, ...conversations];
-      currentConvId = newConv.id;
-      setActiveChatId(currentConvId);
-      setConversations(updatedConversations);
-    } else {
-      updatedConversations = updatedConversations.map((c) => {
-        if (c.id === currentConvId) {
-          return {
-            ...c,
-            updatedAt: Date.now(),
-            messages: [...c.messages, userMessage],
-          };
-        }
-        return c;
-      });
-      setConversations(updatedConversations);
-    }
 
-    if (attachments.length === 0) {
-      // 1. Instant Greeting Reply
-      const instantGreeting = getInstantGreetingReply(text);
-      if (instantGreeting) {
-        const instantMessage: Message = {
+      let currentConvId = activeChatId;
+      let updatedConversations = [...conversations];
+
+      if (!currentConvId) {
+        const title =
+          text.trim().slice(0, 36) + (text.length > 36 ? '...' : '') ||
+          'Vision & File Analysis';
+        const newConv: Conversation = {
           id: Math.random().toString(36).substring(2, 9),
-          role: 'assistant',
-          content: instantGreeting,
-          sources: [],
-          timestamp: Date.now(),
+          title,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages: [userMessage],
         };
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === currentConvId
-              ? { ...c, updatedAt: Date.now(), messages: [...c.messages, instantMessage] }
-              : c
-          )
-        );
-        if (settings.voiceEnabled) {
-          handleToggleSpeakMessage(instantMessage.id, instantMessage.content);
-        }
-        return;
-      }
-
-      // 2. Instant Deterministic Notebook Math & Equation Solver
-      const instantMath = solveMathOrEquation(text);
-      if (instantMath) {
-        const mathMessage: Message = {
-          id: Math.random().toString(36).substring(2, 9),
-          role: 'assistant',
-          content: formatAsCleanNotebookText(instantMath),
-          sources: [],
-          timestamp: Date.now(),
-        };
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === currentConvId
-              ? { ...c, updatedAt: Date.now(), messages: [...c.messages, mathMessage] }
-              : c
-          )
-        );
-        if (settings.voiceEnabled) {
-          handleToggleSpeakMessage(mathMessage.id, mathMessage.content);
-        }
-        return;
-      }
-    }
-
-    const hasImageReference = attachments.some((attachment) =>
-      attachment.type.startsWith('image/')
-    );
-    const isImageReq =
-      settings.selectedModel === 'jarvis-art' ||
-      isImageGenerationPrompt(text) ||
-      (hasImageReference &&
-        /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|add|put|place|dress|make\s+(?:it|this|the image|him|her|them)|convert)\b/i.test(
-          text
-        ));
-    const weatherRequest = getWeatherRequest(text);
-
-    const shouldUseGoogleGrounding =
-      Boolean(options?.forceGoogleGrounding) ||
-      Boolean(settings.webSearchEnabled) ||
-      explicitGoogleGroundingRequested(text);
-
-    setIsLoading(true);
-
-    try {
-      const activeMessages =
-        updatedConversations.find((c) => c.id === currentConvId)?.messages || [
-          userMessage,
-        ];
-
-      let assistantMessage: Message;
-
-      if (weatherRequest) {
-        const parameters = new URLSearchParams({
-          location: weatherRequest.location,
-          temperatureUnit: weatherRequest.temperatureUnit,
-        });
-        const res = await fetchWithTimeout(`/api/weather?${parameters.toString()}`, {}, 4500);
-        const data = await readJsonResponse<{
-          location?: string;
-          temperature?: number;
-          temperatureUnit?: string;
-          feelsLike?: number;
-          humidity?: number;
-          windSpeed?: number;
-          windSpeedUnit?: string;
-          conditions?: string;
-        }>(res, 'Weather lookup failed.');
-
-        if (typeof data.temperature !== 'number' || !data.location) {
-          throw new Error('The weather service returned an incomplete response.');
-        }
-        const unit = data.temperatureUnit || '°C';
-        const feelsLike =
-          typeof data.feelsLike === 'number' ? ` Feels like ${data.feelsLike}${unit}.` : '';
-        const humidity =
-          typeof data.humidity === 'number' ? ` Humidity ${data.humidity}%.` : '';
-        const wind =
-          typeof data.windSpeed === 'number'
-            ? ` Wind ${data.windSpeed} ${data.windSpeedUnit || 'km/h'}.`
-            : '';
-        assistantMessage = {
-          id: Math.random().toString(36).substring(2, 9),
-          role: 'assistant',
-          content: `Current weather in ${data.location}: ${data.temperature}${unit}, ${data.conditions || 'conditions unavailable'}.${feelsLike}${humidity}${wind}`,
-          sources: [],
-          timestamp: Date.now(),
-        };
-      } else if (isImageReq) {
-        const cleanArtPrompt =
-          text.trim() || 'Futuristic arc reactor core glowing in dark laboratory, 8k';
-        const imageUrl = await generateFreePollinationsImage(cleanArtPrompt, '1:1');
-
-        setArtGallery((prev) => [
-          {
-            id: Math.random().toString(36).substring(2, 9),
-            prompt: cleanArtPrompt,
-            style: 'Free Neural Studio',
-            aspectRatio: '1:1',
-            imageUrl,
-            createdAt: Date.now(),
-          },
-          ...prev,
-        ]);
-
-        assistantMessage = {
-          id: Math.random().toString(36).substring(2, 9),
-          role: 'assistant',
-          content: `Here is the image generated for "${cleanArtPrompt}":`,
-          imageUrl,
-          sources: [],
-          timestamp: Date.now(),
-        };
+        updatedConversations = [newConv, ...conversations];
+        currentConvId = newConv.id;
+        setActiveChatId(currentConvId);
+        setConversations(updatedConversations);
       } else {
-        const liveWeb = shouldUseGoogleGrounding
-          ? await fetchFreeLiveGoogleGrounding(text)
-          : { contextText: '', sources: [] };
+        updatedConversations = updatedConversations.map((c) => {
+          if (c.id === currentConvId) {
+            return {
+              ...c,
+              updatedAt: Date.now(),
+              messages: [...c.messages, userMessage],
+            };
+          }
+          return c;
+        });
+        setConversations(updatedConversations);
+      }
 
-        const systemInstructions = buildSystemInstructions(activeProfession, memories);
+      const shouldSpeakAfter =
+        Boolean(settings.voiceEnabled) || Boolean(voiceAllowedRef.current);
 
-        const cleanHistory = activeMessages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
-
-        const quantityDirective = buildQuantityDirectiveForTurn(cleanHistory);
-        const fullSystemInstructions = `${systemInstructions}\n\n${quantityDirective}`;
-
-        const curatedDirect =
-          attachments.length === 0 && !liveWeb.contextText
-            ? resolveCuratedMultiAnswerKnowledge(cleanHistory)
-            : null;
-
-        let replyText = '';
-        let replyImageUrl: string | undefined;
-
-        if (curatedDirect) {
-          replyText = formatAsCleanNotebookText(curatedDirect);
-        } else if (cachedBackendAvailable !== false) {
-          try {
-            const backendMessages = cleanHistory.map((m, index) => {
-              const isLastUserTurn = index === cleanHistory.length - 1 && m.role === 'user';
-              if (!isLastUserTurn) return m;
-              if (liveWeb.contextText) {
-                return {
-                  role: 'user',
-                  content: `${liveWeb.contextText}\n\nUser Question: ${m.content}`,
-                };
-              }
-              return m;
-            });
-
-            const res = await fetchWithTimeout(
-              '/api/chat',
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  messages: backendMessages,
-                  systemInstruction: fullSystemInstructions,
-                  webSearch: Boolean(settings.webSearchEnabled),
-                  model: settings.dualEngineEnabled ? 'jarvis-deep' : settings.selectedModel,
-                  attachments: attachments.map((a) => ({
-                    name: a.name,
-                    type: a.type,
-                    data: a.data,
-                  })),
-                }),
-              },
-              8000
+      if (incomingAttachments.length === 0) {
+        const instantGreeting = getInstantGreetingReply(text);
+        if (instantGreeting) {
+          const instantMessage: Message = {
+            id: Math.random().toString(36).substring(2, 9),
+            role: 'assistant',
+            content: instantGreeting,
+            sources: [],
+            timestamp: Date.now(),
+          };
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === currentConvId
+                ? { ...c, updatedAt: Date.now(), messages: [...c.messages, instantMessage] }
+                : c
+            )
+          );
+          if (shouldSpeakAfter) {
+            speakTextAloud(
+              instantMessage.content,
+              instantMessage.id,
+              options?.onVoiceReplyComplete
             );
+          }
+          return;
+        }
 
-            const data = await readJsonResponse<{
-              content?: string;
-              imageUrl?: string;
-            }>(res, 'BACKEND_UNAVAILABLE_405');
+        const instantMath = solveMathOrEquation(text);
+        if (instantMath) {
+          const cleanMath = formatAsCleanNotebookText(instantMath);
+          const mathMessage: Message = {
+            id: Math.random().toString(36).substring(2, 9),
+            role: 'assistant',
+            content: cleanMath,
+            sources: [],
+            timestamp: Date.now(),
+          };
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === currentConvId
+                ? { ...c, updatedAt: Date.now(), messages: [...c.messages, mathMessage] }
+                : c
+            )
+          );
+          if (shouldSpeakAfter) {
+            speakTextAloud(
+              mathMessage.content,
+              mathMessage.id,
+              options?.onVoiceReplyComplete
+            );
+          }
+          return;
+        }
+      }
 
-            cachedBackendAvailable = true;
-            replyText = formatAsCleanNotebookText(data.content || 'How can I help you?');
-            replyImageUrl = data.imageUrl;
-          } catch {
-            cachedBackendAvailable = false;
+      const hasImageReference = incomingAttachments.some((attachment) =>
+        attachment.type.startsWith('image/')
+      );
+      const isImageReq =
+        settings.selectedModel === 'jarvis-art' ||
+        isImageGenerationPrompt(text) ||
+        (hasImageReference &&
+          /\b(?:edit|change|remove|replace|restyle|redraw|transform|turn|add|put|place|dress|make\s+(?:it|this|the image|him|her|them)|convert)\b/i.test(
+            text
+          ));
+      const weatherRequest = getWeatherRequest(text);
+
+      const shouldUseGoogleGrounding =
+        Boolean(options?.forceGoogleGrounding) ||
+        Boolean(settings.webSearchEnabled) ||
+        explicitGoogleGroundingRequested(text);
+
+      setIsLoading(true);
+
+      try {
+        const activeMessages =
+          updatedConversations.find((c) => c.id === currentConvId)?.messages || [
+            userMessage,
+          ];
+
+        let assistantMessage: Message;
+
+        if (weatherRequest) {
+          const parameters = new URLSearchParams({
+            location: weatherRequest.location,
+            temperatureUnit: weatherRequest.temperatureUnit,
+          });
+          const res = await fetchWithTimeout(`/api/weather?${parameters.toString()}`, {}, 4500);
+          const data = await readJsonResponse<{
+            location?: string;
+            temperature?: number;
+            temperatureUnit?: string;
+            feelsLike?: number;
+            humidity?: number;
+            windSpeed?: number;
+            windSpeedUnit?: string;
+            conditions?: string;
+          }>(res, 'Weather lookup failed.');
+
+          if (typeof data.temperature !== 'number' || !data.location) {
+            throw new Error('The weather service returned an incomplete response.');
+          }
+          const unit = data.temperatureUnit || '°C';
+          const feelsLike =
+            typeof data.feelsLike === 'number' ? ` Feels like ${data.feelsLike}${unit}.` : '';
+          const humidity =
+            typeof data.humidity === 'number' ? ` Humidity ${data.humidity}%.` : '';
+          const wind =
+            typeof data.windSpeed === 'number'
+              ? ` Wind ${data.windSpeed} ${data.windSpeedUnit || 'km/h'}.`
+              : '';
+          assistantMessage = {
+            id: Math.random().toString(36).substring(2, 9),
+            role: 'assistant',
+            content: `Current weather in ${data.location}: ${data.temperature}${unit}, ${data.conditions || 'conditions unavailable'}.${feelsLike}${humidity}${wind}`,
+            sources: [],
+            timestamp: Date.now(),
+          };
+        } else if (isImageReq) {
+          const cleanArtPrompt =
+            text.trim() || 'Futuristic arc reactor core glowing in dark laboratory, 8k';
+          const imageUrl = await generateFreePollinationsImage(cleanArtPrompt, '1:1');
+
+          setArtGallery((prev) => [
+            {
+              id: Math.random().toString(36).substring(2, 9),
+              prompt: cleanArtPrompt,
+              style: 'Free Neural Studio',
+              aspectRatio: '1:1',
+              imageUrl,
+              createdAt: Date.now(),
+            },
+            ...prev,
+          ]);
+
+          assistantMessage = {
+            id: Math.random().toString(36).substring(2, 9),
+            role: 'assistant',
+            content: `Here is the image generated for "${cleanArtPrompt}":`,
+            imageUrl,
+            sources: [],
+            timestamp: Date.now(),
+          };
+        } else {
+          const liveWeb = shouldUseGoogleGrounding
+            ? await fetchFreeLiveGoogleGrounding(text)
+            : { contextText: '', sources: [] };
+
+          const systemInstructions = buildSystemInstructions(activeProfession, memories);
+
+          const cleanHistory = activeMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          }));
+
+          const quantityDirective = buildQuantityDirectiveForTurn(cleanHistory);
+          const fullSystemInstructions = `${systemInstructions}\n\n${quantityDirective}`;
+
+          const curatedDirect =
+            incomingAttachments.length === 0 && !liveWeb.contextText
+              ? resolveCuratedMultiAnswerKnowledge(cleanHistory)
+              : null;
+
+          let replyText = '';
+          let replyImageUrl: string | undefined;
+
+          if (curatedDirect) {
+            replyText = formatAsCleanNotebookText(curatedDirect);
+          } else if (cachedBackendAvailable !== false) {
+            try {
+              const backendMessages = cleanHistory.map((m, index) => {
+                const isLastUserTurn = index === cleanHistory.length - 1 && m.role === 'user';
+                if (!isLastUserTurn) return m;
+                if (liveWeb.contextText) {
+                  return {
+                    role: 'user',
+                    content: `${liveWeb.contextText}\n\nUser Question: ${m.content}`,
+                  };
+                }
+                return m;
+              });
+
+              const res = await fetchWithTimeout(
+                '/api/chat',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    messages: backendMessages,
+                    systemInstruction: fullSystemInstructions,
+                    webSearch: Boolean(settings.webSearchEnabled),
+                    model: settings.dualEngineEnabled ? 'jarvis-deep' : settings.selectedModel,
+                    attachments: incomingAttachments.map((a) => ({
+                      name: a.name,
+                      type: a.type,
+                      data: a.data,
+                    })),
+                  }),
+                },
+                8000
+              );
+
+              const data = await readJsonResponse<{
+                content?: string;
+                imageUrl?: string;
+              }>(res, 'BACKEND_UNAVAILABLE_405');
+
+              cachedBackendAvailable = true;
+              replyText = formatAsCleanNotebookText(data.content || 'How can I help you?');
+              replyImageUrl = data.imageUrl;
+            } catch {
+              cachedBackendAvailable = false;
+              replyText = await synthesizeWithFreeFallbackEngine(
+                cleanHistory,
+                systemInstructions,
+                liveWeb.contextText,
+                liveWeb.sources
+              );
+            }
+          } else {
             replyText = await synthesizeWithFreeFallbackEngine(
               cleanHistory,
               systemInstructions,
@@ -3141,347 +3479,83 @@ export default function App() {
               liveWeb.sources
             );
           }
-        } else {
-          replyText = await synthesizeWithFreeFallbackEngine(
-            cleanHistory,
-            systemInstructions,
-            liveWeb.contextText,
-            liveWeb.sources
-          );
+
+          assistantMessage = {
+            id: Math.random().toString(36).substring(2, 9),
+            role: 'assistant',
+            content: formatAsCleanNotebookText(replyText),
+            sources: shouldUseGoogleGrounding ? liveWeb.sources : [],
+            imageUrl: replyImageUrl,
+            timestamp: Date.now(),
+          };
         }
 
-        assistantMessage = {
-          id: Math.random().toString(36).substring(2, 9),
-          role: 'assistant',
-          content: formatAsCleanNotebookText(replyText),
-          sources: shouldUseGoogleGrounding ? liveWeb.sources : [],
-          imageUrl: replyImageUrl,
-          timestamp: Date.now(),
-        };
-      }
-
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.id === currentConvId) {
-            return {
-              ...c,
-              updatedAt: Date.now(),
-              messages: [...c.messages, assistantMessage],
-            };
-          }
-          return c;
-        })
-      );
-
-      if (settings.voiceEnabled && assistantMessage.content) {
-        handleToggleSpeakMessage(assistantMessage.id, assistantMessage.content);
-      }
-    } catch (err) {
-      console.error('Error contacting JARVIS:', err);
-      const errorText = err instanceof Error ? err.message : 'The request failed.';
-      const errorMessage: Message = {
-        id: Math.random().toString(36).substring(2, 9),
-        role: 'assistant',
-        content: `JARVIS notice: ${errorText}`,
-        sources: [],
-        timestamp: Date.now(),
-        isError: true,
-      };
-
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.id === currentConvId) {
-            return {
-              ...c,
-              updatedAt: Date.now(),
-              messages: [...c.messages, errorMessage],
-            };
-          }
-          return c;
-        })
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSelectPrompt = (prompt: string) => {
-    handleSendMessage(prompt, []);
-  };
-
-  // ==========================================================================
-  // MOBILE PROMPT & PWA INSTALL HANDLERS
-  // ==========================================================================
-
-  const handleMobileFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).slice(0, 10 - mobileAttachments.length);
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setMobileAttachments((prev) =>
-            prev.length >= 10
-              ? prev
-              : [
-                  ...prev,
-                  {
-                    name: file.name,
-                    type: file.type || 'application/octet-stream',
-                    data: reader.result as string,
-                  },
-                ]
-          );
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-    e.target.value = '';
-  };
-
-  const handleMobileMicDictate = () => {
-    if (typeof window === 'undefined') return;
-    const SpeechRecCtor =
-      (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
-        .SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionInstance })
-        .webkitSpeechRecognition;
-
-    if (!SpeechRecCtor) {
-      openLiveVoiceSession();
-      return;
-    }
-
-    if (mobileDictating) {
-      stopVoiceRecognition();
-      setMobileDictating(false);
-      return;
-    }
-
-    const rec = new SpeechRecCtor();
-    rec.lang = voiceLang;
-    rec.interimResults = false;
-    rec.onstart = () => setMobileDictating(true);
-    rec.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript || '';
-      if (transcript) {
-        setMobileInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
-      }
-    };
-    rec.onerror = () => setMobileDictating(false);
-    rec.onend = () => setMobileDictating(false);
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch {
-      setMobileDictating(false);
-    }
-  };
-
-  const handleMobileSubmit = () => {
-    if ((!mobileInput.trim() && mobileAttachments.length === 0) || isLoading) return;
-    const textToSend = mobileInput;
-    const filesToSend = [...mobileAttachments];
-    setMobileInput('');
-    setMobileAttachments([]);
-    void handleSendMessage(textToSend, filesToSend);
-  };
-
-  const handleInstallApp = async () => {
-    setSidebarOpen(false);
-    const promptToUse = deferredInstallPrompt || earlyDeferredInstallPrompt;
-    if (promptToUse) {
-      await promptToUse.prompt();
-      await promptToUse.userChoice;
-      earlyDeferredInstallPrompt = null;
-      setDeferredInstallPrompt(null);
-      return;
-    }
-    setAccountNotice(
-      'To install JARVIS AI on your phone: tap your browser menu (⋮ or Share) and select "Install app" or "Add to Home Screen".'
-    );
-  };
-
-  // ==========================================================================
-  // LIVE TWO-WAY VOICE CONVERSATION ENGINE
-  // ==========================================================================
-
-  const stopVoiceRecognition = useCallback(() => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.onend = null;
-        recognitionRef.current.abort();
-      } catch {
-        // Ignore
-      }
-      recognitionRef.current = null;
-    }
-    setVoiceListening(false);
-  }, []);
-
-  const speakVoiceTurnReply = useCallback(
-    (replyText: string, onFinished?: () => void) => {
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-        onFinished?.();
-        return;
-      }
-      window.speechSynthesis.cancel();
-
-      const cleanText = formatAsCleanNotebookText(replyText)
-        .replace(/\[.*?\]\(.*?\)/g, '')
-        .replace(/!\[.*?\]\(.*?\)/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      if (!cleanText) {
-        onFinished?.();
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.rate = voiceRate;
-      utterance.pitch = 0.96;
-      utterance.lang = voiceLang;
-
-      const jarvisVoice = pickPreferredJarvisVoice();
-      if (jarvisVoice) utterance.voice = jarvisVoice;
-
-      utterance.onstart = () => setVoiceSpeaking(true);
-      utterance.onend = () => {
-        setVoiceSpeaking(false);
-        onFinished?.();
-      };
-      utterance.onerror = () => {
-        setVoiceSpeaking(false);
-        onFinished?.();
-      };
-
-      activeUtteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
-    },
-    [voiceRate, voiceLang]
-  );
-
-  const processLiveVoiceTurn = useCallback(
-    async (spokenText: string) => {
-      const trimmed = spokenText.trim();
-      if (!trimmed) return;
-
-      setVoiceThinking(true);
-      setVoiceError('');
-      const userTurn: VoiceTurn = {
-        id: Math.random().toString(36).substring(2, 9),
-        role: 'user',
-        text: trimmed,
-        timestamp: Date.now(),
-      };
-      setVoiceTurns((prev) => [...prev.slice(-14), userTurn]);
-
-      try {
-        const instantGreeting = getInstantGreetingReply(trimmed);
-        const instantMath = instantGreeting ? null : solveMathOrEquation(trimmed);
-        let reply = instantGreeting || instantMath || '';
-
-        if (!reply) {
-          const shouldSearch = explicitGoogleGroundingRequested(trimmed);
-          const liveWeb = shouldSearch
-            ? await fetchFreeLiveGoogleGrounding(trimmed)
-            : { contextText: '', sources: [] };
-
-          const historyPayload = voiceTurns.slice(-8).map((t) => ({
-            role: t.role,
-            content: t.text,
-          }));
-          historyPayload.push({
-            role: 'user',
-            content: trimmed,
-          });
-
-          const quantityDirective = buildQuantityDirectiveForTurn(historyPayload);
-          const systemInstructions = `${buildSystemInstructions(
-            activeProfession,
-            memories
-          )}\n${quantityDirective}\nRespond clearly as if speaking out loud.`;
-
-          const curatedDirect = !liveWeb.contextText
-            ? resolveCuratedMultiAnswerKnowledge(historyPayload)
-            : null;
-
-          if (curatedDirect) {
-            reply = formatAsCleanNotebookText(curatedDirect);
-          } else if (cachedBackendAvailable !== false) {
-            try {
-              const backendPayload = historyPayload.map((m, idx) =>
-                idx === historyPayload.length - 1 && liveWeb.contextText
-                  ? { role: 'user', content: `${liveWeb.contextText}\n\nUser Question: ${m.content}` }
-                  : m
-              );
-              const res = await fetchWithTimeout(
-                '/api/chat',
-                {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    messages: backendPayload,
-                    systemInstruction: systemInstructions,
-                    webSearch: false,
-                    model: 'jarvis-turbo',
-                    attachments: [],
-                  }),
-                },
-                8000
-              );
-
-              const data = await readJsonResponse<{ content?: string }>(
-                res,
-                'BACKEND_UNAVAILABLE_405'
-              );
-              cachedBackendAvailable = true;
-              reply = formatAsCleanNotebookText(data.content || 'Processed.');
-            } catch {
-              cachedBackendAvailable = false;
-              reply = await synthesizeWithFreeFallbackEngine(
-                historyPayload,
-                systemInstructions,
-                liveWeb.contextText,
-                liveWeb.sources
-              );
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id === currentConvId) {
+              return {
+                ...c,
+                updatedAt: Date.now(),
+                messages: [...c.messages, assistantMessage],
+              };
             }
-          } else {
-            reply = await synthesizeWithFreeFallbackEngine(
-              historyPayload,
-              systemInstructions,
-              liveWeb.contextText,
-              liveWeb.sources
-            );
-          }
-        }
+            return c;
+          })
+        );
 
-        const cleanReply = formatAsCleanNotebookText(reply);
-        const assistantTurn: VoiceTurn = {
+        if (shouldSpeakAfter && assistantMessage.content) {
+          speakTextAloud(
+            assistantMessage.content,
+            assistantMessage.id,
+            options?.onVoiceReplyComplete
+          );
+        }
+      } catch (err) {
+        console.error('Error contacting JARVIS:', err);
+        const errorText = err instanceof Error ? err.message : 'The request failed.';
+        const errorMessage: Message = {
           id: Math.random().toString(36).substring(2, 9),
           role: 'assistant',
-          text: cleanReply,
+          content: `JARVIS notice: ${errorText}`,
+          sources: [],
           timestamp: Date.now(),
+          isError: true,
         };
-        setVoiceTurns((prev) => [...prev.slice(-14), assistantTurn]);
-        setVoiceThinking(false);
 
-        speakVoiceTurnReply(cleanReply, () => {
-          if (liveVoiceOpenRef.current && voiceAutoLoopRef.current) {
-            startVoiceRecognition();
-          }
-        });
-      } catch (err) {
-        setVoiceThinking(false);
-        setVoiceError(
-          err instanceof Error ? err.message : 'Live voice processing failed.'
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id === currentConvId) {
+              return {
+                ...c,
+                updatedAt: Date.now(),
+                messages: [...c.messages, errorMessage],
+              };
+            }
+            return c;
+          })
         );
+      } finally {
+        setIsLoading(false);
       }
     },
-    [activeProfession, memories, voiceTurns, speakVoiceTurnReply]
+    [
+      activeChatId,
+      conversations,
+      settings.voiceEnabled,
+      settings.selectedModel,
+      settings.webSearchEnabled,
+      settings.dualEngineEnabled,
+      activeProfession,
+      memories,
+      speakTextAloud,
+    ]
   );
 
-  const startVoiceRecognition = useCallback(() => {
+  // ==========================================================================
+  // BOTTOM-CENTER INLINE VOICE CONVERSATION CAPSULE ENGINE
+  // ==========================================================================
+
+  const startInlineVoiceListening = useCallback(() => {
     if (typeof window === 'undefined') return;
     const SpeechRecCtor =
       (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionInstance })
@@ -3490,17 +3564,12 @@ export default function App() {
         .webkitSpeechRecognition;
 
     if (!SpeechRecCtor) {
-      setVoiceError(
-        'Speech Recognition is not supported in this browser. Type below to talk with JARVIS aloud.'
-      );
+      setVoiceError('Voice recognition not supported in this browser.');
       return;
     }
 
     stopVoiceRecognition();
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      setVoiceSpeaking(false);
-    }
+    stopSpeaking();
 
     const recognition = new SpeechRecCtor();
     recognition.continuous = false;
@@ -3531,7 +3600,7 @@ export default function App() {
     recognition.onerror = (event: { error?: string }) => {
       setVoiceListening(false);
       if (event.error && event.error !== 'aborted' && event.error !== 'no-speech') {
-        setVoiceError(`Microphone notice: ${event.error}`);
+        setVoiceError(`Mic notice: ${event.error}`);
       }
     };
 
@@ -3540,7 +3609,13 @@ export default function App() {
       const captured = finalTranscriptBuffer.trim();
       setVoiceInterimTranscript('');
       if (captured) {
-        void processLiveVoiceTurn(captured);
+        void handleSendMessage(captured, [], {
+          onVoiceReplyComplete: () => {
+            if (voiceAllowedRef.current && voiceAutoLoopRef.current) {
+              startInlineVoiceListening();
+            }
+          },
+        });
       }
     };
 
@@ -3548,68 +3623,77 @@ export default function App() {
     try {
       recognition.start();
     } catch {
-      setVoiceError('Unable to access microphone. Check browser mic permissions.');
+      setVoiceError('Unable to access microphone. Allow mic permissions.');
     }
-  }, [voiceLang, stopVoiceRecognition, processLiveVoiceTurn]);
+  }, [voiceLang, stopVoiceRecognition, stopSpeaking, handleSendMessage]);
 
-  const openLiveVoiceSession = () => {
-    stopSpeaking();
-    setLiveVoiceOpen(true);
+  const handleAllowVoiceConversation = () => {
+    setVoiceConversationAllowed(true);
     setVoiceError('');
     window.setTimeout(() => {
-      startVoiceRecognition();
-    }, 250);
+      startInlineVoiceListening();
+    }, 150);
   };
 
-  const closeLiveVoiceSession = () => {
-    setLiveVoiceOpen(false);
+  const handleSwitchBackToTextInput = () => {
+    setVoiceConversationAllowed(false);
     stopVoiceRecognition();
     stopSpeaking();
-    setVoiceThinking(false);
     setVoiceInterimTranscript('');
+    setVoiceError('');
   };
 
-  const handleSaveVoiceTranscriptToChat = () => {
-    if (voiceTurns.length === 0) return;
-    const importedMessages: Message[] = voiceTurns.map((turn) => ({
-      id: turn.id,
-      role: turn.role,
-      content: turn.text,
-      timestamp: turn.timestamp,
-      sources: [],
-    }));
-
-    if (activeChatId) {
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === activeChatId
-            ? {
-                ...c,
-                updatedAt: Date.now(),
-                messages: [...c.messages, ...importedMessages],
-              }
-            : c
-        )
-      );
-    } else {
-      const firstUser = voiceTurns.find((t) => t.role === 'user');
-      const newConv: Conversation = {
-        id: Math.random().toString(36).substring(2, 9),
-        title: firstUser
-          ? `Voice: ${firstUser.text.slice(0, 28)}...`
-          : 'Live Voice Conversation',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        messages: importedMessages,
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).slice(0, 10 - attachments.length);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setAttachments((prev) =>
+            prev.length >= 10
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    name: file.name,
+                    type: file.type || 'application/octet-stream',
+                    data: reader.result as string,
+                  },
+                ]
+          );
+        }
       };
-      setConversations((prev) => [newConv, ...prev]);
-      setActiveChatId(newConv.id);
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleQuestionSubmit = () => {
+    if ((!questionInput.trim() && attachments.length === 0) || isLoading) return;
+    const textToSend = questionInput;
+    const filesToSend = [...attachments];
+    setQuestionInput('');
+    setAttachments([]);
+    void handleSendMessage(textToSend, filesToSend);
+  };
+
+  const handleInstallApp = async () => {
+    setSidebarOpen(false);
+    const promptToUse = deferredInstallPrompt || earlyDeferredInstallPrompt;
+    if (promptToUse) {
+      await promptToUse.prompt();
+      await promptToUse.userChoice;
+      earlyDeferredInstallPrompt = null;
+      setDeferredInstallPrompt(null);
+      return;
     }
-    closeLiveVoiceSession();
+    setAccountNotice(
+      'To install JARVIS AI: open your browser menu and choose "Install app" or "Add to Home Screen".'
+    );
   };
 
   // ==========================================================================
-  // IMAGE STUDIO & SCREEN VISION HANDLERS
+  // IMAGE STUDIO, SCREEN VISION & WORKBENCH HANDLERS
   // ==========================================================================
 
   const handleGenerateStudioImage = async () => {
@@ -3647,7 +3731,7 @@ export default function App() {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         setAccountNotice(
-          'Screen sharing is unavailable in this mobile browser. Tap the paperclip icon to upload a screenshot for JARVIS Vision.'
+          'Screen sharing is unavailable in this mobile browser. Tap the paperclip icon to attach a screenshot for JARVIS Vision.'
         );
         return;
       }
@@ -3805,17 +3889,172 @@ export default function App() {
     );
   }, [professionSearch]);
 
+  // Top-Left Radial Wheel Nodes (Inspired by Image 1)
+  const radialNodes = useMemo(
+    () => [
+      {
+        id: 'voice',
+        label: 'Voice AI',
+        angleDeg: -90,
+        icon: Mic,
+        accent: 'text-cyan-300 border-cyan-400/70',
+        onClick: () => handleAllowVoiceConversation(),
+      },
+      {
+        id: 'specialists',
+        label: 'Specialists',
+        angleDeg: -45,
+        icon: Stethoscope,
+        accent: 'text-emerald-300 border-emerald-400/60',
+        onClick: () => setProfessionsModalOpen(true),
+      },
+      {
+        id: 'image',
+        label: 'Image Studio',
+        angleDeg: 0,
+        icon: Palette,
+        accent: 'text-fuchsia-300 border-fuchsia-400/60',
+        onClick: () => setImageStudioOpen(true),
+      },
+      {
+        id: 'news',
+        label: 'Live News',
+        angleDeg: 45,
+        icon: Newspaper,
+        accent: 'text-amber-300 border-amber-400/60',
+        onClick: () => setNewsModalOpen(true),
+      },
+      {
+        id: 'workbench',
+        label: 'Eng & Med',
+        angleDeg: 90,
+        icon: Calculator,
+        accent: 'text-sky-300 border-sky-400/60',
+        onClick: () => setWorkbenchOpen(true),
+      },
+      {
+        id: 'vision',
+        label: 'Screen Vision',
+        angleDeg: 135,
+        icon: Monitor,
+        accent: 'text-blue-300 border-blue-400/60',
+        onClick: () => void handleCaptureScreenVision(),
+      },
+      {
+        id: 'memory',
+        label: 'Memory',
+        angleDeg: 180,
+        icon: Brain,
+        accent: 'text-violet-300 border-violet-400/60',
+        onClick: () => setMemoryModalOpen(true),
+      },
+      {
+        id: 'tools',
+        label: 'Prompt Tools',
+        angleDeg: -135,
+        icon: Wrench,
+        accent: 'text-amber-200 border-amber-400/60',
+        onClick: () => setToolsModalOpen(true),
+      },
+    ],
+    []
+  );
+
+  // Right-Side JARVIS Feature Cards
+  const rightSideFeatures = useMemo(
+    () => [
+      {
+        id: 'voice-conv',
+        title: 'Two-Way Voice Conversation',
+        subtitle: voiceConversationAllowed ? 'Active • Waveform Ready' : 'Click to allow voice',
+        badge: voiceConversationAllowed ? 'LIVE' : 'VOICE',
+        active: voiceConversationAllowed,
+        icon: Mic,
+        onClick: () =>
+          voiceConversationAllowed
+            ? handleSwitchBackToTextInput()
+            : handleAllowVoiceConversation(),
+      },
+      {
+        id: 'specialists',
+        title: 'Specialist Matrix (16 Domains)',
+        subtitle: activeProfession.name,
+        badge: 'PRO',
+        active: activeProfession.id !== 'general',
+        icon: Briefcase,
+        onClick: () => setProfessionsModalOpen(true),
+      },
+      {
+        id: 'image-studio',
+        title: 'Neural Image Studio',
+        subtitle: `Free 8K art & schematics (${artGallery.length} saved)`,
+        badge: 'FREE',
+        active: false,
+        icon: ImageIcon,
+        onClick: () => setImageStudioOpen(true),
+      },
+      {
+        id: 'live-news',
+        title: 'Real-Time World News',
+        subtitle: 'Live Google headlines & briefings',
+        badge: 'LIVE',
+        active: false,
+        icon: Newspaper,
+        onClick: () => setNewsModalOpen(true),
+      },
+      {
+        id: 'workbench',
+        title: 'Engineering & Medical Lab',
+        subtitle: 'Scientific calc, Ohm’s law, BMI & labs',
+        badge: 'LAB',
+        active: false,
+        icon: Calculator,
+        onClick: () => setWorkbenchOpen(true),
+      },
+      {
+        id: 'screen-vision',
+        title: 'Live Screen Vision',
+        subtitle: 'Capture screen for instant AI analysis',
+        badge: 'SCAN',
+        active: false,
+        icon: Monitor,
+        onClick: () => void handleCaptureScreenVision(),
+      },
+      {
+        id: 'neural-memory',
+        title: 'Persistent Neural Memory',
+        subtitle: `${memories.length} personal facts stored`,
+        badge: 'MEM',
+        active: memories.length > 0,
+        icon: Brain,
+        onClick: () => setMemoryModalOpen(true),
+      },
+    ],
+    [
+      voiceConversationAllowed,
+      activeProfession,
+      artGallery.length,
+      memories.length,
+    ]
+  );
+
   const commandActions = useMemo(
     () => [
       {
         id: 'voice',
-        label: 'Start Live Two-Way Voice Conversation',
+        label: 'Allow Voice Conversation (Show Waveform Mic Sign)',
         shortcut: 'VOICE',
-        action: () => openLiveVoiceSession(),
+        action: () => handleAllowVoiceConversation(),
+      },
+      {
+        id: 'text',
+        label: 'Switch to Question Typing Box',
+        shortcut: 'TYPE',
+        action: () => handleSwitchBackToTextInput(),
       },
       {
         id: 'news',
-        label: 'Open Live World News & Real-Time Briefing Hub',
+        label: 'Open Live World News & Briefing Hub',
         shortcut: 'NEWS',
         action: () => setNewsModalOpen(true),
       },
@@ -3827,25 +4066,19 @@ export default function App() {
       },
       {
         id: 'image-studio',
-        label: 'Open JARVIS Free Neural Image Studio',
+        label: 'Open JARVIS Neural Image Studio',
         shortcut: 'ART',
         action: () => setImageStudioOpen(true),
       },
       {
         id: 'workbench',
-        label: 'Open Engineering & Medical Scientific Workbench',
+        label: 'Open Engineering & Medical Workbench',
         shortcut: 'CALC',
         action: () => setWorkbenchOpen(true),
       },
       {
-        id: 'screen-vision',
-        label: 'Capture Live Screen & Analyze with JARVIS Vision',
-        shortcut: 'VISION',
-        action: () => void handleCaptureScreenVision(),
-      },
-      {
         id: 'memory',
-        label: 'Manage JARVIS Persistent Neural Memory',
+        label: 'Manage JARVIS Neural Memory',
         shortcut: 'MEM',
         action: () => setMemoryModalOpen(true),
       },
@@ -3867,16 +4100,23 @@ export default function App() {
     );
   }, [commandActions, commandQuery]);
 
-  const isMedicalRole =
-    activeProfession.id === 'medical' || activeProfession.id === 'pharmacology';
-  const isEngineeringRole = activeProfession.id.endsWith('-eng');
-
   // ==========================================================================
-  // RENDER
+  // RENDER HUD WORKSPACE (IMAGE 2 LAYOUT + IMAGE 1 TOP-LEFT RADIAL HUB)
   // ==========================================================================
 
   return (
-    <div className="flex h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-[#060b13] text-slate-100 antialiased font-sans">
+    <div className="flex flex-col h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-[#020813] text-slate-100 antialiased font-sans relative select-none sm:select-auto">
+      {/* Holographic Ambient Radial Grid Background */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          background:
+            'radial-gradient(circle at 50% 44%, rgba(14, 165, 233, 0.16) 0%, rgba(3, 13, 30, 0.92) 52%, #02060f 100%)',
+        }}
+      />
+
+      {/* History Slide-Over Drawer */}
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -3895,92 +4135,490 @@ export default function App() {
         onShare={() => setShareModalOpen(true)}
       />
 
-      {/* MOBILE SIDE DRAWER: ONLY INSTALL BUTTON MOVED HERE */}
-      {isMobileView && sidebarOpen && (
-        <div className="fixed left-3 bottom-[118px] w-[256px] z-[60] pointer-events-auto">
+      {/* ======================================================================
+          TOP HUD BAR (WITH SIGN-IN OPTIONS & STATUS TELEMETRY)
+          ====================================================================== */}
+      <header className="relative z-20 px-3 sm:px-5 py-2 bg-[#040d1d]/90 backdrop-blur-md border-b border-cyan-500/30 flex items-center justify-between gap-2 shrink-0 shadow-[0_4px_24px_rgba(6,182,212,0.12)]">
+        {/* Left: History Menu + JARVIS Brand */}
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             type="button"
-            onClick={() => void handleInstallApp()}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500/25 to-blue-600/25 hover:from-cyan-500/35 hover:to-blue-600/35 border border-cyan-400/60 text-cyan-200 text-xs font-semibold shadow-[0_0_16px_rgba(34,211,238,0.25)] active:scale-95 transition"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            title="Chat History & Sessions"
+            className="w-9 h-9 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-500/40 flex items-center justify-center text-cyan-300 transition shrink-0"
           >
-            <Download className="w-4 h-4 text-cyan-300 shrink-0" />
-            <span>Install JARVIS App</span>
+            <Menu className="w-4 h-4" />
+          </button>
+
+          <ArcReactorLogo glow={true} size="sm" />
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm sm:text-base font-extrabold tracking-[0.18em] text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.65)]">
+                JARVIS
+              </span>
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-[10px] font-mono text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {aiConfigured ? 'CORE ONLINE' : 'NEURAL READY'}
+              </span>
+            </div>
+            <p className="text-[9px] font-mono tracking-[0.16em] text-cyan-400/75 uppercase truncate">
+              INTELLIGENCE FOR A BETTER YOU
+            </p>
+          </div>
+        </div>
+
+        {/* Center HUD Micro-Telemetry (Desktop) */}
+        <div className="hidden xl:flex items-center gap-4 text-[10px] font-mono tracking-[0.16em] text-cyan-300/75 uppercase">
+          <span>CONNECTED • ANYTIME ANYWHERE</span>
+          <span className="text-cyan-500/50">|</span>
+          <span className="flex items-center gap-1.5 text-cyan-200">
+            <Clock className="w-3 h-3 text-cyan-400" />
+            {liveClock.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}{' '}
+            {liveClock.toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        </div>
+
+        {/* Right: Model Selector, Voice Speaker & Sign-In Options in Top Bar */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <select
+            aria-label="Select JARVIS Model"
+            value={settings.selectedModel}
+            onChange={(e) =>
+              setSettings((prev) => ({
+                ...prev,
+                selectedModel: e.target.value as AIModelId,
+              }))
+            }
+            className="hidden md:block bg-[#07152b] border border-cyan-500/35 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-cyan-200 focus:outline-none focus:border-cyan-400"
+          >
+            <option value="jarvis-turbo">JARVIS Turbo</option>
+            <option value="jarvis-deep">JARVIS Deep Think</option>
+            <option value="jarvis-art">JARVIS Art Mode</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (settings.voiceEnabled) stopSpeaking();
+              setSettings((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }));
+            }}
+            title={settings.voiceEnabled ? 'Auto-Speak Replies: ON' : 'Auto-Speak Replies: OFF'}
+            className={`p-2 rounded-lg border text-xs transition ${
+              settings.voiceEnabled
+                ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                : 'bg-[#07152b] border-cyan-500/30 text-slate-400 hover:text-cyan-200'
+            }`}
+          >
+            {settings.voiceEnabled ? (
+              <Volume2 className="w-4 h-4 text-cyan-300" />
+            ) : (
+              <VolumeX className="w-4 h-4" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCommandPaletteOpen(true)}
+            title="Command Palette (Ctrl+P)"
+            className="hidden sm:flex items-center gap-1 px-2 py-1.5 rounded-lg bg-[#07152b] hover:bg-cyan-950/60 border border-cyan-500/30 text-[11px] font-mono text-cyan-300 transition"
+          >
+            <Command className="w-3.5 h-3.5" />
+          </button>
+
+          {/* SIGN-IN OPTIONS IN TOP BAR */}
+          {user.isGuest ? (
+            <button
+              type="button"
+              onClick={() => setAuthModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs shadow-[0_0_16px_rgba(34,211,238,0.45)] transition"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setAuthModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/50 text-cyan-200 text-xs font-medium transition max-w-[130px]"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="truncate">{user.name || 'Account'}</span>
+              </button>
+              {directSignInUrl && (
+                <button
+                  type="button"
+                  onClick={() => void handleCopyDirectSignInUrl()}
+                  title="Copy Direct Sign-In Link"
+                  className="hidden sm:flex p-1.5 rounded-lg bg-[#07152b] border border-cyan-500/35 text-cyan-300 hover:bg-cyan-950"
+                >
+                  <Link className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                title="Sign Out"
+                className="p-1.5 rounded-lg bg-[#07152b] border border-rose-500/40 text-rose-300 hover:bg-rose-950/50"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Mobile HUD Switcher Tabs (Only visible on < lg screens) */}
+      <div className="lg:hidden relative z-20 flex items-center justify-around bg-[#040d1d]/95 border-b border-cyan-500/25 px-2 py-1.5 text-[11px] font-mono shrink-0">
+        <button
+          type="button"
+          onClick={() => setMobileHudTab('left')}
+          className={`px-3 py-1 rounded-lg transition ${
+            mobileHudTab === 'left'
+              ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50'
+              : 'text-slate-400'
+          }`}
+        >
+          Radial Hub & Status
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileHudTab('center')}
+          className={`px-3 py-1 rounded-lg transition ${
+            mobileHudTab === 'center'
+              ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50'
+              : 'text-slate-400'
+          }`}
+        >
+          JARVIS Core
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileHudTab('right')}
+          className={`px-3 py-1 rounded-lg transition ${
+            mobileHudTab === 'right'
+              ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50'
+              : 'text-slate-400'
+          }`}
+        >
+          JARVIS Features
+        </button>
+      </div>
+
+      {/* Notices */}
+      {!isOnline && (
+        <div className="relative z-20 bg-amber-500/20 border-b border-amber-500/30 px-4 py-1 text-xs text-amber-200 flex items-center gap-2 shrink-0">
+          <WifiOff className="w-3.5 h-3.5 shrink-0" />
+          <span>Offline: AI responses require an active internet connection.</span>
+        </div>
+      )}
+
+      {accountNotice && (
+        <div className="relative z-20 bg-[#07152b] border-b border-cyan-500/40 px-4 py-1.5 text-xs text-cyan-200 flex items-center justify-between gap-2 shrink-0">
+          <span>{accountNotice}</span>
+          <button
+            type="button"
+            onClick={() => setAccountNotice('')}
+            className="text-cyan-400 hover:text-white font-semibold shrink-0"
+          >
+            Dismiss
           </button>
         </div>
       )}
 
-      {isMobileView ? (
-        /* ====================================================================
-           CLEAN MOBILE BROWSER VIEW
-           ==================================================================== */
-        <div className="flex-1 flex flex-col h-[100dvh] w-full max-w-full overflow-hidden relative bg-[#060b13]">
-          <header className="px-3.5 py-2.5 bg-[#08101d]/95 border-b border-cyan-500/25 flex items-center justify-between gap-2 shrink-0 z-10">
-            <div className="flex items-center gap-2.5 min-w-0">
+      {activeProfession.disclaimer && (
+        <div className="relative z-20 bg-emerald-950/60 border-b border-emerald-500/30 px-4 py-1 flex items-center justify-between text-[11px] text-emerald-200 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <ShieldAlert className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">{activeProfession.disclaimer}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveProfessionId('general')}
+            className="text-emerald-300 hover:text-white underline ml-2 shrink-0"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+
+      {/* ======================================================================
+          MAIN 3-COLUMN FUTURISTIC HUD BODY (IMAGE 2 LAYOUT)
+          ====================================================================== */}
+      <main className="relative z-10 flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[290px_minmax(0,1fr)_290px] xl:grid-cols-[315px_minmax(0,1fr)_315px] gap-3 p-2.5 sm:p-4 overflow-hidden">
+        {/* ====================================================================
+            LEFT HUD COLUMN: IMAGE 1 RADIAL WHEEL + CALENDAR + SYSTEM STATUS
+            ==================================================================== */}
+        <aside
+          className={`${
+            mobileHudTab === 'left' ? 'flex' : 'hidden'
+          } lg:flex flex-col gap-3 min-h-0 overflow-y-auto pr-0.5`}
+        >
+          {/* TOP-LEFT CARD: IMAGE 1 INTERACTIVE JARVIS RADIAL CORE WHEEL */}
+          <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3 shadow-[0_0_25px_rgba(6,182,212,0.14)] relative overflow-hidden shrink-0">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-mono tracking-[0.16em] text-cyan-300 uppercase">
+                JARVIS COMMAND WHEEL
+              </span>
+              <span className="text-[9px] font-mono text-amber-300/90">
+                8 MODULES
+              </span>
+            </div>
+
+            {/* Radial Circular Wheel (Inspired by Image 1) */}
+            <div className="relative w-[236px] h-[236px] mx-auto my-1 flex items-center justify-center">
+              {/* Outer Glowing Cyan & Gold Ring */}
+              <div className="absolute inset-1 rounded-full border-2 border-cyan-400/45 shadow-[0_0_25px_rgba(34,211,238,0.28),inset_0_0_20px_rgba(34,211,238,0.18)]" />
+              <div className="absolute inset-5 rounded-full border border-amber-400/35 border-dashed" />
+              <div className="absolute inset-12 rounded-full border border-cyan-400/40" />
+
+              {/* Center JARVIS Core Button */}
               <button
                 type="button"
-                onClick={() => setSidebarOpen(true)}
-                aria-label="Open side drawer"
-                className="w-9 h-9 rounded-xl bg-slate-900 border border-cyan-500/40 flex items-center justify-center text-cyan-300 active:scale-95 transition shrink-0"
+                onClick={() => handleNewChat()}
+                className="relative z-10 w-[76px] h-[76px] rounded-full bg-gradient-to-b from-[#071e3d] to-[#030d1f] border-2 border-cyan-400 shadow-[0_0_25px_rgba(34,211,238,0.65)] flex flex-col items-center justify-center text-center hover:scale-105 transition"
               >
-                <Menu className="w-5 h-5" />
+                <span className="text-[11px] font-extrabold tracking-[0.14em] text-cyan-200">
+                  JARVIS
+                </span>
+                <span className="text-[8px] font-mono text-cyan-400 mt-0.5">
+                  CORE
+                </span>
               </button>
 
-              <ArcReactorLogo glow={true} size="sm" />
+              {/* 8 Radial Feature Wedges Around the Ring */}
+              {radialNodes.map((node) => {
+                const IconComponent = node.icon;
+                const rad = (node.angleDeg * Math.PI) / 180;
+                const radiusPx = 88;
+                const x = Math.cos(rad) * radiusPx;
+                const y = Math.sin(rad) * radiusPx;
 
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-extrabold tracking-wide text-white truncate">
-                    JARVIS AI
-                  </span>
-                  <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider rounded border border-cyan-400/50 bg-cyan-500/15 text-cyan-300">
-                    PRO
-                  </span>
+                return (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={node.onClick}
+                    title={node.label}
+                    style={{
+                      transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`,
+                    }}
+                    className={`absolute z-10 w-[54px] h-[54px] rounded-2xl bg-[#061830]/95 hover:bg-cyan-500/25 border ${node.accent} shadow-[0_0_12px_rgba(6,182,212,0.25)] flex flex-col items-center justify-center gap-0.5 px-1 transition hover:scale-110`}
+                  >
+                    <IconComponent className="w-3.5 h-3.5 shrink-0" />
+                    <span className="text-[8px] font-medium leading-tight text-slate-100 text-center line-clamp-1">
+                      {node.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* MIDDLE-LEFT CARD: CALENDAR (IMAGE 2 TOP-LEFT) */}
+          <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3 shadow-[0_0_20px_rgba(6,182,212,0.1)] shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-cyan-200 text-xs font-semibold">
+                <CalendarIcon className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Calendar</span>
+              </div>
+              <span className="text-[11px] font-mono text-cyan-300">
+                {calendarData.monthLabel}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-mono text-slate-400 mb-1">
+              <span>Su</span>
+              <span>Mo</span>
+              <span>Tu</span>
+              <span>We</span>
+              <span>Th</span>
+              <span>Fr</span>
+              <span>Sa</span>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-mono">
+              {calendarData.cells.map((cell, idx) => (
+                <div
+                  key={idx}
+                  className={`h-5 flex items-center justify-center rounded-full ${
+                    cell.isToday
+                      ? 'bg-cyan-400 text-slate-950 font-bold shadow-[0_0_10px_rgba(34,211,238,0.85)]'
+                      : cell.day
+                        ? 'text-slate-300'
+                        : ''
+                  }`}
+                >
+                  {cell.day || ''}
                 </div>
-                <p className="text-[10px] text-slate-400 leading-none mt-0.5 truncate">
-                  AI workspace
-                </p>
+              ))}
+            </div>
+          </section>
+
+          {/* BOTTOM-LEFT CARD: SYSTEM STATUS GAUGES (IMAGE 2 BOTTOM-LEFT) */}
+          <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3 shadow-[0_0_20px_rgba(6,182,212,0.1)] shrink-0">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-[0.14em] text-cyan-300 uppercase">
+                <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                <span>SYSTEM STATUS</span>
+              </div>
+              <span className="text-[9px] font-mono text-slate-400">v2.6</span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1.5 text-center">
+              {[
+                { label: 'CPU', pct: 82, color: '#22d3ee' },
+                { label: 'MEMORY', pct: 74, color: '#38bdf8' },
+                { label: 'STORAGE', pct: 56, color: '#34d399' },
+                { label: 'AI CORE', pct: 96, color: '#a855f7' },
+              ].map((gauge) => {
+                const r = 16;
+                const circ = 2 * Math.PI * r;
+                const offset = circ - (gauge.pct / 100) * circ;
+                return (
+                  <div key={gauge.label} className="flex flex-col items-center">
+                    <div className="relative w-11 h-11 flex items-center justify-center">
+                      <svg className="w-11 h-11 -rotate-90" viewBox="0 0 40 40">
+                        <circle
+                          cx="20"
+                          cy="20"
+                          r={r}
+                          fill="none"
+                          stroke="rgba(30,41,59,0.85)"
+                          strokeWidth="3.5"
+                        />
+                        <circle
+                          cx="20"
+                          cy="20"
+                          r={r}
+                          fill="none"
+                          stroke={gauge.color}
+                          strokeWidth="3.5"
+                          strokeDasharray={circ}
+                          strokeDashoffset={offset}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <span className="absolute text-[9px] font-mono font-bold text-slate-100">
+                        {gauge.pct}%
+                      </span>
+                    </div>
+                    <span className="text-[8px] font-mono text-slate-400 mt-1">
+                      {gauge.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-2.5 pt-2 border-t border-cyan-500/20 flex items-center justify-between text-[10px] font-mono">
+              <span className="flex items-center gap-1.5 text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                All Systems Operational
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleInstallApp()}
+                className="text-cyan-300 hover:underline flex items-center gap-1"
+              >
+                <Download className="w-3 h-3" />
+                <span>Install</span>
+              </button>
+            </div>
+          </section>
+        </aside>
+
+        {/* ====================================================================
+            CENTER HUD STAGE: GLOWING JARVIS RING / CHAT + BOTTOM QUESTION/VOICE BAR
+            ==================================================================== */}
+        <section
+          className={`${
+            mobileHudTab === 'center' ? 'flex' : 'hidden'
+          } lg:flex flex-col min-h-0 rounded-2xl bg-[#030c1b]/75 backdrop-blur-sm border border-cyan-500/30 relative overflow-hidden shadow-[0_0_40px_rgba(6,182,212,0.12)]`}
+        >
+          {/* Subtle HUD Corner Brackets */}
+          <div className="pointer-events-none absolute top-2 left-2 w-5 h-5 border-t-2 border-l-2 border-cyan-400/70 rounded-tl-md" />
+          <div className="pointer-events-none absolute top-2 right-2 w-5 h-5 border-t-2 border-r-2 border-cyan-400/70 rounded-tr-md" />
+
+          {/* Active Chat Top Strip (When in a conversation) */}
+          {!isWelcomeScreen && (
+            <div className="px-4 py-2 bg-[#051226]/90 border-b border-cyan-500/25 flex items-center justify-between gap-2 shrink-0 z-10">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+                <span className="text-xs font-semibold text-cyan-200 truncate">
+                  {activeConversation.title}
+                </span>
+                <span className="hidden sm:inline-block text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-400/35 text-cyan-300 shrink-0">
+                  {activeProfession.shortName}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-[11px] text-cyan-200 transition"
+                >
+                  <Home className="w-3 h-3" />
+                  <span>Core HUD</span>
+                </button>
               </div>
             </div>
-          </header>
-
-          {!isOnline && (
-            <div className="bg-amber-500/20 border-b border-amber-500/30 px-3.5 py-1.5 text-[11px] text-amber-200 flex items-center gap-1.5 shrink-0">
-              <WifiOff className="w-3.5 h-3.5 shrink-0" />
-              <span>Offline: AI replies require an internet connection.</span>
-            </div>
           )}
 
-          {accountNotice && (
-            <div className="bg-slate-900 border-b border-cyan-500/35 px-3.5 py-2 text-xs text-cyan-100 flex items-center justify-between gap-2 shrink-0">
-              <span className="leading-snug">{accountNotice}</span>
-              <button
-                type="button"
-                onClick={() => setAccountNotice('')}
-                className="text-cyan-400 font-semibold shrink-0"
-              >
-                OK
-              </button>
-            </div>
-          )}
-
-          <div
-            ref={chatScrollContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col"
-            style={
-              isWelcomeScreen
-                ? {
-                    backgroundImage:
-                      "linear-gradient(rgba(6, 11, 19, 0.38), rgba(6, 11, 19, 0.72)), url('./jarvis-welcome-bg.png')",
-                    backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat',
-                    backgroundSize: 'cover',
-                  }
-                : undefined
-            }
-          >
+          {/* Center Viewport: Either Image 2 Glowing JARVIS Holographic Core OR Conversation Messages */}
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
             {isWelcomeScreen ? (
-              <WelcomeHero onSelectPrompt={handleSelectPrompt} />
+              <div className="flex-1 flex flex-col items-center justify-center p-4 text-center relative">
+                {/* Luminous Circular Holographic Ring (Image 2 Centerpiece) */}
+                <div className="relative w-60 h-60 sm:w-72 sm:h-72 flex items-center justify-center my-auto">
+                  {/* Outer Pulsing Cyan Halo */}
+                  <div className="absolute inset-0 rounded-full border-2 border-cyan-400/40 shadow-[0_0_70px_rgba(34,211,238,0.32),inset_0_0_45px_rgba(34,211,238,0.22)] animate-pulse" />
+                  {/* Segmented Tech Ring */}
+                  <div className="absolute inset-3 rounded-full border-[3px] border-dashed border-cyan-300/55" />
+                  {/* Inner Bright Core Ring */}
+                  <div className="absolute inset-7 rounded-full border-2 border-sky-400/75 bg-gradient-to-b from-cyan-500/15 via-blue-600/10 to-slate-950/80 shadow-[inset_0_0_35px_rgba(56,189,248,0.35)]" />
+
+                  {/* Central JARVIS Typography */}
+                  <div className="relative z-10 px-4">
+                    <h1 className="text-3xl sm:text-4xl font-black tracking-[0.22em] text-white drop-shadow-[0_0_18px_rgba(34,211,238,0.9)]">
+                      JARVIS
+                    </h1>
+                    <p className="text-xs sm:text-sm font-medium text-cyan-200/95 mt-1.5 tracking-wide">
+                      Your Personal AI Assistant
+                    </p>
+                    <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-[10px] font-mono text-cyan-300">
+                      <span>{activeProfession.shortName}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Starter Chips */}
+                <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mt-2">
+                  {[
+                    "Today's Top News",
+                    'Full form of DHA',
+                    'Solve 2x + 5 = 19',
+                    'Create futuristic car image',
+                  ].map((sample) => (
+                    <button
+                      key={sample}
+                      type="button"
+                      onClick={() => void handleSendMessage(sample, [])}
+                      className="px-3 py-1.5 rounded-full bg-[#06162d]/90 hover:bg-cyan-500/20 border border-cyan-500/35 text-[11px] text-cyan-200 transition"
+                    >
+                      {sample}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : (
               <div className="flex-1 py-3 space-y-1 w-full max-w-full overflow-x-hidden">
                 {activeConversation.messages.map((msg) => (
@@ -3993,390 +4631,413 @@ export default function App() {
                 ))}
 
                 {isLoading && (
-                  <div className="py-3 px-4 bg-slate-900/50 border-y border-cyan-500/20">
-                    <div className="flex gap-3 items-center">
+                  <div className="py-3 px-5 bg-cyan-950/25 border-y border-cyan-500/20">
+                    <div className="max-w-3xl mx-auto flex gap-3 items-center">
                       <ArcReactorLogo glow={true} size="sm" />
-                      <div className="flex items-center gap-2 text-xs text-cyan-300">
+                      <div className="flex items-center gap-2 text-xs text-cyan-300 font-mono">
                         <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
-                        <span className="font-mono">JARVIS is thinking...</span>
+                        <span>JARVIS is processing...</span>
                       </div>
                     </div>
                   </div>
                 )}
+
                 <div ref={messagesEndRef} className="h-3" />
               </div>
             )}
           </div>
 
-          <div className="px-3 py-2.5 bg-[#060b13] border-t border-slate-800/80 shrink-0 jarvis-mobile-safe-bottom">
-            <div className="rounded-2xl bg-[#081326] border border-cyan-500/45 p-2.5 space-y-2">
-              {mobileAttachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {mobileAttachments.map((att, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-[10px] text-cyan-200"
+          {/* ==================================================================
+              BOTTOM-CENTER CAPSULE:
+              - DEFAULT: WRITE YOUR QUESTIONS BOX
+              - WHEN VOICE CONVERSATION IS ALLOWED: GLOWING WAVEFORM + MIC SIGN
+              ================================================================== */}
+          <div className="px-3 sm:px-6 pb-3 pt-2 bg-gradient-to-t from-[#020813] via-[#030c1b]/95 to-transparent shrink-0 z-10 jarvis-mobile-safe-bottom">
+            {voiceConversationAllowed ? (
+              /* MODE B: VOICE CONVERSATION ALLOWED -> GLOWING WAVEFORM + MIC SIGN (IMAGE 2) */
+              <div className="max-w-xl mx-auto flex flex-col items-center gap-2">
+                <div className="w-full rounded-full bg-[#05142b]/95 border border-cyan-400/70 shadow-[0_0_30px_rgba(34,211,238,0.3)] px-4 py-2 flex items-center justify-between gap-3">
+                  {/* Switch Back to Writing Questions Button */}
+                  <button
+                    type="button"
+                    onClick={handleSwitchBackToTextInput}
+                    title="Switch back to writing questions"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-cyan-500/40 text-[11px] text-cyan-200 shrink-0 transition"
+                  >
+                    <Keyboard className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="hidden sm:inline">Write</span>
+                  </button>
+
+                  {/* Left Animated Cyan Audio Waveform Bars */}
+                  <div className="flex-1 flex items-center justify-end gap-1 h-8 overflow-hidden">
+                    {[14, 24, 18, 30, 22, 12, 26, 16, 28, 20].map((barH, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          height:
+                            voiceListening || voiceSpeaking
+                              ? `${barH}px`
+                              : '6px',
+                          animationDelay: `${idx * 90}ms`,
+                        }}
+                        className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
+                          voiceListening || voiceSpeaking ? 'animate-pulse' : 'opacity-45'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Central Glowing Microphone Sign (Exact Image 2 Style) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (voiceListening) {
+                        stopVoiceRecognition();
+                      } else {
+                        startInlineVoiceListening();
+                      }
+                    }}
+                    title={voiceListening ? 'Stop listening' : 'Tap to speak'}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition shrink-0 ${
+                      voiceListening
+                        ? 'bg-cyan-400 border-white text-slate-950 shadow-[0_0_28px_rgba(34,211,238,0.95)] scale-105'
+                        : voiceSpeaking
+                          ? 'bg-blue-500 border-cyan-200 text-white shadow-[0_0_28px_rgba(59,130,246,0.9)]'
+                          : 'bg-[#071d3b] border-cyan-400 text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.55)] hover:bg-cyan-500/25'
+                    }`}
+                  >
+                    {voiceListening ? (
+                      <Mic className="w-5 h-5 animate-bounce" />
+                    ) : (
+                      <MicOff className="w-5 h-5" />
+                    )}
+                  </button>
+
+                  {/* Right Animated Cyan Audio Waveform Bars */}
+                  <div className="flex-1 flex items-center justify-start gap-1 h-8 overflow-hidden">
+                    {[20, 28, 16, 26, 12, 22, 30, 18, 24, 14].map((barH, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          height:
+                            voiceListening || voiceSpeaking
+                              ? `${barH}px`
+                              : '6px',
+                          animationDelay: `${idx * 90}ms`,
+                        }}
+                        className={`w-1 rounded-full bg-cyan-400 transition-all duration-300 ${
+                          voiceListening || voiceSpeaking ? 'animate-pulse' : 'opacity-45'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Language Selector */}
+                  <select
+                    aria-label="Voice language"
+                    value={voiceLang}
+                    onChange={(e) => setVoiceLang(e.target.value)}
+                    className="bg-slate-900/90 border border-cyan-500/35 rounded-full px-2 py-1 text-[10px] font-mono text-cyan-200 shrink-0"
+                  >
+                    <option value="en-US">EN</option>
+                    <option value="ur-PK">UR</option>
+                    <option value="hi-IN">HI</option>
+                    <option value="ar-SA">AR</option>
+                  </select>
+                </div>
+
+                {/* Live Voice Status Caption */}
+                <div className="flex items-center justify-center gap-3 text-[11px] font-mono text-cyan-300/90 text-center">
+                  <span>
+                    {voiceInterimTranscript
+                      ? `"${voiceInterimTranscript}"`
+                      : voiceListening
+                        ? 'Listening... Speak your question to JARVIS'
+                        : voiceSpeaking
+                          ? 'JARVIS is speaking...'
+                          : 'Voice Conversation Active • Tap mic to speak'}
+                  </span>
+                  <label className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={voiceAutoLoop}
+                      onChange={(e) => setVoiceAutoLoop(e.target.checked)}
+                      className="accent-cyan-400"
+                    />
+                    <span>Auto-loop</span>
+                  </label>
+                </div>
+                {voiceError && (
+                  <p className="text-[11px] text-amber-300">{voiceError}</p>
+                )}
+              </div>
+            ) : (
+              /* MODE A: DEFAULT QUESTION WRITING CAPSULE */
+              <div className="max-w-2xl mx-auto">
+                <div className="rounded-2xl bg-[#05142b]/95 border border-cyan-500/55 shadow-[0_0_25px_rgba(6,182,212,0.2)] p-2.5 space-y-2">
+                  {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 px-1">
+                      {attachments.map((att, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-[10px] text-cyan-200"
+                        >
+                          <span className="truncate max-w-[120px]">{att.name}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAttachments((prev) => prev.filter((_, idx) => idx !== i))
+                            }
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 px-1">
+                    <input
+                      type="text"
+                      value={questionInput}
+                      onChange={(e) => setQuestionInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleQuestionSubmit();
+                        }
+                      }}
+                      placeholder="Write your question to JARVIS..."
+                      className="flex-1 bg-transparent text-sm text-white placeholder-cyan-200/45 focus:outline-none min-w-0"
+                    />
+
+                    {/* Allow Voice Conversation Button (Brings back the Voice Waveform Sign) */}
+                    <button
+                      type="button"
+                      onClick={handleAllowVoiceConversation}
+                      title="Allow Voice Conversation"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/50 text-cyan-200 text-xs font-medium transition shrink-0"
                     >
-                      <span className="truncate max-w-[110px]">{att.name}</span>
+                      <Mic className="w-3.5 h-3.5 text-cyan-300" />
+                      <span className="hidden sm:inline">Voice</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleQuestionSubmit}
+                      disabled={
+                        isLoading ||
+                        (!questionInput.trim() && attachments.length === 0)
+                      }
+                      aria-label="Send question"
+                      className="w-9 h-9 rounded-full bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 flex items-center justify-center shadow-[0_0_14px_rgba(34,211,238,0.6)] transition shrink-0"
+                    >
+                      <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  {/* Compact Bottom Controls Row */}
+                  <div className="flex items-center justify-between gap-2 px-1 pt-0.5 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1 text-slate-300 hover:text-cyan-300 transition"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                        <span>Attach</span>
+                      </button>
+
+                      <span className="text-slate-700">|</span>
+
                       <button
                         type="button"
                         onClick={() =>
-                          setMobileAttachments((prev) =>
-                            prev.filter((_, idx) => idx !== i)
-                          )
+                          setSettings((prev) => ({
+                            ...prev,
+                            webSearchEnabled: !prev.webSearchEnabled,
+                          }))
                         }
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition ${
+                          settings.webSearchEnabled
+                            ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                            : 'bg-slate-900/80 border-slate-700 text-slate-300'
+                        }`}
                       >
-                        <X className="w-3 h-3" />
+                        <Globe className="w-3 h-3 text-cyan-400" />
+                        <span>Web</span>
                       </button>
-                    </span>
-                  ))}
-                </div>
-              )}
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={mobileInput}
-                  onChange={(e) => setMobileInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleMobileSubmit();
-                    }
-                  }}
-                  placeholder="Ask JARVIS anything..."
-                  className="flex-1 bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none min-w-0"
-                />
-
-                <button
-                  type="button"
-                  onClick={handleMobileSubmit}
-                  disabled={
-                    isLoading ||
-                    (!mobileInput.trim() && mobileAttachments.length === 0)
-                  }
-                  aria-label="Send message"
-                  className="w-9 h-9 rounded-full bg-cyan-500 disabled:opacity-45 text-slate-950 flex items-center justify-center active:scale-95 transition shrink-0"
-                >
-                  <ArrowUp className="w-4 h-4 stroke-[2.5]" />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 pt-0.5">
-                <input
-                  ref={mobileFileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handleMobileFileSelect}
-                />
-                <button
-                  type="button"
-                  onClick={() => mobileFileInputRef.current?.click()}
-                  aria-label="Attach files"
-                  className="p-1 rounded-lg text-slate-300 hover:text-cyan-300"
-                >
-                  <Paperclip className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleMobileMicDictate}
-                  aria-label="Voice dictation"
-                  className={`p-1 rounded-lg ${
-                    mobileDictating
-                      ? 'text-rose-400 animate-pulse'
-                      : 'text-slate-300 hover:text-cyan-300'
-                  }`}
-                >
-                  <Mic className="w-4 h-4" />
-                </button>
-
-                <div className="h-3.5 w-px bg-slate-700" />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      webSearchEnabled: !prev.webSearchEnabled,
-                    }))
-                  }
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition ${
-                    settings.webSearchEnabled
-                      ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
-                      : 'bg-slate-900 border-slate-700 text-slate-300'
-                  }`}
-                >
-                  <Globe className="w-3 h-3 text-cyan-400" />
-                  <span>Web</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      dualEngineEnabled: !prev.dualEngineEnabled,
-                    }))
-                  }
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition truncate ${
-                    settings.dualEngineEnabled
-                      ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
-                      : 'bg-slate-900 border-slate-700 text-slate-300'
-                  }`}
-                >
-                  <Cpu className="w-3 h-3 text-cyan-400 shrink-0" />
-                  <span className="truncate">Dual Engine</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* ====================================================================
-           DESKTOP / LAPTOP WORKSPACE
-           ==================================================================== */
-        <div className="flex-1 flex flex-col h-[100dvh] min-w-0 max-w-full overflow-hidden relative bg-[#060b13]">
-          <Header
-            onToggleSidebar={() => setSidebarOpen((open) => !open)}
-            isSidebarOpen={sidebarOpen}
-            selectedModel={settings.selectedModel}
-            onSelectModel={(model: AIModelId) =>
-              setSettings((prev) => ({ ...prev, selectedModel: model }))
-            }
-            voiceEnabled={settings.voiceEnabled}
-            onToggleVoice={() => {
-              if (settings.voiceEnabled) stopSpeaking();
-              setSettings((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }));
-            }}
-            user={user}
-            onOpenAuth={() => setAuthModalOpen(true)}
-            isOnline={isOnline}
-            aiConfigured={aiConfigured}
-            onOpenTools={() => setToolsModalOpen(true)}
-            onExport={() => setExportModalOpen(true)}
-            hasMessages={(activeConversation?.messages?.length || 0) > 0}
-          />
-
-          <div className="flex bg-[#08101d]/95 border-b border-cyan-500/20 px-4 py-1.5 items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={openLiveVoiceSession}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-400/40 text-cyan-200 text-xs font-medium transition shadow-sm"
-              >
-                <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                <span>Live Voice</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setNewsModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              >
-                <Newspaper className="w-3.5 h-3.5 text-amber-400" />
-                <span>Today's News</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setProfessionsModalOpen(true)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition ${activeProfession.badgeColor}`}
-              >
-                {isMedicalRole ? (
-                  <Stethoscope className="w-3.5 h-3.5" />
-                ) : isEngineeringRole ? (
-                  <Cpu className="w-3.5 h-3.5" />
-                ) : (
-                  <Briefcase className="w-3.5 h-3.5" />
-                )}
-                <span>{activeProfession.shortName}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setImageStudioOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              >
-                <ImageIcon className="w-3.5 h-3.5 text-fuchsia-400" />
-                <span>Image Studio</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWorkbenchOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              >
-                <Calculator className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Eng & Med Lab</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleCaptureScreenVision()}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              >
-                <Monitor className="w-3.5 h-3.5 text-sky-400" />
-                <span>Screen Vision</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMemoryModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs transition"
-              >
-                <Brain className="w-3.5 h-3.5 text-violet-400" />
-                <span>Memory ({memories.length})</span>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
-              <span className="hidden xl:flex items-center gap-1 text-cyan-300/80">
-                <Clock className="w-3 h-3" />
-                {liveClock.toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}{' '}
-                {liveClock.toLocaleTimeString('en-US', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </span>
-              <button
-                type="button"
-                onClick={() => setCommandPaletteOpen(true)}
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
-              >
-                <Command className="w-3 h-3 text-cyan-400" />
-                <span>Ctrl+P</span>
-              </button>
-            </div>
-          </div>
-
-          {activeProfession.disclaimer && (
-            <div className="bg-emerald-950/50 border-b border-emerald-500/25 px-4 py-1 flex items-center justify-between text-[11px] text-emerald-200/90 shrink-0">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <ShieldAlert className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>{activeProfession.disclaimer}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProfessionId('general')}
-                className="text-emerald-300 hover:text-white underline ml-2 shrink-0"
-              >
-                Reset
-              </button>
-            </div>
-          )}
-
-          {!isOnline && (
-            <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-300 shrink-0">
-              <div className="flex items-center gap-2">
-                <WifiOff className="w-4 h-4 shrink-0" />
-                <span>Offline: AI replies require an internet connection.</span>
-              </div>
-            </div>
-          )}
-
-          {accountNotice && (
-            <div
-              role="status"
-              className="bg-slate-900 border-b border-slate-700 px-4 py-2 flex items-center justify-between gap-3 text-xs text-slate-300 shrink-0"
-            >
-              <span>{accountNotice}</span>
-              <button
-                type="button"
-                onClick={() => setAccountNotice('')}
-                className="text-slate-400 hover:text-white shrink-0"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {!user.isGuest && (
-            <div className="bg-cyan-950/80 border-b border-cyan-500/30 px-4 py-1.5 flex items-center justify-between gap-2 text-xs text-cyan-300 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <Link className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <p className="truncate">
-                  Signed in: conversations are saved to your account.
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div
-            ref={chatScrollContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col relative"
-            style={
-              isWelcomeScreen
-                ? {
-                    backgroundImage:
-                      "linear-gradient(rgba(6, 11, 19, 0.28), rgba(6, 11, 19, 0.55)), url('./jarvis-welcome-bg.png')",
-                    backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat',
-                    backgroundSize: 'cover',
-                  }
-                : undefined
-            }
-          >
-            {isWelcomeScreen ? (
-              <WelcomeHero onSelectPrompt={handleSelectPrompt} />
-            ) : (
-              <div className="flex-1 py-4 space-y-1 w-full max-w-full overflow-x-hidden">
-                {activeConversation.messages.map((msg) => (
-                  <MessageItem
-                    key={msg.id}
-                    message={msg}
-                    onSpeak={handleToggleSpeakMessage}
-                    isSpeaking={speakingMessageId === msg.id}
-                  />
-                ))}
-
-                {isLoading && (
-                  <div className="py-4 px-6 bg-slate-900/30 border-y border-slate-800/40">
-                    <div className="max-w-4xl mx-auto flex gap-4 items-center">
-                      <ArcReactorLogo glow={true} size="sm" />
-                      <div className="flex items-center gap-2 text-sm text-cyan-300">
-                        <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
-                        <span className="font-mono">JARVIS is thinking...</span>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            dualEngineEnabled: !prev.dualEngineEnabled,
+                          }))
+                        }
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition ${
+                          settings.dualEngineEnabled
+                            ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                            : 'bg-slate-900/80 border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        <Cpu className="w-3 h-3 text-cyan-400" />
+                        <span>Dual Engine</span>
+                      </button>
                     </div>
-                  </div>
-                )}
 
-                <div ref={messagesEndRef} className="h-4" />
+                    <span className="hidden sm:inline text-[10px] font-mono text-cyan-400/70">
+                      Speak. Plan. Create. Achieve.
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
+        </section>
 
-          <div className="shrink-0 w-full max-w-full bg-[#060b13]">
-            <PromptBar
-              onSendMessage={handleSendMessage}
-              isLoading={isLoading}
-              webSearchEnabled={Boolean(settings.webSearchEnabled)}
-              onToggleWebSearch={() =>
-                setSettings((prev) => ({
-                  ...prev,
-                  webSearchEnabled: !prev.webSearchEnabled,
-                }))
-              }
-              dualEngineEnabled={Boolean(settings.dualEngineEnabled)}
-              onToggleDualEngine={() =>
-                setSettings((prev) => ({
-                  ...prev,
-                  dualEngineEnabled: !prev.dualEngineEnabled,
-                }))
-              }
-              showScrollBottom={showScrollBottom}
-              onScrollToBottom={scrollToBottom}
-            />
-          </div>
-        </div>
-      )}
+        {/* ====================================================================
+            RIGHT HUD COLUMN: JARVIS FEATURES PANEL + RECENT SESSIONS (IMAGE 2)
+            ==================================================================== */}
+        <aside
+          className={`${
+            mobileHudTab === 'right' ? 'flex' : 'hidden'
+          } lg:flex flex-col gap-3 min-h-0 overflow-y-auto pl-0.5`}
+        >
+          {/* TOP-RIGHT CARD: JARVIS FEATURES LIST */}
+          <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3.5 shadow-[0_0_25px_rgba(6,182,212,0.14)] flex-1 flex flex-col min-h-0">
+            <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-cyan-500/25 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-cyan-400" />
+                <h2 className="text-xs font-bold tracking-wide text-cyan-200 uppercase">
+                  JARVIS Features
+                </h2>
+              </div>
+              <span className="text-[10px] font-mono text-cyan-300/80">
+                All Active
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+              {rightSideFeatures.map((feat) => {
+                const IconComp = feat.icon;
+                return (
+                  <button
+                    key={feat.id}
+                    type="button"
+                    onClick={feat.onClick}
+                    className={`w-full flex items-center justify-between gap-2.5 p-2.5 rounded-xl border text-left transition group ${
+                      feat.active
+                        ? 'bg-cyan-500/20 border-cyan-400/60 shadow-[0_0_12px_rgba(34,211,238,0.2)]'
+                        : 'bg-[#06162d]/85 hover:bg-cyan-950/60 border-cyan-500/20 hover:border-cyan-400/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-400/35 flex items-center justify-center text-cyan-300 shrink-0">
+                        <IconComp className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-100 group-hover:text-cyan-200 truncate">
+                          {feat.title}
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {feat.subtitle}
+                        </div>
+                      </div>
+                    </div>
+
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/15 border border-cyan-400/35 text-cyan-300 shrink-0">
+                      {feat.badge}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* BOTTOM-RIGHT CARD: RECENT SESSIONS & QUICK ACTIONS (IMAGE 2) */}
+          <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3.5 shadow-[0_0_25px_rgba(6,182,212,0.14)] shrink-0">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-cyan-500/25">
+              <span className="text-xs font-bold tracking-wide text-cyan-200 uppercase">
+                Sessions & Quick Tasks
+              </span>
+              <button
+                type="button"
+                onClick={handleNewChat}
+                className="flex items-center gap-1 text-[10px] font-mono text-cyan-300 hover:text-white"
+              >
+                <Plus className="w-3 h-3" />
+                <span>New</span>
+              </button>
+            </div>
+
+            {conversations.length > 0 ? (
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {conversations.slice(0, 4).map((conv) => (
+                  <button
+                    key={conv.id}
+                    type="button"
+                    onClick={() => handleSelectChat(conv.id)}
+                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border text-left transition ${
+                      conv.id === activeChatId
+                        ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                        : 'bg-[#06162d]/80 hover:bg-slate-900 border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <span className="text-[11px] truncate">{conv.title}</span>
+                    <span className="text-[9px] font-mono text-slate-400 shrink-0">
+                      {conv.messages.length} msg
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {[
+                  {
+                    label: 'Morning World News Briefing',
+                    tag: 'Live',
+                    prompt:
+                      'Give me a briefing from Google grounding of today’s top world and technology news.',
+                  },
+                  {
+                    label: 'Write Formal Application',
+                    tag: 'Write',
+                    prompt: 'Write an application to the Principal for two days sick leave.',
+                  },
+                  {
+                    label: 'Explain Quantum Computing',
+                    tag: 'Learn',
+                    prompt: 'Explain how quantum computers work in simple notebook points.',
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => void handleSendMessage(item.prompt, [])}
+                    className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-[#06162d]/80 hover:bg-cyan-950/60 border border-cyan-500/20 text-left transition"
+                  >
+                    <span className="text-[11px] text-slate-200 truncate">
+                      {item.label}
+                    </span>
+                    <span className="text-[9px] font-mono text-cyan-300 shrink-0">
+                      {item.tag}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        </aside>
+      </main>
 
       {/* EXISTING MODALS */}
       <AuthModal
@@ -4401,205 +5062,6 @@ export default function App() {
         onClose={() => setToolsModalOpen(false)}
         onInsertPrompt={(text) => handleSendMessage(text, [])}
       />
-
-      {/* LIVE TWO-WAY VOICE CONVERSATION OVERLAY */}
-      {liveVoiceOpen && (
-        <div className="fixed inset-0 z-50 h-[100dvh] w-full bg-[#040811]/95 backdrop-blur-xl flex flex-col justify-between p-4 md:p-6 text-slate-100 jarvis-mobile-safe-bottom">
-          <div className="flex flex-wrap items-center justify-between gap-2 max-w-4xl w-full mx-auto">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-xs font-mono text-cyan-300">
-              <Activity className="w-3.5 h-3.5 animate-pulse" />
-              JARVIS LIVE VOICE • {activeProfession.shortName.toUpperCase()}
-            </span>
-            <div className="flex items-center gap-2">
-              {voiceTurns.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleSaveVoiceTranscriptToChat}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-medium"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Save</span>
-                </button>
-              )}
-              <select
-                value={voiceLang}
-                onChange={(e) => setVoiceLang(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200"
-              >
-                <option value="en-US">English (US)</option>
-                <option value="en-GB">English (UK)</option>
-                <option value="ur-PK">Urdu</option>
-                <option value="hi-IN">Hindi</option>
-                <option value="ar-SA">Arabic</option>
-                <option value="es-ES">Spanish</option>
-                <option value="fr-FR">French</option>
-              </select>
-              <button
-                type="button"
-                onClick={closeLiveVoiceSession}
-                className="p-2 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col items-center justify-center max-w-2xl w-full mx-auto text-center gap-4 my-3 overflow-y-auto">
-            <div
-              className={`relative w-32 h-32 sm:w-40 sm:h-40 rounded-full flex items-center justify-center transition-all duration-500 ${
-                voiceListening
-                  ? 'scale-105 shadow-[0_0_80px_rgba(34,211,238,0.55)] bg-cyan-500/15 border-2 border-cyan-400'
-                  : voiceSpeaking
-                    ? 'scale-105 shadow-[0_0_80px_rgba(59,130,246,0.6)] bg-blue-500/20 border-2 border-blue-400'
-                    : voiceThinking
-                      ? 'animate-pulse bg-violet-500/15 border-2 border-violet-400'
-                      : 'bg-slate-900/80 border border-slate-700'
-              }`}
-            >
-              <ArcReactorLogo glow={voiceListening || voiceSpeaking || voiceThinking} size="lg" />
-            </div>
-
-            <div className="space-y-1.5 px-2">
-              <h2 className="text-base sm:text-xl font-semibold text-cyan-200 flex items-center justify-center gap-2">
-                {voiceSpeaking && <Volume2 className="w-5 h-5 text-blue-400 animate-pulse" />}
-                <span>
-                  {voiceListening
-                    ? 'Listening — Speak naturally...'
-                    : voiceThinking
-                      ? 'JARVIS is analyzing...'
-                      : voiceSpeaking
-                        ? 'JARVIS is speaking...'
-                        : 'Tap microphone or type below'}
-                </span>
-              </h2>
-              {voiceInterimTranscript && (
-                <p className="text-sm text-cyan-300 italic max-w-lg mx-auto">
-                  “{voiceInterimTranscript}”
-                </p>
-              )}
-              {voiceError && (
-                <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 inline-block">
-                  {voiceError}
-                </p>
-              )}
-            </div>
-
-            {voiceTurns.length > 0 && (
-              <div className="w-full max-h-40 overflow-y-auto bg-slate-900/75 border border-slate-800 rounded-xl p-3 text-left space-y-2">
-                {voiceTurns.map((turn) => (
-                  <div
-                    key={turn.id}
-                    className={`text-xs leading-relaxed ${
-                      turn.role === 'user' ? 'text-cyan-300' : 'text-slate-200'
-                    }`}
-                  >
-                    <strong className="uppercase font-mono mr-1.5">
-                      {turn.role === 'user' ? 'You:' : 'JARVIS:'}
-                    </strong>
-                    <span>{turn.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="max-w-xl w-full mx-auto flex flex-col items-center gap-3">
-            <div className="w-full flex gap-2">
-              <input
-                type="text"
-                value={voiceTypedInput}
-                onChange={(e) => setVoiceTypedInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && voiceTypedInput.trim()) {
-                    const msg = voiceTypedInput;
-                    setVoiceTypedInput('');
-                    void processLiveVoiceTurn(msg);
-                  }
-                }}
-                placeholder="Type a message for JARVIS to answer aloud..."
-                className="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!voiceTypedInput.trim()) return;
-                  const msg = voiceTypedInput;
-                  setVoiceTypedInput('');
-                  void processLiveVoiceTurn(msg);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => {
-                  if (voiceListening) {
-                    stopVoiceRecognition();
-                  } else {
-                    startVoiceRecognition();
-                  }
-                }}
-                className={`p-4 rounded-full transition shadow-lg ${
-                  voiceListening
-                    ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
-                    : 'bg-slate-800 text-cyan-300 hover:bg-slate-700 border border-cyan-500/40'
-                }`}
-              >
-                {voiceListening ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
-              </button>
-
-              {voiceSpeaking && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    stopSpeaking();
-                    if (voiceAutoLoop) startVoiceRecognition();
-                  }}
-                  className="px-4 py-2.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs font-medium hover:bg-amber-500/30"
-                >
-                  Interrupt & Speak
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={closeLiveVoiceSession}
-                className="p-4 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-lg"
-              >
-                <PhoneOff className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-slate-400">
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={voiceAutoLoop}
-                  onChange={(e) => setVoiceAutoLoop(e.target.checked)}
-                  className="accent-cyan-400"
-                />
-                <span>Hands-free loop</span>
-              </label>
-              <label className="flex items-center gap-1.5">
-                <span>Speed: {voiceRate.toFixed(2)}x</span>
-                <input
-                  type="range"
-                  min="0.8"
-                  max="1.4"
-                  step="0.05"
-                  value={voiceRate}
-                  onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
-                  className="w-20 accent-cyan-400"
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* REAL-TIME NEWS MODAL */}
       {newsModalOpen && (
@@ -5240,7 +5702,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleAddMemory();
                 }}
-                placeholder="e.g., I am a student in Narowal; use simple English."
+                placeholder="e.g., I am a student in Lahore; use simple English."
                 className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
               />
               <button
@@ -5329,5 +5791,13 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <JarvisErrorBoundary>
+      <JarvisWorkspace />
+    </JarvisErrorBoundary>
   );
 }
