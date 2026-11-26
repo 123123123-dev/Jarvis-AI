@@ -210,7 +210,7 @@ function decodeSharePayload(encoded: string): {
 }
 
 // ============================================================================
-// GLOBAL ERROR BOUNDARY (ZERO WHITE SCREENS)
+// GLOBAL ERROR BOUNDARY
 // ============================================================================
 
 interface ErrorBoundaryState {
@@ -1115,7 +1115,6 @@ async function queryFreeAiResponse(
 // ============================================================================
 
 function JarvisWorkspace() {
-  // Detect initial URL account or shared chat payload on load/refresh
   const initialBootState = useMemo(() => {
     try {
       const url = new URL(window.location.href);
@@ -1163,8 +1162,7 @@ function JarvisWorkspace() {
 
   const [user, setUser] = useState<UserProfile>(initialBootState.bootedUser);
 
-  // Conversations: ONLY loaded from device storage if signed in (Guest starts completely empty)
-  // Notice: activeChatId starts as null on every refresh so the app screen resets cleanly!
+  // Conversations: ONLY loaded from device storage if signed in (Guest starts empty)
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const keys = getAccountStorageKeys(initialBootState.bootedUser);
     let saved: Conversation[] = [];
@@ -1188,7 +1186,6 @@ function JarvisWorkspace() {
     initialBootState.sharedConv ? initialBootState.sharedConv.id : null
   );
 
-  // Clean up ?share= param from URL after importing so refreshing later resets cleanly
   useEffect(() => {
     if (initialBootState.sharedConv) {
       try {
@@ -1233,10 +1230,9 @@ function JarvisWorkspace() {
   const [generatedShareUrl, setGeneratedShareUrl] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
 
-  // PWA Install Prompt State
+  // Direct Native PWA Install State (NO instruction modal!)
   const [deferredInstallPrompt, setDeferredInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [installModalOpen, setInstallModalOpen] = useState(false);
   const [appInstalled, setAppInstalled] = useState(false);
 
   // Question & Voice Capsule State
@@ -1327,12 +1323,11 @@ function JarvisWorkspace() {
     voiceAutoLoopRef.current = voiceAutoLoop;
   }, [voiceAutoLoop]);
 
-  // Persist chats, memory, and images ONLY when user is signed in (Guest mode saves nothing!)
+  // Persist chats, memory, and images ONLY when user is signed in (Guest mode saves nothing)
   useEffect(() => {
     const keys = getAccountStorageKeys(user);
     if (!keys) return;
     try {
-      // Strip heavy base64 strings from older messages if needed so quota never breaks
       const compactConvs = conversations.slice(0, 40).map((c) => ({
         ...c,
         messages: c.messages.map((m) => ({
@@ -1370,35 +1365,10 @@ function JarvisWorkspace() {
     }
   }, [artGallery, user]);
 
-  // Inject dynamic Web App Manifest + capture browser Install App prompt
+  // Register Service Worker & capture native browser Install prompt
   useEffect(() => {
-    try {
-      const manifestData = {
-        name: 'JARVIS AI Assistant',
-        short_name: 'JARVIS',
-        start_url: window.location.pathname || '/',
-        display: 'standalone',
-        background_color: '#020813',
-        theme_color: '#06b6d4',
-        icons: [
-          {
-            src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="%23041022"/><circle cx="64" cy="64" r="44" fill="none" stroke="%2322d3ee" stroke-width="8"/><circle cx="64" cy="64" r="18" fill="%2322d3ee"/></svg>',
-            sizes: '128x128',
-            type: 'image/svg+xml',
-          },
-        ],
-      };
-      const blob = new Blob([JSON.stringify(manifestData)], { type: 'application/manifest+json' });
-      const manifestUrl = URL.createObjectURL(blob);
-      let link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'manifest';
-        document.head.appendChild(link);
-      }
-      link.href = manifestUrl;
-    } catch {
-      // Ignore manifest injection errors
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
 
     const handleBeforeInstall = (e: Event) => {
@@ -1408,7 +1378,7 @@ function JarvisWorkspace() {
     const handleAppInstalled = () => {
       setAppInstalled(true);
       setDeferredInstallPrompt(null);
-      setAccountNotice('JARVIS has been installed onto your device!');
+      setAccountNotice('JARVIS has been installed directly onto your device!');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
@@ -1418,6 +1388,17 @@ function JarvisWorkspace() {
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
+
+  // Auto-trigger native install if opened with ?autoinstall=1
+  useEffect(() => {
+    if (!deferredInstallPrompt) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('autoinstall') === '1') {
+      url.searchParams.delete('autoinstall');
+      window.history.replaceState({}, '', url.toString());
+      void deferredInstallPrompt.prompt();
+    }
+  }, [deferredInstallPrompt]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setLiveClock(new Date()), 1000);
@@ -1570,10 +1551,11 @@ function JarvisWorkspace() {
 
   const handleExportChat = (format: 'html' | 'json' | 'txt' | 'md') => {
     if (!activeConversation) return;
-    const safeTitle = activeConversation.title.replace(/[^a-z0-9-_]+/gi, '_').slice(0, 40) || 'jarvis_chat';
+    const safeTitle =
+      activeConversation.title.replace(/[^a-z0-9-_]+/gi, '_').slice(0, 40) || 'jarvis_chat';
     let content = '';
     let mimeType = 'text/plain;charset=utf-8';
-    let extension = format;
+    const extension = format;
 
     if (format === 'json') {
       content = JSON.stringify(
@@ -1601,7 +1583,9 @@ function JarvisWorkspace() {
         '',
         ...activeConversation.messages.map(
           (m) =>
-            `[${m.role === 'user' ? 'YOU' : 'JARVIS'}] (${new Date(m.timestamp).toLocaleTimeString()})\n${m.content}\n`
+            `[${m.role === 'user' ? 'YOU' : 'JARVIS'}] (${new Date(
+              m.timestamp
+            ).toLocaleTimeString()})\n${m.content}\n`
         ),
       ].join('\n');
     } else if (format === 'md') {
@@ -1610,13 +1594,11 @@ function JarvisWorkspace() {
         `_Exported from JARVIS AI on ${new Date().toLocaleString()}_`,
         '',
         ...activeConversation.messages.map(
-          (m) =>
-            `### ${m.role === 'user' ? 'You' : 'JARVIS'}\n\n${m.content}\n`
+          (m) => `### ${m.role === 'user' ? 'You' : 'JARVIS'}\n\n${m.content}\n`
         ),
       ].join('\n');
       mimeType = 'text/markdown;charset=utf-8';
     } else {
-      // Clean standalone HTML export
       const escapeHtml = (str: string) =>
         str
           .replace(/&/g, '&')
@@ -1688,7 +1670,9 @@ function JarvisWorkspace() {
     setShareModalOpen(true);
   };
 
+  // Direct Native App Install Handler (Zero Instruction Modal!)
   const handleInstallAppClick = async () => {
+    // 1. Direct native one-click browser install
     if (deferredInstallPrompt) {
       await deferredInstallPrompt.prompt();
       const choice = await deferredInstallPrompt.userChoice;
@@ -1698,7 +1682,28 @@ function JarvisWorkspace() {
       setDeferredInstallPrompt(null);
       return;
     }
-    setInstallModalOpen(true);
+
+    // 2. If running inside an iframe preview, pop out to top-level tab and auto-trigger install
+    if (window.self !== window.top) {
+      const targetUrl = new URL(window.location.href);
+      targetUrl.searchParams.set('autoinstall', '1');
+      window.open(targetUrl.toString(), '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    // 3. Direct standalone app launcher download fallback
+    const appUrl = window.location.origin + window.location.pathname;
+    const shortcutContent = `[InternetShortcut]\nURL=${appUrl}\nIconIndex=0\n`;
+    const blob = new Blob([shortcutContent], { type: 'application/internet-shortcut' });
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = dlUrl;
+    a.download = 'JARVIS AI.url';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(dlUrl);
+    setAccountNotice('JARVIS AI app launcher downloaded directly to your device!');
   };
 
   const activeProfession = useMemo(
@@ -2396,7 +2401,7 @@ function JarvisWorkspace() {
         </div>
       )}
 
-      {/* TOP HUD BAR WITH INSTALL APP BUTTON & SIGN IN */}
+      {/* TOP HUD BAR WITH DIRECT INSTALL APP BUTTON & SIGN IN */}
       <header className="relative z-20 px-3 sm:px-5 py-2 bg-[#040d1d]/90 backdrop-blur-md border-b border-cyan-500/30 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           <button
@@ -2470,11 +2475,11 @@ function JarvisWorkspace() {
             )}
           </button>
 
-          {/* INSTALL APP BUTTON NEXT TO SIGN IN */}
+          {/* DIRECT INSTALL APP BUTTON NEXT TO SIGN IN */}
           <button
             type="button"
             onClick={() => void handleInstallAppClick()}
-            title="Install JARVIS as a Native Device App"
+            title="Install JARVIS Directly to Your Device"
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 font-semibold text-xs transition"
           >
             <Smartphone className="w-3.5 h-3.5 text-emerald-300" />
@@ -3525,57 +3530,6 @@ function JarvisWorkspace() {
         </div>
       )}
 
-      {/* ==================================================================== */}
-      {/* INSTALL NATIVE APP MODAL (FALLBACK IF BROWSER PROMPT NOT AUTOMATIC) */}
-      {/* ==================================================================== */}
-      {installModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#081326] border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">Install JARVIS to Your Device</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInstallModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-2.5 text-xs text-slate-300 leading-relaxed">
-              <p>
-                Install JARVIS as a standalone app on your phone, tablet, or computer:
-              </p>
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
-                <div>
-                  <strong className="text-cyan-300">Chrome / Edge (Desktop):</strong> Click the{' '}
-                  <strong>Install icon (⊕)</strong> on the right side of the browser address bar, or open the browser menu (⋮) → <strong>Install JARVIS</strong>.
-                </div>
-                <div>
-                  <strong className="text-cyan-300">Android (Chrome):</strong> Tap the menu (⋮) →{' '}
-                  <strong>Add to Home screen / Install app</strong>.
-                </div>
-                <div>
-                  <strong className="text-cyan-300">iPhone / iPad (Safari):</strong> Tap the{' '}
-                  <strong>Share</strong> button → <strong>Add to Home Screen</strong>.
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setInstallModalOpen(false)}
-              className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
-            >
-              Got It
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* REAL-TIME NEWS MODAL */}
       {newsModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
@@ -4010,7 +3964,7 @@ function JarvisWorkspace() {
             <div className="divide-y divide-slate-800">
               {[
                 { label: 'Create Gmail Account / Sign In', action: () => setAuthModalOpen(true) },
-                { label: 'Install JARVIS to Device', action: () => void handleInstallAppClick() },
+                { label: 'Install JARVIS Directly to Device', action: () => void handleInstallAppClick() },
                 { label: 'Allow Voice Conversation', action: () => handleAllowVoiceConversation() },
                 { label: 'Open Live World News', action: () => setNewsModalOpen(true) },
                 { label: 'Open Specialist Matrix', action: () => setProfessionsModalOpen(true) },
