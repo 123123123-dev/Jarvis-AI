@@ -47,10 +47,15 @@ import {
   Copy,
   Check,
   User,
+  Share2,
+  FileDown,
+  Smartphone,
+  Lock,
+  Mail,
 } from 'lucide-react';
 
 // ============================================================================
-// CORE TYPES (SELF-CONTAINED SO MISSING TYPE FILES NEVER BREAK BUILD)
+// CORE TYPES
 // ============================================================================
 
 export type AIModelId = 'jarvis-turbo' | 'jarvis-deep' | 'jarvis-art';
@@ -93,6 +98,14 @@ export interface UserProfile {
   isGuest: boolean;
 }
 
+export interface StoredAccountRecord {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  createdAt: number;
+}
+
 export interface AppSettings {
   selectedModel: AIModelId;
   voiceEnabled: boolean;
@@ -100,21 +113,104 @@ export interface AppSettings {
   dualEngineEnabled: boolean;
 }
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
 const DEFAULT_USER: UserProfile = {
   id: 'guest',
-  name: 'Guest Commander',
+  name: 'Guest Mode',
   email: '',
   isGuest: true,
 };
 
-const SETTINGS_STORAGE_KEY = 'jarvis_hud_settings_v2';
-const CONVERSATIONS_STORAGE_KEY = 'jarvis_hud_conversations_v2';
-const JARVIS_MEMORY_STORAGE_KEY = 'jarvis_neural_memory_v1';
-const JARVIS_GALLERY_STORAGE_KEY = 'jarvis_art_gallery_v1';
-const JARVIS_PROFESSION_STORAGE_KEY = 'jarvis_active_profession_v1';
+const ACCOUNTS_REGISTRY_KEY = 'jarvis_registered_gmail_accounts_v1';
+
+// Account-scoped storage helpers (Guest mode returns null -> NOTHING saved)
+function getAccountStorageKeys(user: UserProfile) {
+  if (user.isGuest || !user.email) return null;
+  const slug = encodeURIComponent(user.email.toLowerCase().trim());
+  return {
+    conversations: `jarvis_acct_${slug}_conversations_v1`,
+    memory: `jarvis_acct_${slug}_memory_v1`,
+    gallery: `jarvis_acct_${slug}_gallery_v1`,
+  };
+}
+
+function hashPasswordSimple(pw: string): string {
+  let hash = 0;
+  for (let i = 0; i < pw.length; i++) {
+    hash = (hash << 5) - hash + pw.charCodeAt(i);
+    hash |= 0;
+  }
+  return `jh_${Math.abs(hash).toString(16)}_${pw.length}`;
+}
+
+function loadRegisteredAccounts(): StoredAccountRecord[] {
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_REGISTRY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRegisteredAccounts(records: StoredAccountRecord[]) {
+  try {
+    localStorage.setItem(ACCOUNTS_REGISTRY_KEY, JSON.stringify(records));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 // ============================================================================
-// GLOBAL ERROR BOUNDARY + WINDOW CRASH CATCHER (ZERO WHITE SCREENS)
+// URL ENCODING / DECODING FOR DIRECT ACCOUNT URL & FULL CHAT SHARING
+// ============================================================================
+
+function encodeSharePayload(payload: {
+  title: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;
+}): string {
+  try {
+    const json = JSON.stringify(payload);
+    const bytes = new TextEncoder().encode(json);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function decodeSharePayload(encoded: string): {
+  title: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;
+} | null {
+  try {
+    let b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const json = new TextDecoder().decode(bytes);
+    const parsed = JSON.parse(json);
+    if (parsed && Array.isArray(parsed.messages)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
+// GLOBAL ERROR BOUNDARY (ZERO WHITE SCREENS)
 // ============================================================================
 
 interface ErrorBoundaryState {
@@ -140,12 +236,10 @@ class JarvisErrorBoundary extends React.Component<
 
   componentDidMount() {
     window.addEventListener('error', this.handleWindowError);
-    window.addEventListener('unhandledrejection', this.handleRejection);
   }
 
   componentWillUnmount() {
     window.removeEventListener('error', this.handleWindowError);
-    window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
   handleWindowError = (event: ErrorEvent) => {
@@ -154,24 +248,12 @@ class JarvisErrorBoundary extends React.Component<
     }
   };
 
-  handleRejection = (event: PromiseRejectionEvent) => {
-    const reason =
-      event?.reason instanceof Error
-        ? event.reason.message
-        : String(event?.reason || '');
-    if (reason && !reason.includes('aborted') && !reason.includes('AbortError')) {
-      console.warn('Unhandled promise rejection:', reason);
-    }
-  };
-
   render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-[100dvh] w-full bg-[#030914] text-slate-100 flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-slate-900/95 border border-cyan-500/40 rounded-2xl p-6 space-y-4 shadow-2xl">
-            <h2 className="text-lg font-bold text-cyan-300">
-              JARVIS HUD Recovery
-            </h2>
+            <h2 className="text-lg font-bold text-cyan-300">JARVIS HUD Recovery</h2>
             <p className="text-xs text-slate-300 leading-relaxed">
               A runtime error was caught instead of showing a blank screen:
             </p>
@@ -180,30 +262,21 @@ class JarvisErrorBoundary extends React.Component<
             </div>
             <button
               type="button"
-              onClick={() => {
-                try {
-                  localStorage.removeItem(JARVIS_PROFESSION_STORAGE_KEY);
-                  localStorage.removeItem(SETTINGS_STORAGE_KEY);
-                } catch {
-                  // Ignore storage restrictions
-                }
-                window.location.reload();
-              }}
+              onClick={() => window.location.reload()}
               className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs transition"
             >
-              Reset Cache & Reload JARVIS
+              Reload JARVIS
             </button>
           </div>
         </div>
       );
     }
-
     return this.props.children;
   }
 }
 
 // ============================================================================
-// BUILT-IN ARC REACTOR LOGO COMPONENT
+// ARC REACTOR BADGE
 // ============================================================================
 
 function ArcReactorBadge({ size = 'sm' }: { size?: 'sm' | 'md' }) {
@@ -220,7 +293,7 @@ function ArcReactorBadge({ size = 'sm' }: { size?: 'sm' | 'md' }) {
 }
 
 // ============================================================================
-// CONSTANTS & SPECIALIST PROFILES
+// SPECIALIST PROFILES & DATABASES
 // ============================================================================
 
 type ProfessionId =
@@ -250,7 +323,6 @@ interface ProfessionProfile {
   badgeColor: string;
   systemDirective: string;
   disclaimer?: string;
-  quickPrompts: string[];
 }
 
 interface MemoryEntry {
@@ -320,248 +392,147 @@ const PROFESSION_PROFILES: ProfessionProfile[] = [
     name: 'JARVIS Omniscient Core',
     shortName: 'All-Domain Core',
     category: 'Universal',
-    description:
-      'Universal intelligence across study help, writing, coding, science, and live news.',
+    description: 'Universal intelligence across study help, writing, coding, science, and live news.',
     badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/10',
-    systemDirective:
-      'Answer clearly, accurately, and directly in clean notebook style without formatting symbols.',
-    quickPrompts: [
-      'Give me a briefing on today’s top global and technology news from Google grounding.',
-      'Explain photosynthesis in simple terms for a high school student.',
-      'Help me plan a daily study timetable.',
-    ],
+    systemDirective: 'Answer clearly, accurately, and directly in clean notebook style without formatting symbols.',
   },
   {
     id: 'medical',
     name: 'Medical & Clinical Intelligence',
     shortName: 'Medical & Health',
     category: 'Healthcare',
-    description:
-      'Pathophysiology, differential considerations, diagnostic lab interpretation, and clinical guidelines.',
+    description: 'Pathophysiology, differential considerations, diagnostic lab interpretation, and clinical guidelines.',
     badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
-    systemDirective:
-      'Provide clear clinical explanations of pathophysiology, differential considerations, and diagnostic markers. Include a brief reminder to consult a licensed healthcare provider.',
-    disclaimer:
-      'Clinical Reference Mode: Educational medical information only — not a substitute for professional medical care.',
-    quickPrompts: [
-      'Explain how to interpret a Complete Blood Count (CBC) and Comprehensive Metabolic Panel.',
-      'Outline common causes and red-flag symptoms for acute chest discomfort.',
-      'Compare diagnostic criteria and first-line management of Type 2 Diabetes.',
-    ],
+    systemDirective: 'Provide clear clinical explanations of pathophysiology, differential considerations, and diagnostic markers.',
+    disclaimer: 'Clinical Reference Mode: Educational medical information only — not a substitute for professional medical care.',
   },
   {
     id: 'pharmacology',
     name: 'Clinical Pharmacology & Toxicology',
     shortName: 'Pharmacology',
     category: 'Healthcare',
-    description:
-      'Pharmacokinetics (ADME), receptor mechanisms, CYP450 drug interactions, and therapeutic monitoring.',
+    description: 'Pharmacokinetics (ADME), receptor mechanisms, CYP450 drug interactions, and therapeutic monitoring.',
     badgeColor: 'text-teal-300 border-teal-500/40 bg-teal-500/10',
-    systemDirective:
-      'Explain mechanisms of action, pharmacokinetics, drug interactions, and contraindications clearly and completely.',
-    disclaimer:
-      'Pharmacology Reference Mode: Verify all dosing and drug interactions with a licensed pharmacist or physician.',
-    quickPrompts: [
-      'What are potential interactions between NSAIDs, ACE inhibitors, and diuretics?',
-      'Explain CYP3A4 and CYP2D6 metabolic pathways and major drug interactions.',
-    ],
+    systemDirective: 'Explain mechanisms of action, pharmacokinetics, drug interactions, and contraindications clearly.',
+    disclaimer: 'Pharmacology Reference Mode: Verify all dosing and drug interactions with a licensed pharmacist or physician.',
   },
   {
     id: 'mechanical-eng',
     name: 'Mechanical & Thermodynamics Engineer',
     shortName: 'Mechanical Eng',
     category: 'Engineering',
-    description:
-      'Statics, dynamics, FEA stress/strain, fluid mechanics, heat transfer, HVAC, and CAD/CAM.',
+    description: 'Statics, dynamics, FEA stress/strain, fluid mechanics, heat transfer, HVAC, and CAD/CAM.',
     badgeColor: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
-    systemDirective:
-      'Provide clear mechanical engineering calculations, equations, material considerations, and SI/imperial unit clarity.',
-    quickPrompts: [
-      'Calculate maximum bending stress and deflection for a simply supported steel I-beam.',
-      'Compare Rankine, Brayton, and Carnot thermodynamic cycle efficiencies.',
-    ],
+    systemDirective: 'Provide clear mechanical engineering calculations, equations, and material considerations.',
   },
   {
     id: 'electrical-eng',
     name: 'Electrical, Power & Embedded Engineer',
     shortName: 'Electrical Eng',
     category: 'Engineering',
-    description:
-      'Analog/digital circuits, PCB layout, power electronics, microcontrollers, and control theory.',
+    description: 'Analog/digital circuits, PCB layout, power electronics, microcontrollers, and control theory.',
     badgeColor: 'text-yellow-300 border-yellow-500/40 bg-yellow-500/10',
-    systemDirective:
-      'Provide clear circuit analysis, component sizing formulas, power electronics guidance, and embedded systems design.',
-    quickPrompts: [
-      'Design a 12V to 3.3V synchronous buck converter circuit with component sizing formulas.',
-      'Explain PCB impedance control, ground planes, and EMI mitigation.',
-    ],
+    systemDirective: 'Provide clear circuit analysis, component sizing formulas, and embedded systems design.',
   },
   {
     id: 'civil-eng',
     name: 'Civil, Structural & Geotechnical Engineer',
     shortName: 'Civil & Structural',
     category: 'Engineering',
-    description:
-      'Reinforced concrete, structural steel, seismic load design, foundation engineering, and hydraulics.',
+    description: 'Reinforced concrete, structural steel, seismic load design, foundation engineering, and hydraulics.',
     badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
-    systemDirective:
-      'Analyze structural loads, reinforced concrete design, foundation engineering, and hydraulics clearly.',
-    quickPrompts: [
-      'Explain ACI 318 flexural strength design steps for a reinforced concrete beam.',
-      'Calculate Manning’s equation open-channel flow velocity and discharge.',
-    ],
+    systemDirective: 'Analyze structural loads, reinforced concrete design, foundation engineering, and hydraulics clearly.',
   },
   {
     id: 'aerospace-eng',
     name: 'Aerospace & Propulsion Systems Engineer',
     shortName: 'Aerospace Eng',
     category: 'Engineering',
-    description:
-      'Aerodynamics, orbital mechanics, rocket propulsion (Isp, delta-v), avionics, and composites.',
+    description: 'Aerodynamics, orbital mechanics, rocket propulsion (Isp, delta-v), avionics, and composites.',
     badgeColor: 'text-sky-300 border-sky-500/40 bg-sky-500/10',
-    systemDirective:
-      'Provide clear aerospace engineering explanations covering aerodynamics, orbital mechanics, and propulsion.',
-    quickPrompts: [
-      'Calculate delta-v using the Tsiolkovsky rocket equation for a two-stage launch vehicle.',
-      'Compare LOX/Methane (methalox) vs LOX/RP-1 rocket engine performance.',
-    ],
+    systemDirective: 'Provide clear aerospace engineering explanations covering aerodynamics, orbital mechanics, and propulsion.',
   },
   {
     id: 'software',
     name: 'Principal Software & AI Architect',
     shortName: 'Software & AI',
     category: 'Technology',
-    description:
-      'Full-stack TypeScript/React, distributed systems, algorithms, databases, and DevOps.',
+    description: 'Full-stack TypeScript/React, distributed systems, algorithms, databases, and DevOps.',
     badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
-    systemDirective:
-      'Deliver clean explanations and sound software architecture recommendations.',
-    quickPrompts: [
-      'Architect a fault-tolerant real-time WebSocket and Redis pub/sub backend.',
-      'Explain a rate limiter algorithm using token bucket logic.',
-    ],
+    systemDirective: 'Deliver clean explanations and sound software architecture recommendations.',
   },
   {
     id: 'cybersecurity',
     name: 'Cybersecurity & Zero-Trust Engineer',
     shortName: 'Cybersecurity',
     category: 'Security',
-    description:
-      'Threat modeling, OWASP Top 10, cryptography, cloud IAM, and defensive hardening.',
+    description: 'Threat modeling, OWASP Top 10, cryptography, cloud IAM, and defensive hardening.',
     badgeColor: 'text-rose-300 border-rose-500/40 bg-rose-500/10',
-    systemDirective:
-      'Provide defensive cybersecurity guidance, vulnerability remediation, and zero-trust architecture best practices.',
-    quickPrompts: [
-      'Audit JWT session storage vs HttpOnly cookies against XSS and CSRF attacks.',
-      'Design a Zero-Trust IAM architecture for a multi-region cloud deployment.',
-    ],
+    systemDirective: 'Provide defensive cybersecurity guidance, vulnerability remediation, and zero-trust architecture.',
   },
   {
     id: 'legal',
     name: 'Legal & Regulatory Analyst',
     shortName: 'Legal & Policy',
     category: 'Law',
-    description:
-      'Contract structure, intellectual property, compliance frameworks, and statutory analysis.',
+    description: 'Contract structure, intellectual property, compliance frameworks, and statutory analysis.',
     badgeColor: 'text-indigo-300 border-indigo-500/40 bg-indigo-500/10',
-    systemDirective:
-      'Break down contract clauses, compliance obligations, and legal concepts clearly.',
-    disclaimer:
-      'Legal Analysis Mode: Educational regulatory and contract breakdown; consult qualified counsel for formal advice.',
-    quickPrompts: [
-      'Explain key clauses to audit in a SaaS Master Services Agreement (MSA).',
-      'Compare patent, copyright, and trade secret protection for AI software.',
-    ],
+    systemDirective: 'Break down contract clauses, compliance obligations, and legal concepts clearly.',
+    disclaimer: 'Legal Analysis Mode: Educational regulatory and contract breakdown; consult qualified counsel.',
   },
   {
     id: 'finance',
     name: 'Quantitative Finance & Macro Strategist',
     shortName: 'Finance & Markets',
     category: 'Economics',
-    description:
-      'Corporate valuation, DCF modeling, macroeconomics, portfolio risk, and financial statements.',
+    description: 'Corporate valuation, DCF modeling, macroeconomics, portfolio risk, and financial statements.',
     badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
-    systemDirective:
-      'Provide clear financial analysis, valuation frameworks, and macroeconomic insights.',
-    quickPrompts: [
-      'Build a step-by-step Discounted Cash Flow (DCF) valuation framework.',
-      'Explain EBITDA, Free Cash Flow conversion, and working capital dynamics.',
-    ],
+    systemDirective: 'Provide clear financial analysis, valuation frameworks, and macroeconomic insights.',
   },
   {
     id: 'science',
     name: 'Scientific Research & Physics Fellow',
     shortName: 'Physics & Science',
     category: 'Research',
-    description:
-      'Quantum mechanics, astrophysics, molecular biology, chemistry, and experimental methodology.',
+    description: 'Quantum mechanics, astrophysics, molecular biology, chemistry, and experimental methodology.',
     badgeColor: 'text-violet-300 border-violet-500/40 bg-violet-500/10',
-    systemDirective:
-      'Explain scientific concepts across physics, chemistry, and biology clearly and rigorously.',
-    quickPrompts: [
-      'Explain CRISPR-Cas9 base editing versus prime editing mechanisms.',
-      'Derive the relativistic energy-momentum relation clearly.',
-    ],
+    systemDirective: 'Explain scientific concepts across physics, chemistry, and biology clearly and rigorously.',
   },
   {
     id: 'architecture',
     name: 'Architectural & Structural Designer',
     shortName: 'Architecture & CAD',
     category: 'Design',
-    description:
-      'Sustainable building design, structural loads, urban planning, acoustics, and HVAC systems.',
+    description: 'Sustainable building design, structural loads, urban planning, acoustics, and HVAC systems.',
     badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
-    systemDirective:
-      'Address architectural design, spatial planning, materials, and sustainable building systems clearly.',
-    quickPrompts: [
-      'Design a passive-house residential floorplan optimized for hot climates.',
-      'Compare mass timber (CLT) vs reinforced concrete for mid-rise structures.',
-    ],
+    systemDirective: 'Address architectural design, spatial planning, materials, and sustainable building systems.',
   },
   {
     id: 'business',
     name: 'Executive Strategy & Operations COO',
     shortName: 'Business & Ops',
     category: 'Leadership',
-    description:
-      'Go-to-market strategy, unit economics, OKRs, supply chain optimization, and negotiations.',
+    description: 'Go-to-market strategy, unit economics, OKRs, supply chain optimization, and negotiations.',
     badgeColor: 'text-blue-300 border-blue-500/40 bg-blue-500/10',
-    systemDirective:
-      'Deliver practical business strategy, unit economics, and operational recommendations.',
-    quickPrompts: [
-      'Draft a 90-day Go-To-Market launch plan for an AI SaaS product.',
-      'Analyze SaaS unit economics: CAC payback period, Net Dollar Retention, and churn.',
-    ],
+    systemDirective: 'Deliver practical business strategy, unit economics, and operational recommendations.',
   },
   {
     id: 'education',
     name: 'Master Educator & Socratic Tutor',
     shortName: 'Education & Tutor',
     category: 'Learning',
-    description:
-      'Step-by-step intuitive explanations, exam prep, flashcards, and mental models for any subject.',
+    description: 'Step-by-step intuitive explanations, exam prep, flashcards, and mental models for any subject.',
     badgeColor: 'text-lime-300 border-lime-500/40 bg-lime-500/10',
-    systemDirective:
-      'Teach concepts step-by-step from beginner intuition to deeper mastery with clear examples.',
-    quickPrompts: [
-      'Teach me Linear Algebra eigenvalues and eigenvectors visually from scratch.',
-      'Create a 7-day intensive study syllabus for mastering organic chemistry.',
-    ],
+    systemDirective: 'Teach concepts step-by-step from beginner intuition to deeper mastery with clear examples.',
   },
   {
     id: 'creative',
     name: 'Creative Director & Narrative Studio',
     shortName: 'Creative & Media',
     category: 'Arts',
-    description:
-      'Screenwriting, visual storytelling, brand identity, world-building, and art direction.',
+    description: 'Screenwriting, visual storytelling, brand identity, world-building, and art direction.',
     badgeColor: 'text-fuchsia-300 border-fuchsia-500/40 bg-fuchsia-500/10',
-    systemDirective:
-      'Craft vivid, natural prose, stories, letters, scripts, and creative concepts.',
-    quickPrompts: [
-      'Write an opening sci-fi scene set aboard an orbital shipyard at dawn.',
-      'Generate 5 hyper-detailed cinematic image prompts for a futuristic laboratory.',
-    ],
+    systemDirective: 'Craft vivid, natural prose, stories, letters, scripts, and creative concepts.',
   },
 ];
 
@@ -585,81 +556,21 @@ const CLINICAL_LAB_REFERENCES = [
 ];
 
 const NEWS_CATEGORIES = [
-  {
-    id: 'breaking',
-    label: 'Top World & Breaking News',
-    prompt:
-      'Give me a briefing from Google grounding of the biggest breaking world news and headlines today.',
-  },
-  {
-    id: 'ai-tech',
-    label: 'AI, Robotics & Tech',
-    prompt:
-      'Give me today’s latest AI, robotics, and technology news from Google grounding.',
-  },
-  {
-    id: 'markets',
-    label: 'Global Markets & Economy',
-    prompt:
-      'Give me today’s stock market and global economy headlines from Google grounding.',
-  },
-  {
-    id: 'science-space',
-    label: 'Science, Space & Energy',
-    prompt:
-      'Give me the latest science, space, and energy discoveries from Google grounding.',
-  },
-  {
-    id: 'medical-news',
-    label: 'Medicine & Biotech Updates',
-    prompt:
-      'Give me today’s latest medical and biotech news from Google grounding.',
-  },
-  {
-    id: 'sports',
-    label: 'Live Sports & Tournaments',
-    prompt:
-      'Give me today’s major sports scores and headlines from Google grounding.',
-  },
+  { id: 'breaking', label: 'Top World & Breaking News', prompt: 'Give me a briefing from Google grounding of the biggest breaking world news and headlines today.' },
+  { id: 'ai-tech', label: 'AI, Robotics & Tech', prompt: 'Give me today’s latest AI, robotics, and technology news from Google grounding.' },
+  { id: 'markets', label: 'Global Markets & Economy', prompt: 'Give me today’s stock market and global economy headlines from Google grounding.' },
+  { id: 'science-space', label: 'Science, Space & Energy', prompt: 'Give me the latest science, space, and energy discoveries from Google grounding.' },
+  { id: 'medical-news', label: 'Medicine & Biotech Updates', prompt: 'Give me today’s latest medical and biotech news from Google grounding.' },
+  { id: 'sports', label: 'Live Sports & Tournaments', prompt: 'Give me today’s major sports scores and headlines from Google grounding.' },
 ];
 
 const IMAGE_STYLE_PRESETS = [
-  {
-    id: 'cinematic',
-    label: 'Cinematic Photoreal 8K',
-    suffix:
-      'photorealistic, 8k ultra-detailed, dramatic volumetric lighting, shot on 35mm lens, masterwork photography',
-  },
-  {
-    id: 'blueprint',
-    label: 'JARVIS Holographic Blueprint',
-    suffix:
-      'futuristic cyan and gold holographic CAD schematic blueprint on dark obsidian background, crisp technical vector lines',
-  },
-  {
-    id: 'medical-3d',
-    label: '3D Medical Illustration',
-    suffix:
-      'high-precision 3D anatomical and cellular scientific visualization, studio lighting, clean medical textbook render',
-  },
-  {
-    id: 'concept-art',
-    label: 'Sci-Fi Concept Art',
-    suffix:
-      'epic futuristic concept art, atmospheric perspective, intricate mechanical detail, Unreal Engine 5 cinematic render',
-  },
-  {
-    id: 'architecture',
-    label: 'Architectural Render',
-    suffix:
-      'modern luxury architectural visualization, golden hour sunlight, glass and concrete textures, V-Ray photorealistic render',
-  },
-  {
-    id: 'anime',
-    label: 'Studio Anime Illustration',
-    suffix:
-      'high-budget theatrical anime key visual, vibrant lighting, expressive linework, cinematic sky and reflections',
-  },
+  { id: 'cinematic', label: 'Cinematic Photoreal 8K', suffix: 'photorealistic, 8k ultra-detailed, dramatic volumetric lighting, shot on 35mm lens' },
+  { id: 'blueprint', label: 'JARVIS Holographic Blueprint', suffix: 'futuristic cyan and gold holographic CAD schematic blueprint on dark obsidian background' },
+  { id: 'medical-3d', label: '3D Medical Illustration', suffix: 'high-precision 3D anatomical and cellular scientific visualization, studio lighting' },
+  { id: 'concept-art', label: 'Sci-Fi Concept Art', suffix: 'epic futuristic concept art, atmospheric perspective, intricate mechanical detail' },
+  { id: 'architecture', label: 'Architectural Render', suffix: 'modern luxury architectural visualization, golden hour sunlight, glass and concrete textures' },
+  { id: 'anime', label: 'Studio Anime Illustration', suffix: 'high-budget theatrical anime key visual, vibrant lighting, expressive linework' },
 ];
 
 const ACRONYM_KNOWLEDGE_BASE: Record<
@@ -667,66 +578,21 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
   Array<{ expansion: string; domain: string; details: string }>
 > = {
   DHA: [
-    {
-      expansion: 'Defence Housing Authority',
-      domain: 'housing real estate property pakistan',
-      details:
-        'A major residential real estate and housing authority in Pakistan (Lahore, Karachi, Islamabad/Rawalpindi, Multan, Bahawalpur, Gujranwala, Peshawar, Quetta).',
-    },
-    {
-      expansion: 'Docosahexaenoic Acid',
-      domain: 'biology nutrition medicine chemistry omega 3',
-      details:
-        'An essential omega-3 fatty acid that is a primary structural component of the human brain, cerebral cortex, skin, and retina.',
-    },
-    {
-      expansion: 'Dubai Health Authority',
-      domain: 'healthcare medical dubai uae',
-      details:
-        'The government body responsible for overseeing healthcare services, hospitals, and medical licensing in Dubai, UAE.',
-    },
-    {
-      expansion: 'District Health Authority',
-      domain: 'health government hospital punjab',
-      details:
-        'Regional public health administrative bodies responsible for district-level hospitals and public healthcare delivery.',
-    },
+    { expansion: 'Defence Housing Authority', domain: 'housing real estate pakistan', details: 'A major residential real estate and housing authority in Pakistan (Lahore, Karachi, Islamabad/Rawalpindi, Multan, Bahawalpur, Gujranwala, Peshawar, Quetta).' },
+    { expansion: 'Docosahexaenoic Acid', domain: 'biology nutrition medicine', details: 'An essential omega-3 fatty acid that is a primary structural component of the human brain, cerebral cortex, skin, and retina.' },
+    { expansion: 'Dubai Health Authority', domain: 'healthcare dubai uae', details: 'The government body responsible for overseeing healthcare services, hospitals, and medical licensing in Dubai, UAE.' },
+    { expansion: 'District Health Authority', domain: 'health government punjab', details: 'Regional public health administrative bodies responsible for district-level hospitals and public healthcare delivery.' },
   ],
   ATM: [
-    {
-      expansion: 'Automated Teller Machine',
-      domain: 'banking finance cash machine',
-      details:
-        'An electronic banking outlet allowing customers to complete basic financial transactions without a branch representative.',
-    },
-    {
-      expansion: 'Standard Atmosphere (unit)',
-      domain: 'physics chemistry pressure unit',
-      details:
-        'A unit of pressure defined as 101,325 pascals (Pa), approximately equal to Earth’s average sea-level atmospheric pressure.',
-    },
+    { expansion: 'Automated Teller Machine', domain: 'banking finance', details: 'An electronic banking outlet allowing customers to complete basic financial transactions without a branch representative.' },
+    { expansion: 'Standard Atmosphere (unit)', domain: 'physics chemistry', details: 'A unit of pressure defined as 101,325 pascals (Pa), approximately equal to Earth’s average sea-level atmospheric pressure.' },
   ],
   SIM: [
-    {
-      expansion: 'Subscriber Identity Module',
-      domain: 'mobile telecom phone network',
-      details:
-        'A smart card storing the International Mobile Subscriber Identity (IMSI) and cryptographic keys on mobile devices.',
-    },
+    { expansion: 'Subscriber Identity Module', domain: 'mobile telecom', details: 'A smart card storing the International Mobile Subscriber Identity (IMSI) and cryptographic keys on mobile devices.' },
   ],
   CSS: [
-    {
-      expansion: 'Cascading Style Sheets',
-      domain: 'web development html design programming',
-      details:
-        'A stylesheet language used for describing the presentation, layout, colors, and typography of HTML documents.',
-    },
-    {
-      expansion: 'Central Superior Services',
-      domain: 'pakistan civil service exam government',
-      details:
-        'A premier competitive examination conducted by the Federal Public Service Commission (FPSC) in Pakistan.',
-    },
+    { expansion: 'Cascading Style Sheets', domain: 'web development', details: 'A stylesheet language used for describing the presentation, layout, colors, and typography of HTML documents.' },
+    { expansion: 'Central Superior Services', domain: 'pakistan civil service', details: 'A premier competitive examination conducted by the Federal Public Service Commission (FPSC) in Pakistan.' },
   ],
 };
 
@@ -735,32 +601,18 @@ const ACRONYM_KNOWLEDGE_BASE: Record<
 // ============================================================================
 
 const SUPERSCRIPT_CHAR_MAP: Record<string, string> = {
-  '0': '⁰',
-  '1': '¹',
-  '2': '²',
-  '3': '³',
-  '4': '⁴',
-  '5': '⁵',
-  '6': '⁶',
-  '7': '⁷',
-  '8': '⁸',
-  '9': '⁹',
-  '+': '⁺',
-  '-': '⁻',
+  '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+  '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+  '+': '⁺', '-': '⁻',
 };
 
 function toUnicodeSuperscript(exp: string): string {
-  return exp
-    .split('')
-    .map((ch) => SUPERSCRIPT_CHAR_MAP[ch] ?? ch)
-    .join('');
+  return exp.split('').map((ch) => SUPERSCRIPT_CHAR_MAP[ch] ?? ch).join('');
 }
 
 function formatAsCleanNotebookText(rawText: string): string {
   if (!rawText) return '';
-  let text = rawText
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/?p>/gi, '\n');
+  let text = rawText.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?p>/gi, '\n');
 
   const preservedUrls: string[] = [];
   text = text.replace(/https?:\/\/[^\s)\]]+/g, (url) => {
@@ -877,23 +729,16 @@ function evaluateSafeMathExpression(rawExpr: string): number {
       if (peek() !== ')') throw new Error(`Expected ')' after ${ident}.`);
       consume();
       switch (ident) {
-        case 'sin':
-          return Math.sin(arg);
-        case 'cos':
-          return Math.cos(arg);
-        case 'tan':
-          return Math.tan(arg);
+        case 'sin': return Math.sin(arg);
+        case 'cos': return Math.cos(arg);
+        case 'tan': return Math.tan(arg);
         case 'sqrt':
           if (arg < 0) throw new Error('Square root of negative number.');
           return Math.sqrt(arg);
-        case 'log':
-          return Math.log10(arg);
-        case 'ln':
-          return Math.log(arg);
-        case 'abs':
-          return Math.abs(arg);
-        default:
-          throw new Error(`Unknown function: ${ident}`);
+        case 'log': return Math.log10(arg);
+        case 'ln': return Math.log(arg);
+        case 'abs': return Math.abs(arg);
+        default: throw new Error(`Unknown function: ${ident}`);
       }
     }
     let numStr = '';
@@ -925,7 +770,6 @@ function solveMathOrEquation(rawInput: string): string | null {
 
   if (!cleaned) return null;
 
-  // Linear equation like 2x + 5 = 19
   const linearMatch = cleaned.match(
     /^([+-]?\d*\.?\d*)\s*([a-zA-Z])\s*([+-]\s*\d+\.?\d*)?\s*=\s*([+-]?\d+\.?\d*)$/
   );
@@ -1054,54 +898,150 @@ async function generateFreeImage(
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 450))}?width=${dims.w}&height=${dims.h}&nologo=true&seed=${seed}`;
 }
 
+async function compressImageDataUrl(dataUrl: string, maxSide = 1024): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxSide || height > maxSide) {
+        const scale = maxSide / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+async function extractTextViaFreeOcr(imageDataUrl: string): Promise<string> {
+  try {
+    const formData = new FormData();
+    formData.append('base64Image', imageDataUrl);
+    formData.append('language', 'eng');
+    formData.append('isOverlayRequired', 'false');
+    formData.append('OCREngine', '2');
+
+    const res = await fetchWithTimeout(
+      'https://api.ocr.space/parse/image',
+      {
+        method: 'POST',
+        headers: { apikey: 'helloworld' },
+        body: formData,
+      },
+      12000
+    );
+    if (!res.ok) return '';
+    const data = (await res.json()) as {
+      ParsedResults?: Array<{ ParsedText?: string }>;
+    };
+    return (data.ParsedResults?.[0]?.ParsedText || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 async function queryFreeAiResponse(
-  history: Array<{ role: string; content: string }>,
+  history: Array<{ role: string; content: string; attachments?: Attachment[] }>,
   systemInstruction: string,
   liveNewsContext: string
 ): Promise<string> {
-  const latestUser = history[history.length - 1]?.content || '';
-  const messages = [
-    { role: 'system', content: systemInstruction },
-    ...history.slice(-8).map((m, i, arr) => {
-      if (i === arr.length - 1 && m.role === 'user' && liveNewsContext) {
-        return {
-          role: 'user',
-          content: `Latest News Headlines:\n${liveNewsContext}\n\nSummarize these headlines clearly for: ${m.content}`,
-        };
-      }
-      return m;
-    }),
-  ];
+  const latestMsg = history[history.length - 1];
+  const latestUser = latestMsg?.content || 'Analyze this image.';
+  const latestAttachments = latestMsg?.attachments || [];
+  const imageAttachments = latestAttachments.filter(
+    (a) => a.type.startsWith('image/') || a.data.startsWith('data:image/')
+  );
 
-  // 1. Try local/hosted /api/chat first if available
+  const compressedImages: string[] = [];
+  for (const img of imageAttachments.slice(0, 3)) {
+    compressedImages.push(await compressImageDataUrl(img.data));
+  }
+
+  const apiMessages: Array<{
+    role: string;
+    content:
+      | string
+      | Array<
+          | { type: 'text'; text: string }
+          | { type: 'image_url'; image_url: { url: string } }
+        >;
+  }> = [{ role: 'system', content: systemInstruction }];
+
+  const sliceArr = history.slice(-8);
+  for (let i = 0; i < sliceArr.length; i++) {
+    const m = sliceArr[i];
+    const isLast = i === sliceArr.length - 1;
+
+    if (isLast && m.role === 'user' && compressedImages.length > 0) {
+      const promptText =
+        m.content.trim() ||
+        'Read all text and details in this image carefully and answer or rewrite clearly.';
+      apiMessages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: promptText },
+          ...compressedImages.map((url) => ({
+            type: 'image_url' as const,
+            image_url: { url },
+          })),
+        ],
+      });
+    } else if (isLast && m.role === 'user' && liveNewsContext) {
+      apiMessages.push({
+        role: 'user',
+        content: `Latest News Headlines:\n${liveNewsContext}\n\nSummarize these headlines clearly for: ${m.content}`,
+      });
+    } else {
+      apiMessages.push({ role: m.role, content: m.content });
+    }
+  }
+
   try {
     const backendRes = await fetchWithTimeout(
       '/api/chat',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages, systemInstruction }),
+        body: JSON.stringify({
+          messages: apiMessages,
+          systemInstruction,
+          attachments: latestAttachments,
+        }),
       },
-      6000
+      10000
     );
     if (backendRes.ok) {
       const data = (await backendRes.json()) as { content?: string };
       if (data?.content) return formatAsCleanNotebookText(data.content);
     }
   } catch {
-    // Fallback to free cloud inference
+    // Fallback to cloud multimodal vision
   }
 
-  // 2. Try Pollinations OpenAI-compatible free endpoint
   try {
     const res = await fetchWithTimeout(
       'https://text.pollinations.ai/openai',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'openai', messages, private: true }),
+        body: JSON.stringify({
+          model: 'openai',
+          messages: apiMessages,
+          private: true,
+        }),
       },
-      10000
+      16000
     );
     if (res.ok) {
       const data = (await res.json()) as {
@@ -1113,10 +1053,42 @@ async function queryFreeAiResponse(
       }
     }
   } catch {
-    // Fallback to GET endpoint
+    // Fallback to OCR if image was attached
   }
 
-  // 3. Fallback GET inference
+  if (compressedImages.length > 0) {
+    const ocrText = await extractTextViaFreeOcr(compressedImages[0]);
+    if (ocrText) {
+      const combinedPrompt = `${systemInstruction}\n\nText extracted from the user's uploaded image:\n"""\n${ocrText}\n"""\n\nUser instruction: ${latestUser}`;
+      try {
+        const ocrAiRes = await fetchWithTimeout(
+          'https://text.pollinations.ai/openai',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'openai',
+              messages: [{ role: 'user', content: combinedPrompt }],
+              private: true,
+            }),
+          },
+          12000
+        );
+        if (ocrAiRes.ok) {
+          const data = (await ocrAiRes.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
+          const reply = data.choices?.[0]?.message?.content?.trim();
+          if (reply) return formatAsCleanNotebookText(reply);
+        }
+      } catch {
+        // Return extracted OCR text directly
+      }
+      return formatAsCleanNotebookText(`Text read from your image:\n\n${ocrText}`);
+    }
+    return 'I received your image, but the vision server timed out. Please try sending it again.';
+  }
+
   try {
     const prompt = liveNewsContext
       ? `${liveNewsContext}\n\nSummarize clearly: ${latestUser}`
@@ -1143,38 +1115,98 @@ async function queryFreeAiResponse(
 // ============================================================================
 
 function JarvisWorkspace() {
-  const [conversations, setConversations] = useState<Conversation[]>(() => {
+  // Detect initial URL account or shared chat payload on load/refresh
+  const initialBootState = useMemo(() => {
     try {
-      const raw = localStorage.getItem(CONVERSATIONS_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [user, setUser] = useState<UserProfile>(DEFAULT_USER);
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    try {
-      const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        return {
-          selectedModel: parsed.selectedModel || 'jarvis-turbo',
-          voiceEnabled: Boolean(parsed.voiceEnabled),
-          webSearchEnabled: Boolean(parsed.webSearchEnabled),
-          dualEngineEnabled: Boolean(parsed.dualEngineEnabled),
-        };
+      const url = new URL(window.location.href);
+      const acctEmail = url.searchParams.get('account')?.toLowerCase().trim() || '';
+      const sharedToken = url.searchParams.get('share') || '';
+
+      let bootedUser: UserProfile = DEFAULT_USER;
+      if (acctEmail && acctEmail.endsWith('@gmail.com')) {
+        const accounts = loadRegisteredAccounts();
+        const found = accounts.find((a) => a.email.toLowerCase() === acctEmail);
+        if (found) {
+          bootedUser = {
+            id: found.id,
+            name: found.name,
+            email: found.email,
+            isGuest: false,
+          };
+        }
       }
+
+      let sharedConv: Conversation | null = null;
+      if (sharedToken) {
+        const decoded = decodeSharePayload(sharedToken);
+        if (decoded && decoded.messages.length > 0) {
+          sharedConv = {
+            id: 'shared_' + Math.random().toString(36).substring(2, 9),
+            title: decoded.title || 'Shared JARVIS Session',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: decoded.messages.map((m, idx) => ({
+              id: `sh_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+              role: m.role,
+              content: m.content,
+              timestamp: m.timestamp || Date.now(),
+            })),
+          };
+        }
+      }
+
+      return { bootedUser, sharedConv };
     } catch {
-      // Ignore
+      return { bootedUser: DEFAULT_USER, sharedConv: null };
     }
-    return {
-      selectedModel: 'jarvis-turbo',
-      voiceEnabled: false,
-      webSearchEnabled: false,
-      dualEngineEnabled: false,
-    };
+  }, []);
+
+  const [user, setUser] = useState<UserProfile>(initialBootState.bootedUser);
+
+  // Conversations: ONLY loaded from device storage if signed in (Guest starts completely empty)
+  // Notice: activeChatId starts as null on every refresh so the app screen resets cleanly!
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    const keys = getAccountStorageKeys(initialBootState.bootedUser);
+    let saved: Conversation[] = [];
+    if (keys) {
+      try {
+        const raw = localStorage.getItem(keys.conversations);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) saved = parsed;
+      } catch {
+        saved = [];
+      }
+    }
+    if (initialBootState.sharedConv) {
+      return [initialBootState.sharedConv, ...saved];
+    }
+    return saved;
+  });
+
+  // Always reset to fresh Core HUD on refresh (unless a shared link was just opened)
+  const [activeChatId, setActiveChatId] = useState<string | null>(
+    initialBootState.sharedConv ? initialBootState.sharedConv.id : null
+  );
+
+  // Clean up ?share= param from URL after importing so refreshing later resets cleanly
+  useEffect(() => {
+    if (initialBootState.sharedConv) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('share');
+        window.history.replaceState({}, '', url.toString());
+      } catch {
+        // Ignore
+      }
+    }
+  }, [initialBootState.sharedConv]);
+
+  // Settings reset cleanly on every tab refresh
+  const [settings, setSettings] = useState<AppSettings>({
+    selectedModel: 'jarvis-turbo',
+    voiceEnabled: false,
+    webSearchEnabled: false,
+    dualEngineEnabled: false,
   });
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1187,10 +1219,25 @@ function JarvisWorkspace() {
   const [mobileHudTab, setMobileHudTab] = useState<'center' | 'left' | 'right'>('center');
   const [accountNotice, setAccountNotice] = useState('');
 
-  // Built-in Sign-In Modal State
+  // Gmail + Password Auth Modal State
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup');
   const [authNameInput, setAuthNameInput] = useState('');
   const [authEmailInput, setAuthEmailInput] = useState('');
+  const [authPasswordInput, setAuthPasswordInput] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  // Export & Share Modal State
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [generatedShareUrl, setGeneratedShareUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
+
+  // PWA Install Prompt State
+  const [deferredInstallPrompt, setDeferredInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
+  const [appInstalled, setAppInstalled] = useState(false);
 
   // Question & Voice Capsule State
   const [questionInput, setQuestionInput] = useState('');
@@ -1205,20 +1252,15 @@ function JarvisWorkspace() {
   const [voiceAutoLoop, setVoiceAutoLoop] = useState(true);
   const [voiceLang, setVoiceLang] = useState('en-US');
 
-  // Specialist, Memory & Gallery
-  const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>(() => {
-    try {
-      const saved = localStorage.getItem(JARVIS_PROFESSION_STORAGE_KEY) as ProfessionId | null;
-      if (saved && PROFESSION_PROFILES.some((p) => p.id === saved)) return saved;
-    } catch {
-      // Ignore
-    }
-    return 'general';
-  });
+  // Specialist resets on every refresh
+  const [activeProfessionId, setActiveProfessionId] = useState<ProfessionId>('general');
 
+  // Memory & Gallery ONLY saved/loaded for signed-in accounts
   const [memories, setMemories] = useState<MemoryEntry[]>(() => {
+    const keys = getAccountStorageKeys(initialBootState.bootedUser);
+    if (!keys) return [];
     try {
-      const raw = localStorage.getItem(JARVIS_MEMORY_STORAGE_KEY);
+      const raw = localStorage.getItem(keys.memory);
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed : [];
     } catch {
@@ -1227,8 +1269,10 @@ function JarvisWorkspace() {
   });
 
   const [artGallery, setArtGallery] = useState<GeneratedArtItem[]>(() => {
+    const keys = getAccountStorageKeys(initialBootState.bootedUser);
+    if (!keys) return [];
     try {
-      const raw = localStorage.getItem(JARVIS_GALLERY_STORAGE_KEY);
+      const raw = localStorage.getItem(keys.gallery);
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed : [];
     } catch {
@@ -1283,45 +1327,97 @@ function JarvisWorkspace() {
     voiceAutoLoopRef.current = voiceAutoLoop;
   }, [voiceAutoLoop]);
 
+  // Persist chats, memory, and images ONLY when user is signed in (Guest mode saves nothing!)
   useEffect(() => {
+    const keys = getAccountStorageKeys(user);
+    if (!keys) return;
     try {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      // Strip heavy base64 strings from older messages if needed so quota never breaks
+      const compactConvs = conversations.slice(0, 40).map((c) => ({
+        ...c,
+        messages: c.messages.map((m) => ({
+          ...m,
+          attachments: m.attachments?.map((a) => ({
+            name: a.name,
+            type: a.type,
+            data: a.data.length > 250000 ? '' : a.data,
+          })),
+        })),
+      }));
+      localStorage.setItem(keys.conversations, JSON.stringify(compactConvs));
     } catch {
-      // Ignore
+      // Ignore quota errors
     }
-  }, [settings]);
+  }, [conversations, user]);
 
   useEffect(() => {
+    const keys = getAccountStorageKeys(user);
+    if (!keys) return;
     try {
-      localStorage.setItem(CONVERSATIONS_STORAGE_KEY, JSON.stringify(conversations.slice(0, 40)));
+      localStorage.setItem(keys.memory, JSON.stringify(memories));
     } catch {
       // Ignore
     }
-  }, [conversations]);
+  }, [memories, user]);
 
   useEffect(() => {
+    const keys = getAccountStorageKeys(user);
+    if (!keys) return;
     try {
-      localStorage.setItem(JARVIS_PROFESSION_STORAGE_KEY, activeProfessionId);
+      localStorage.setItem(keys.gallery, JSON.stringify(artGallery.slice(0, 24)));
     } catch {
       // Ignore
     }
-  }, [activeProfessionId]);
+  }, [artGallery, user]);
 
+  // Inject dynamic Web App Manifest + capture browser Install App prompt
   useEffect(() => {
     try {
-      localStorage.setItem(JARVIS_MEMORY_STORAGE_KEY, JSON.stringify(memories));
+      const manifestData = {
+        name: 'JARVIS AI Assistant',
+        short_name: 'JARVIS',
+        start_url: window.location.pathname || '/',
+        display: 'standalone',
+        background_color: '#020813',
+        theme_color: '#06b6d4',
+        icons: [
+          {
+            src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="%23041022"/><circle cx="64" cy="64" r="44" fill="none" stroke="%2322d3ee" stroke-width="8"/><circle cx="64" cy="64" r="18" fill="%2322d3ee"/></svg>',
+            sizes: '128x128',
+            type: 'image/svg+xml',
+          },
+        ],
+      };
+      const blob = new Blob([JSON.stringify(manifestData)], { type: 'application/manifest+json' });
+      const manifestUrl = URL.createObjectURL(blob);
+      let link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'manifest';
+        document.head.appendChild(link);
+      }
+      link.href = manifestUrl;
     } catch {
-      // Ignore
+      // Ignore manifest injection errors
     }
-  }, [memories]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(JARVIS_GALLERY_STORAGE_KEY, JSON.stringify(artGallery.slice(0, 24)));
-    } catch {
-      // Ignore
-    }
-  }, [artGallery]);
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const handleAppInstalled = () => {
+      setAppInstalled(true);
+      setDeferredInstallPrompt(null);
+      setAccountNotice('JARVIS has been installed onto your device!');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setLiveClock(new Date()), 1000);
@@ -1339,8 +1435,271 @@ function JarvisWorkspace() {
     };
   }, []);
 
+  // ==========================================================================
+  // GMAIL + PASSWORD SIGN UP, DIRECT SIGN IN, AND URL ACCOUNT ROUTING
+  // ==========================================================================
+
+  const syncAccountUrl = (profile: UserProfile) => {
+    try {
+      const url = new URL(window.location.href);
+      if (profile.isGuest || !profile.email) {
+        url.searchParams.delete('account');
+      } else {
+        url.searchParams.set('account', profile.email.toLowerCase());
+      }
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore history API restrictions
+    }
+  };
+
+  const loadAccountDataIntoState = (profile: UserProfile) => {
+    const keys = getAccountStorageKeys(profile);
+    if (!keys) {
+      setConversations([]);
+      setMemories([]);
+      setArtGallery([]);
+      setActiveChatId(null);
+      return;
+    }
+    try {
+      const rawConvs = localStorage.getItem(keys.conversations);
+      setConversations(rawConvs ? JSON.parse(rawConvs) : []);
+      const rawMem = localStorage.getItem(keys.memory);
+      setMemories(rawMem ? JSON.parse(rawMem) : []);
+      const rawGal = localStorage.getItem(keys.gallery);
+      setArtGallery(rawGal ? JSON.parse(rawGal) : []);
+    } catch {
+      setConversations([]);
+      setMemories([]);
+      setArtGallery([]);
+    }
+    setActiveChatId(null);
+  };
+
+  const handleAuthSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    const cleanEmail = authEmailInput.trim().toLowerCase();
+    const cleanPassword = authPasswordInput.trim();
+
+    if (!cleanEmail.endsWith('@gmail.com') || cleanEmail.length < 11) {
+      setAuthError('Please enter a valid @gmail.com address (e.g., yourname@gmail.com).');
+      return;
+    }
+    if (cleanPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    const accounts = loadRegisteredAccounts();
+    const existing = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+
+    if (authMode === 'signup') {
+      if (existing) {
+        setAuthError('This Gmail account already exists. Switch to "Sign In" to access it.');
+        return;
+      }
+      const displayName =
+        authNameInput.trim() ||
+        cleanEmail.split('@')[0].replace(/[._-]+/g, ' ');
+      const newRecord: StoredAccountRecord = {
+        id: 'acct_' + Math.random().toString(36).substring(2, 10),
+        name: displayName,
+        email: cleanEmail,
+        passwordHash: hashPasswordSimple(cleanPassword),
+        createdAt: Date.now(),
+      };
+      saveRegisteredAccounts([...accounts, newRecord]);
+
+      const loggedInProfile: UserProfile = {
+        id: newRecord.id,
+        name: newRecord.name,
+        email: newRecord.email,
+        isGuest: false,
+      };
+      setUser(loggedInProfile);
+      syncAccountUrl(loggedInProfile);
+      loadAccountDataIntoState(loggedInProfile);
+      setAuthModalOpen(false);
+      setAuthPasswordInput('');
+      setAccountNotice(
+        `Account created & signed in as ${newRecord.email}. Bookmark this URL to open your account directly!`
+      );
+    } else {
+      if (!existing) {
+        setAuthError('No account found with this Gmail. Please create an account first.');
+        return;
+      }
+      if (existing.passwordHash !== hashPasswordSimple(cleanPassword)) {
+        setAuthError('Incorrect password for this Gmail account.');
+        return;
+      }
+      const loggedInProfile: UserProfile = {
+        id: existing.id,
+        name: existing.name,
+        email: existing.email,
+        isGuest: false,
+      };
+      setUser(loggedInProfile);
+      syncAccountUrl(loggedInProfile);
+      loadAccountDataIntoState(loggedInProfile);
+      setAuthModalOpen(false);
+      setAuthPasswordInput('');
+      setAccountNotice(`Signed in to ${existing.email}. Chats and images are saved on this device.`);
+    }
+  };
+
+  const handleSignOut = () => {
+    setUser(DEFAULT_USER);
+    syncAccountUrl(DEFAULT_USER);
+    setConversations([]);
+    setMemories([]);
+    setArtGallery([]);
+    setActiveChatId(null);
+    setAccountNotice('Signed out. You are now in Guest Mode (chats will not be saved).');
+  };
+
+  // ==========================================================================
+  // EXPORT CHAT (.HTML, .JSON, .TXT, .MD) & FULL SHARE LINK
+  // ==========================================================================
+
   const activeConversation = conversations.find((c) => c.id === activeChatId) || null;
   const isWelcomeScreen = !activeConversation || activeConversation.messages.length === 0;
+
+  const handleExportChat = (format: 'html' | 'json' | 'txt' | 'md') => {
+    if (!activeConversation) return;
+    const safeTitle = activeConversation.title.replace(/[^a-z0-9-_]+/gi, '_').slice(0, 40) || 'jarvis_chat';
+    let content = '';
+    let mimeType = 'text/plain;charset=utf-8';
+    let extension = format;
+
+    if (format === 'json') {
+      content = JSON.stringify(
+        {
+          app: 'JARVIS AI Assistant',
+          exportedAt: new Date().toISOString(),
+          account: user.isGuest ? 'Guest' : user.email,
+          title: activeConversation.title,
+          messages: activeConversation.messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            timestamp: new Date(m.timestamp).toISOString(),
+            imageUrl: m.imageUrl,
+          })),
+        },
+        null,
+        2
+      );
+      mimeType = 'application/json;charset=utf-8';
+    } else if (format === 'txt') {
+      content = [
+        `JARVIS AI CHAT EXPORT — ${activeConversation.title}`,
+        `Exported: ${new Date().toLocaleString()}`,
+        '====================================================',
+        '',
+        ...activeConversation.messages.map(
+          (m) =>
+            `[${m.role === 'user' ? 'YOU' : 'JARVIS'}] (${new Date(m.timestamp).toLocaleTimeString()})\n${m.content}\n`
+        ),
+      ].join('\n');
+    } else if (format === 'md') {
+      content = [
+        `# ${activeConversation.title}`,
+        `_Exported from JARVIS AI on ${new Date().toLocaleString()}_`,
+        '',
+        ...activeConversation.messages.map(
+          (m) =>
+            `### ${m.role === 'user' ? 'You' : 'JARVIS'}\n\n${m.content}\n`
+        ),
+      ].join('\n');
+      mimeType = 'text/markdown;charset=utf-8';
+    } else {
+      // Clean standalone HTML export
+      const escapeHtml = (str: string) =>
+        str
+          .replace(/&/g, '&')
+          .replace(/</g, '<')
+          .replace(/>/g, '>')
+          .replace(/\n/g, '<br/>');
+
+      const bubbles = activeConversation.messages
+        .map(
+          (m) => `
+          <div style="margin-bottom:16px;padding:14px 18px;border-radius:14px;background:${
+            m.role === 'user' ? '#0e2947' : '#09182d'
+          };border:1px solid ${m.role === 'user' ? '#22d3ee' : '#1e3a5f'};">
+            <div style="font-size:11px;font-weight:bold;color:#38bdf8;margin-bottom:6px;text-transform:uppercase;">
+              ${m.role === 'user' ? 'You' : 'JARVIS'} • ${new Date(m.timestamp).toLocaleTimeString()}
+            </div>
+            <div style="font-size:14px;line-height:1.6;color:#f1f5f9;">${escapeHtml(m.content)}</div>
+            ${
+              m.imageUrl
+                ? `<div style="margin-top:10px;"><img src="${m.imageUrl}" style="max-width:100%;border-radius:10px;" /></div>`
+                : ''
+            }
+          </div>`
+        )
+        .join('');
+
+      content = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>${escapeHtml(activeConversation.title)} - JARVIS Export</title>
+</head>
+<body style="background:#020813;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;max-width:820px;margin:32px auto;padding:20px;">
+  <h1 style="color:#22d3ee;letter-spacing:2px;">JARVIS AI — ${escapeHtml(activeConversation.title)}</h1>
+  <p style="color:#94a3b8;font-size:12px;">Exported on ${new Date().toLocaleString()}</p>
+  <hr style="border-color:#1e293b;margin:20px 0;" />
+  ${bubbles}
+</body>
+</html>`;
+      mimeType = 'text/html;charset=utf-8';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeTitle}.${extension}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setExportMenuOpen(false);
+  };
+
+  const handleOpenShareChat = () => {
+    if (!activeConversation) return;
+    const token = encodeSharePayload({
+      title: activeConversation.title,
+      messages: activeConversation.messages.slice(-20).map((m) => ({
+        role: m.role,
+        content: m.content.slice(0, 1500),
+        timestamp: m.timestamp,
+      })),
+    });
+    const shareUrl = new URL(window.location.origin + window.location.pathname);
+    if (token) shareUrl.searchParams.set('share', token);
+    setGeneratedShareUrl(shareUrl.toString());
+    setShareCopied(false);
+    setShareModalOpen(true);
+  };
+
+  const handleInstallAppClick = async () => {
+    if (deferredInstallPrompt) {
+      await deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setAppInstalled(true);
+      }
+      setDeferredInstallPrompt(null);
+      return;
+    }
+    setInstallModalOpen(true);
+  };
 
   const activeProfession = useMemo(
     () => PROFESSION_PROFILES.find((p) => p.id === activeProfessionId) || PROFESSION_PROFILES[0],
@@ -1443,10 +1802,14 @@ function JarvisWorkspace() {
       if (!text.trim() && incomingAttachments.length === 0) return;
       setMobileHudTab('center');
 
+      const displayPrompt =
+        text.trim() ||
+        (incomingAttachments.length > 0 ? 'Analyze this attached image.' : '');
+
       const userMessage: Message = {
         id: Math.random().toString(36).substring(2, 9),
         role: 'user',
-        content: text,
+        content: displayPrompt,
         timestamp: Date.now(),
         attachments: incomingAttachments.length > 0 ? incomingAttachments : undefined,
       };
@@ -1455,7 +1818,9 @@ function JarvisWorkspace() {
       let updatedConversations = [...conversations];
 
       if (!currentConvId) {
-        const title = text.trim().slice(0, 36) + (text.length > 36 ? '...' : '') || 'JARVIS Session';
+        const title =
+          displayPrompt.slice(0, 36) + (displayPrompt.length > 36 ? '...' : '') ||
+          'JARVIS Session';
         const newConv: Conversation = {
           id: Math.random().toString(36).substring(2, 9),
           title,
@@ -1478,9 +1843,9 @@ function JarvisWorkspace() {
 
       const shouldSpeakAfter = Boolean(settings.voiceEnabled) || Boolean(voiceAllowedRef.current);
 
-      const instantGreeting = getInstantGreetingReply(text);
-      const instantMath = !instantGreeting ? solveMathOrEquation(text) : null;
-      const instantAcronym = !instantGreeting && !instantMath ? resolveCuratedAcronym(text) : null;
+      const instantGreeting = getInstantGreetingReply(displayPrompt);
+      const instantMath = !instantGreeting ? solveMathOrEquation(displayPrompt) : null;
+      const instantAcronym = !instantGreeting && !instantMath ? resolveCuratedAcronym(displayPrompt) : null;
       const instantReply = instantGreeting || instantMath || instantAcronym;
 
       if (instantReply && incomingAttachments.length === 0) {
@@ -1505,23 +1870,27 @@ function JarvisWorkspace() {
 
       setIsLoading(true);
       try {
-        const isImageReq = settings.selectedModel === 'jarvis-art' || isImagePrompt(text);
+        const isImageReq =
+          incomingAttachments.length === 0 &&
+          (settings.selectedModel === 'jarvis-art' || isImagePrompt(displayPrompt));
         let assistantMessage: Message;
 
         if (isImageReq) {
-          const cleanPrompt = text.trim() || 'Futuristic glowing arc reactor core, 8k';
+          const cleanPrompt = displayPrompt || 'Futuristic glowing arc reactor core, 8k';
           const imageUrl = await generateFreeImage(cleanPrompt, '1:1');
-          setArtGallery((prev) => [
-            {
-              id: Math.random().toString(36).substring(2, 9),
-              prompt: cleanPrompt,
-              style: 'Neural Studio',
-              aspectRatio: '1:1',
-              imageUrl,
-              createdAt: Date.now(),
-            },
-            ...prev,
-          ]);
+          if (!user.isGuest) {
+            setArtGallery((prev) => [
+              {
+                id: Math.random().toString(36).substring(2, 9),
+                prompt: cleanPrompt,
+                style: 'Neural Studio',
+                aspectRatio: '1:1',
+                imageUrl,
+                createdAt: Date.now(),
+              },
+              ...prev,
+            ]);
+          }
           assistantMessage = {
             id: Math.random().toString(36).substring(2, 9),
             role: 'assistant',
@@ -1531,11 +1900,12 @@ function JarvisWorkspace() {
           };
         } else {
           const useWeb =
-            Boolean(options?.forceGoogleGrounding) ||
-            Boolean(settings.webSearchEnabled) ||
-            /\b(?:news|headlines|google grounding)\b/i.test(text);
+            incomingAttachments.length === 0 &&
+            (Boolean(options?.forceGoogleGrounding) ||
+              Boolean(settings.webSearchEnabled) ||
+              /\b(?:news|headlines|google grounding)\b/i.test(displayPrompt));
           const liveNews = useWeb
-            ? await fetchLiveGoogleNews(text)
+            ? await fetchLiveGoogleNews(displayPrompt)
             : { contextText: '', sources: [] };
 
           const memoryBlock =
@@ -1550,7 +1920,11 @@ function JarvisWorkspace() {
           const activeMsgs =
             updatedConversations.find((c) => c.id === currentConvId)?.messages || [userMessage];
           const replyText = await queryFreeAiResponse(
-            activeMsgs.map((m) => ({ role: m.role, content: m.content })),
+            activeMsgs.map((m) => ({
+              role: m.role,
+              content: m.content,
+              attachments: m.attachments,
+            })),
             systemInstruction,
             liveNews.contextText
           );
@@ -1607,11 +1981,12 @@ function JarvisWorkspace() {
       activeProfession,
       memories,
       speakTextAloud,
+      user.isGuest,
     ]
   );
 
   // ==========================================================================
-  // BOTTOM-CENTER INLINE VOICE CONVERSATION CAPSULE
+  // VOICE CONVERSATION CAPSULE
   // ==========================================================================
 
   const startInlineVoiceListening = useCallback(() => {
@@ -1752,7 +2127,7 @@ function JarvisWorkspace() {
         [{ name: 'screen-capture.png', type: 'image/png', data: dataUrl }]
       );
     } catch {
-      // User cancelled screen picker
+      // Cancelled
     }
   };
 
@@ -1873,7 +2248,9 @@ function JarvisWorkspace() {
       {
         id: 'image-studio',
         title: 'Neural Image Studio',
-        subtitle: `Free 8K art & schematics (${artGallery.length} saved)`,
+        subtitle: user.isGuest
+          ? 'Sign in to save generated art'
+          : `Saved on account (${artGallery.length})`,
         badge: 'FREE',
         active: false,
         icon: ImageIcon,
@@ -1909,14 +2286,16 @@ function JarvisWorkspace() {
       {
         id: 'neural-memory',
         title: 'Persistent Neural Memory',
-        subtitle: `${memories.length} personal facts stored`,
+        subtitle: user.isGuest
+          ? 'Guest Mode (Disabled)'
+          : `${memories.length} facts saved on account`,
         badge: 'MEM',
         active: memories.length > 0,
         icon: Brain,
         onClick: () => setMemoryModalOpen(true),
       },
     ],
-    [voiceConversationAllowed, activeProfession, artGallery.length, memories.length]
+    [voiceConversationAllowed, activeProfession, artGallery.length, memories.length, user.isGuest]
   );
 
   const filteredProfessions = useMemo(() => {
@@ -1952,7 +2331,7 @@ function JarvisWorkspace() {
           <div className="relative z-10 w-72 max-w-[85vw] bg-[#041022] border-r border-cyan-500/35 p-4 flex flex-col gap-3 h-full shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-cyan-500/25">
               <span className="text-xs font-mono tracking-wider text-cyan-300 uppercase">
-                JARVIS History
+                {user.isGuest ? 'Guest Session (Not Saved)' : 'Account History'}
               </span>
               <button
                 type="button"
@@ -1972,9 +2351,15 @@ function JarvisWorkspace() {
               <span>New Session</span>
             </button>
 
+            {user.isGuest && (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-400/30 text-[11px] text-amber-200">
+                Guest Mode resets on refresh and does not save chats. Sign in with Gmail to save & delete history.
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto space-y-1.5">
               {conversations.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-6">No saved sessions yet.</p>
+                <p className="text-xs text-slate-500 text-center py-6">No chats in this session.</p>
               ) : (
                 conversations.map((c) => (
                   <div
@@ -1994,6 +2379,7 @@ function JarvisWorkspace() {
                     </button>
                     <button
                       type="button"
+                      title="Delete Chat"
                       onClick={() => {
                         setConversations((prev) => prev.filter((item) => item.id !== c.id));
                         if (activeChatId === c.id) setActiveChatId(null);
@@ -2010,7 +2396,7 @@ function JarvisWorkspace() {
         </div>
       )}
 
-      {/* TOP HUD BAR WITH SIGN-IN OPTIONS */}
+      {/* TOP HUD BAR WITH INSTALL APP BUTTON & SIGN IN */}
       <header className="relative z-20 px-3 sm:px-5 py-2 bg-[#040d1d]/90 backdrop-blur-md border-b border-cyan-500/30 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           <button
@@ -2035,7 +2421,7 @@ function JarvisWorkspace() {
               </span>
             </div>
             <p className="text-[9px] font-mono tracking-[0.16em] text-cyan-400/75 uppercase truncate">
-              INTELLIGENCE FOR A BETTER YOU
+              {user.isGuest ? 'GUEST MODE • RESETS ON REFRESH' : `ACCOUNT: ${user.email}`}
             </p>
           </div>
         </div>
@@ -2084,20 +2470,25 @@ function JarvisWorkspace() {
             )}
           </button>
 
+          {/* INSTALL APP BUTTON NEXT TO SIGN IN */}
           <button
             type="button"
-            onClick={() => setCommandPaletteOpen(true)}
-            title="Quick Commands"
-            className="hidden sm:flex items-center gap-1 px-2 py-1.5 rounded-lg bg-[#07152b] hover:bg-cyan-950/60 border border-cyan-500/30 text-[11px] font-mono text-cyan-300"
+            onClick={() => void handleInstallAppClick()}
+            title="Install JARVIS as a Native Device App"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 font-semibold text-xs transition"
           >
-            <Command className="w-3.5 h-3.5" />
+            <Smartphone className="w-3.5 h-3.5 text-emerald-300" />
+            <span className="hidden sm:inline">{appInstalled ? 'Installed' : 'Install App'}</span>
           </button>
 
-          {/* SIGN-IN OPTIONS IN TOP BAR */}
+          {/* SIGN-IN / ACCOUNT BUTTON */}
           {user.isGuest ? (
             <button
               type="button"
-              onClick={() => setAuthModalOpen(true)}
+              onClick={() => {
+                setAuthError('');
+                setAuthModalOpen(true);
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs shadow-[0_0_16px_rgba(34,211,238,0.45)] transition"
             >
               <LogIn className="w-3.5 h-3.5" />
@@ -2107,15 +2498,18 @@ function JarvisWorkspace() {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setAuthModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-400/50 text-cyan-200 text-xs font-medium max-w-[130px]"
+                onClick={() => {
+                  setAuthError('');
+                  setAuthModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-400/50 text-cyan-200 text-xs font-medium max-w-[140px]"
               >
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span className="truncate">{user.name}</span>
               </button>
               <button
                 type="button"
-                onClick={() => setUser(DEFAULT_USER)}
+                onClick={handleSignOut}
                 title="Sign Out"
                 className="p-1.5 rounded-lg bg-[#07152b] border border-rose-500/40 text-rose-300 hover:bg-rose-950/50"
               >
@@ -2176,7 +2570,7 @@ function JarvisWorkspace() {
           <button
             type="button"
             onClick={() => setAccountNotice('')}
-            className="text-cyan-400 hover:text-white font-semibold"
+            className="text-cyan-400 hover:text-white font-semibold shrink-0"
           >
             Dismiss
           </button>
@@ -2207,7 +2601,6 @@ function JarvisWorkspace() {
             mobileHudTab === 'left' ? 'flex' : 'hidden'
           } lg:flex flex-col gap-3 min-h-0 overflow-y-auto pr-0.5`}
         >
-          {/* Radial Command Wheel */}
           <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3 shadow-[0_0_25px_rgba(6,182,212,0.14)] shrink-0">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] font-mono tracking-[0.16em] text-cyan-300 uppercase">
@@ -2256,7 +2649,6 @@ function JarvisWorkspace() {
             </div>
           </section>
 
-          {/* Calendar Widget */}
           <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3 shrink-0">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5 text-cyan-200 text-xs font-semibold">
@@ -2286,7 +2678,6 @@ function JarvisWorkspace() {
             </div>
           </section>
 
-          {/* System Status Gauges */}
           <section className="rounded-2xl bg-[#041022]/85 backdrop-blur-md border border-cyan-500/35 p-3 shrink-0">
             <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-[0.14em] text-cyan-300 uppercase">
@@ -2344,22 +2735,80 @@ function JarvisWorkspace() {
           <div className="pointer-events-none absolute top-2 left-2 w-5 h-5 border-t-2 border-l-2 border-cyan-400/70 rounded-tl-md" />
           <div className="pointer-events-none absolute top-2 right-2 w-5 h-5 border-t-2 border-r-2 border-cyan-400/70 rounded-tr-md" />
 
+          {/* Active Chat Action Bar: Export (HTML, JSON, TXT, MD), Share Full Session, Core HUD */}
           {!isWelcomeScreen && (
-            <div className="px-4 py-2 bg-[#051226]/90 border-b border-cyan-500/25 flex items-center justify-between gap-2 shrink-0 z-10">
+            <div className="px-4 py-2 bg-[#051226]/95 border-b border-cyan-500/25 flex items-center justify-between gap-2 shrink-0 z-20 relative">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
                 <span className="text-xs font-semibold text-cyan-200 truncate">
                   {activeConversation.title}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={handleNewChat}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-[11px] text-cyan-200 shrink-0"
-              >
-                <Home className="w-3 h-3" />
-                <span>Core HUD</span>
-              </button>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Export Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setExportMenuOpen((prev) => !prev)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-cyan-500/35 text-[11px] text-cyan-200"
+                  >
+                    <FileDown className="w-3 h-3 text-cyan-400" />
+                    <span>Export</span>
+                  </button>
+                  {exportMenuOpen && (
+                    <div className="absolute right-0 mt-1.5 w-44 rounded-xl bg-[#07152b] border border-cyan-500/40 shadow-2xl py-1 z-30 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => handleExportChat('html')}
+                        className="w-full px-3 py-2 text-left text-slate-200 hover:bg-cyan-500/20"
+                      >
+                        Export as HTML (.html)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExportChat('json')}
+                        className="w-full px-3 py-2 text-left text-slate-200 hover:bg-cyan-500/20"
+                      >
+                        Export as JSON (.json)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExportChat('txt')}
+                        className="w-full px-3 py-2 text-left text-slate-200 hover:bg-cyan-500/20"
+                      >
+                        Export as Text (.txt)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExportChat('md')}
+                        className="w-full px-3 py-2 text-left text-slate-200 hover:bg-cyan-500/20"
+                      >
+                        Export as Markdown (.md)
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Share Full Chat & App Button */}
+                <button
+                  type="button"
+                  onClick={handleOpenShareChat}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/45 text-[11px] text-indigo-200"
+                >
+                  <Share2 className="w-3 h-3 text-indigo-300" />
+                  <span>Share Chat</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-[11px] text-cyan-200"
+                >
+                  <Home className="w-3 h-3" />
+                  <span>Core HUD</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -2459,6 +2908,30 @@ function JarvisWorkspace() {
                         </div>
                       </div>
 
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {msg.attachments.map((att, idx) =>
+                            att.data &&
+                            (att.type.startsWith('image/') ||
+                              att.data.startsWith('data:image/')) ? (
+                              <img
+                                key={idx}
+                                src={att.data}
+                                alt={att.name}
+                                className="max-h-52 rounded-xl border border-cyan-400/40 object-contain bg-slate-950/60"
+                              />
+                            ) : (
+                              <span
+                                key={idx}
+                                className="px-2.5 py-1 rounded-lg bg-slate-900 border border-cyan-500/30 text-[11px] text-cyan-200"
+                              >
+                                {att.name}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      )}
+
                       <div className="text-xs sm:text-sm text-slate-100 whitespace-pre-wrap leading-relaxed">
                         {msg.content}
                       </div>
@@ -2496,7 +2969,7 @@ function JarvisWorkspace() {
                 {isLoading && (
                   <div className="p-3 rounded-2xl bg-cyan-950/30 border border-cyan-500/25 flex items-center gap-2.5 text-xs text-cyan-300 font-mono">
                     <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
-                    <span>JARVIS is processing...</span>
+                    <span>JARVIS is analyzing & processing...</span>
                   </div>
                 )}
 
@@ -2596,22 +3069,31 @@ function JarvisWorkspace() {
               <div className="max-w-2xl mx-auto">
                 <div className="rounded-2xl bg-[#05142b]/95 border border-cyan-500/55 shadow-[0_0_25px_rgba(6,182,212,0.2)] p-2.5 space-y-2">
                   {attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 px-1">
+                    <div className="flex flex-wrap items-center gap-2 px-1">
                       {attachments.map((att, i) => (
-                        <span
+                        <div
                           key={i}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-[10px] text-cyan-200"
+                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-[10px] text-cyan-200"
                         >
-                          <span className="truncate max-w-[120px]">{att.name}</span>
+                          {(att.type.startsWith('image/') ||
+                            att.data.startsWith('data:image/')) && (
+                            <img
+                              src={att.data}
+                              alt={att.name}
+                              className="w-6 h-6 rounded object-cover"
+                            />
+                          )}
+                          <span className="truncate max-w-[140px]">{att.name}</span>
                           <button
                             type="button"
                             onClick={() =>
                               setAttachments((prev) => prev.filter((_, idx) => idx !== i))
                             }
+                            className="hover:text-white"
                           >
                             <X className="w-3 h-3" />
                           </button>
-                        </span>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -2627,7 +3109,11 @@ function JarvisWorkspace() {
                           handleQuestionSubmit();
                         }
                       }}
-                      placeholder="Write your question to JARVIS..."
+                      placeholder={
+                        attachments.length > 0
+                          ? 'Ask JARVIS about your attached image...'
+                          : 'Write your question to JARVIS...'
+                      }
                       className="flex-1 bg-transparent text-sm text-white placeholder-cyan-200/45 focus:outline-none min-w-0"
                     />
 
@@ -2655,6 +3141,7 @@ function JarvisWorkspace() {
                       <input
                         ref={fileInputRef}
                         type="file"
+                        accept="image/*,.pdf,.txt,.csv,.json"
                         multiple
                         className="hidden"
                         onChange={handleFileSelect}
@@ -2665,7 +3152,7 @@ function JarvisWorkspace() {
                         className="flex items-center gap-1 text-slate-300 hover:text-cyan-300"
                       >
                         <Paperclip className="w-3.5 h-3.5" />
-                        <span>Attach</span>
+                        <span>Attach Image</span>
                       </button>
 
                       <span className="text-slate-700">|</span>
@@ -2817,14 +3304,18 @@ function JarvisWorkspace() {
         </aside>
       </main>
 
-      {/* BUILT-IN SIGN-IN MODAL */}
+      {/* ==================================================================== */}
+      {/* GMAIL + PASSWORD ACCOUNT CREATION & SIGN-IN MODAL */}
+      {/* ==================================================================== */}
       {authModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-cyan-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#081326] border border-cyan-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <User className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-base font-semibold text-white">JARVIS Commander Sign In</h3>
+                <h3 className="text-base font-bold text-white">
+                  {user.isGuest ? 'JARVIS Gmail Account' : 'Your Signed-In Account'}
+                </h3>
               </div>
               <button
                 type="button"
@@ -2835,44 +3326,252 @@ function JarvisWorkspace() {
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Display Name</label>
-                <input
-                  type="text"
-                  value={authNameInput}
-                  onChange={(e) => setAuthNameInput(e.target.value)}
-                  placeholder="Enter your name"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
+            {!user.isGuest ? (
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-400/40 space-y-1.5">
+                  <div className="text-xs font-bold text-cyan-200">{user.name}</div>
+                  <div className="text-xs font-mono text-slate-300">{user.email}</div>
+                  <div className="text-[11px] text-emerald-300 pt-1">
+                    ✓ Direct Account URL active in your address bar. Typing or opening that URL logs directly into this account on this device.
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(window.location.href);
+                      setAccountNotice('Direct Account URL copied to clipboard!');
+                      setAuthModalOpen(false);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"
+                  >
+                    Copy Direct Account URL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSignOut();
+                      setAuthModalOpen(false);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-200 font-semibold text-xs"
+                  >
+                    Sign Out
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Email (optional)</label>
-                <input
-                  type="email"
-                  value={authEmailInput}
-                  onChange={(e) => setAuthEmailInput(e.target.value)}
-                  placeholder="commander@jarvis.ai"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('signup');
+                      setAuthError('');
+                    }}
+                    className={`py-2 rounded-lg text-xs font-semibold transition ${
+                      authMode === 'signup'
+                        ? 'bg-cyan-500 text-slate-950'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    1. Create Account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('signin');
+                      setAuthError('');
+                    }}
+                    className={`py-2 rounded-lg text-xs font-semibold transition ${
+                      authMode === 'signin'
+                        ? 'bg-cyan-500 text-slate-950'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    2. Direct Sign In
+                  </button>
+                </div>
+
+                <form onSubmit={handleAuthSubmit} className="space-y-3">
+                  {authMode === 'signup' && (
+                    <div>
+                      <label className="block text-xs text-slate-300 mb-1">Full Name</label>
+                      <input
+                        type="text"
+                        value={authNameInput}
+                        onChange={(e) => setAuthNameInput(e.target.value)}
+                        placeholder="e.g. Ali Khan"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">
+                      Gmail Address (required)
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-cyan-400 absolute left-3 top-2.5" />
+                      <input
+                        type="email"
+                        required
+                        value={authEmailInput}
+                        onChange={(e) => setAuthEmailInput(e.target.value)}
+                        placeholder="yourname@gmail.com"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">
+                      Password (min 6 characters)
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-cyan-400 absolute left-3 top-2.5" />
+                      <input
+                        type="password"
+                        required
+                        value={authPasswordInput}
+                        onChange={(e) => setAuthPasswordInput(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {authError && (
+                    <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-200">
+                      {authError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs shadow-lg"
+                  >
+                    {authMode === 'signup'
+                      ? 'Create Gmail Account & Sign In'
+                      : 'Sign In to My Account'}
+                  </button>
+                </form>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  In Guest Mode, nothing is saved. Once you create your @gmail.com account and sign in, your URL updates for instant access and your chats & images are saved on this device.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* SHARE FULL CHAT & APP LINK MODAL */}
+      {/* ==================================================================== */}
+      {shareModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#081326] border border-indigo-500/40 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Share Full Chat & JARVIS App</h3>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  const cleanName = authNameInput.trim() || 'Commander';
-                  setUser({
-                    id: 'user-' + Date.now(),
-                    name: cleanName,
-                    email: authEmailInput.trim(),
-                    isGuest: false,
-                  });
-                  setAuthModalOpen(false);
-                }}
-                className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"
+                onClick={() => setShareModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white"
               >
-                Activate Profile
+                <X className="w-4 h-4" />
               </button>
             </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Send this link to your other device or account. Opening it loads the full JARVIS app together with every question and AI answer from this chat so you can continue talking to JARVIS seamlessly:
+            </p>
+
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-indigo-500/35 text-[11px] font-mono text-cyan-200 break-all max-h-28 overflow-y-auto">
+              {generatedShareUrl}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(generatedShareUrl);
+                  setShareCopied(true);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs flex items-center justify-center gap-1.5"
+              >
+                {shareCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                <span>{shareCopied ? 'Link Copied!' : 'Copy Share Link'}</span>
+              </button>
+              {typeof navigator !== 'undefined' && navigator.share && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void navigator.share({
+                      title: 'JARVIS AI Conversation',
+                      text: 'Continue my JARVIS AI conversation:',
+                      url: generatedShareUrl,
+                    })
+                  }
+                  className="px-4 py-2.5 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs"
+                >
+                  Share via Device
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* INSTALL NATIVE APP MODAL (FALLBACK IF BROWSER PROMPT NOT AUTOMATIC) */}
+      {/* ==================================================================== */}
+      {installModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#081326] border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Install JARVIS to Your Device</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInstallModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs text-slate-300 leading-relaxed">
+              <p>
+                Install JARVIS as a standalone app on your phone, tablet, or computer:
+              </p>
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
+                <div>
+                  <strong className="text-cyan-300">Chrome / Edge (Desktop):</strong> Click the{' '}
+                  <strong>Install icon (⊕)</strong> on the right side of the browser address bar, or open the browser menu (⋮) → <strong>Install JARVIS</strong>.
+                </div>
+                <div>
+                  <strong className="text-cyan-300">Android (Chrome):</strong> Tap the menu (⋮) →{' '}
+                  <strong>Add to Home screen / Install app</strong>.
+                </div>
+                <div>
+                  <strong className="text-cyan-300">iPhone / iPad (Safari):</strong> Tap the{' '}
+                  <strong>Share</strong> button → <strong>Add to Home Screen</strong>.
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setInstallModalOpen(false)}
+              className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
+            >
+              Got It
+            </button>
           </div>
         </div>
       )}
@@ -3036,11 +3735,19 @@ function JarvisWorkspace() {
               {artGallery.map((item) => (
                 <div key={item.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
                   <img src={item.imageUrl} alt={item.prompt} className="w-full h-44 object-cover" />
-                  <div className="p-2.5 flex items-center justify-between text-xs">
-                    <span className="truncate text-slate-300">{item.prompt}</span>
-                    <a href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 ml-2 shrink-0">
+                  <div className="p-2.5 flex items-center justify-between text-xs gap-2">
+                    <span className="truncate text-slate-300 flex-1">{item.prompt}</span>
+                    <a href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 shrink-0">
                       <Download className="w-4 h-4" />
                     </a>
+                    <button
+                      type="button"
+                      onClick={() => setArtGallery((prev) => prev.filter((g) => g.id !== item.id))}
+                      className="text-rose-400 shrink-0"
+                      title="Delete image"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -3218,6 +3925,11 @@ function JarvisWorkspace() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {user.isGuest && (
+              <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-400/30 p-2.5 rounded-xl">
+                Guest Mode active: Memory will reset when the page refreshes. Sign in with Gmail to save permanently.
+              </p>
+            )}
             <div className="flex gap-2">
               <select
                 value={newMemoryCategory}
@@ -3297,8 +4009,9 @@ function JarvisWorkspace() {
             </div>
             <div className="divide-y divide-slate-800">
               {[
+                { label: 'Create Gmail Account / Sign In', action: () => setAuthModalOpen(true) },
+                { label: 'Install JARVIS to Device', action: () => void handleInstallAppClick() },
                 { label: 'Allow Voice Conversation', action: () => handleAllowVoiceConversation() },
-                { label: 'Switch to Question Typing Box', action: () => handleSwitchBackToTextInput() },
                 { label: 'Open Live World News', action: () => setNewsModalOpen(true) },
                 { label: 'Open Specialist Matrix', action: () => setProfessionsModalOpen(true) },
                 { label: 'Open Neural Image Studio', action: () => setImageStudioOpen(true) },
