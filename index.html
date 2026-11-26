@@ -1,73 +1,698 @@
+
 <!doctype html>
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>JARVIS AI</title>
-    <meta name="description" content="JARVIS AI is a general-purpose assistant with web search, AI artwork, voice features, file analysis, and locally saved conversations." />
-    <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="https://jarvis-ai-wine-seven.vercel.app/" />
-    <meta property="og:title" content="JARVIS AI" />
-    <meta property="og:description" content="JARVIS AI is a general-purpose assistant with web search, AI artwork, voice features, file analysis, and locally saved conversations." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://jarvis-ai-wine-seven.vercel.app/" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#060b13" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="JARVIS AI" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/png" href="/jarvis-app-icon.png" />
-    <link rel="apple-touch-icon" href="/jarvis-app-icon.png" />
-    <script>
-      // Capture beforeinstallprompt early before React mounts so Install App works immediately
-      window.__jarvisDeferredPrompt = null;
-      window.addEventListener('beforeinstallprompt', function (e) {
-        e.preventDefault();
-        window.__jarvisDeferredPrompt = e;
-      });
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JARVIS AI 3.5 — Personal AI Assistant & Radial HUD</title>
+    <meta
+      name="description"
+      content="JARVIS AI 3.5 workspace with radial command wheel, two-way voice conversation, 16 specialist domains, neural image studio, live Google news, and Pro reasoning."
+    />
+    <meta name="theme-color" content="#020813" />
+    <meta name="google-site-verification" content="Wmh9OFfNjSLlFBakbWeXcPKD8KeuhiwWGDIJ9eyliwY" />
+    <meta name="impact-site-verification" value="9ba99728-8c6f-479c-b714-5495fc7615ec" />
 
-      // Gracefully absorb harmless Vite HMR WebSocket closed errors in preview/iframe environment
-      (function() {
-        var origConsoleError = console.error;
-        console.error = function() {
-          var args = Array.prototype.slice.call(arguments);
-          var msg = args.map(function(a) {
-            return typeof a === 'object' && a !== null ? (a.message || a.stack || JSON.stringify(a)) : String(a);
-          }).join(' ');
-          if (
-            msg.indexOf('WebSocket closed without opened') !== -1 ||
-            (msg.indexOf('WebSocket') !== -1 && msg.indexOf('vite') !== -1) ||
-            msg.indexOf('[vite] failed to connect to websocket') !== -1
-          ) {
+    <!-- ============================================================
+         MONETIZATION SYSTEM 1: GOOGLE ADSENSE SCRIPT
+         Once approved in AdSense, replace ca-pub-XXXXXXXXXXXXXXXX with your Publisher ID
+         ============================================================ -->
+    <!--
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+      crossorigin="anonymous"></script>
+    -->
+
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <!-- TOP NAVIGATION BAR -->
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <a href="#top" class="brand">
+          <span class="arc-dot"></span>
+          <span>JARVIS <strong>AI 3.5</strong></span>
+        </a>
+
+        <nav class="nav-links">
+          <a href="#workspace">Live Workspace</a>
+          <a href="#features">Features</a>
+          <a href="#pricing">Freemium Pro</a>
+          <a href="#partners">Recommended Tools</a>
+          <a href="#about">About & Policies</a>
+        </nav>
+
+        <div class="topbar-actions">
+          <!-- MONETIZATION SYSTEM 2: FREEMIUM PRO QUICK UPGRADE -->
+          <a href="#pricing" class="btn btn-pro">⚡ Upgrade Pro</a>
+          <button type="button" id="installTopBtn" class="btn btn-install">Install App</button>
+          <a
+            href="https://jarvis-ai-wine-seven.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-primary"
+          >
+            Open App ↗
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- HERO & LIVE INTERACTIVE PROTOTYPE -->
+      <section class="hero">
+        <div class="container">
+          <div class="pill-badge">
+            <span class="pulse-dot"></span>
+            <span>Powered by JARVIS Turbo (Free) & Dual Engine Pro</span>
+          </div>
+
+          <h1>Meet <span class="gradient-text">JARVIS AI 3.5</span></h1>
+          <p class="hero-sub">
+            Your personal AI workspace with a 3D radial command wheel, two-way voice waveform,
+            16 specialist domains, neural art studio, and real-time Google news. Start free in
+            Guest Mode or unlock Dual Engine Pro.
+          </p>
+
+          <div class="hero-cta">
+            <a
+              href="https://jarvis-ai-wine-seven.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-primary btn-lg"
+            >
+              Launch Free Workspace ↗
+            </a>
+            <a href="#pricing" class="btn btn-pro btn-lg">
+              Get JARVIS Pro ($7/mo)
+            </a>
+            <button type="button" id="installHeroBtn" class="btn btn-secondary btn-lg">
+              Direct Install
+            </button>
+          </div>
+
+          <!-- LIVE WORKING WORKSPACE WINDOW -->
+          <div id="workspace" class="workspace-frame">
+            <div class="frame-header">
+              <div class="traffic-lights">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+              </div>
+              <div class="frame-title">
+                <span class="pulse-dot"></span>
+                <span>JARVIS AI 3.5 — Live Interactive Workspace</span>
+              </div>
+              <div class="frame-controls">
+                <button type="button" id="toggleEmbedModeBtn" class="mini-btn">
+                  Prototype Mode: Live
+                </button>
+                <a
+                  href="https://jarvis-ai-wine-seven.vercel.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="mini-btn"
+                >
+                  Full Screen ↗
+                </a>
+              </div>
+            </div>
+
+            <!-- 1. LIVE DEPLOYED APP IFRAME -->
+            <div id="liveIframeWrap" class="iframe-wrap">
+              <iframe
+                id="jarvisLiveFrame"
+                src="https://jarvis-ai-wine-seven.vercel.app/"
+                title="JARVIS AI 3.5 Live Workspace"
+                allow="microphone; camera; display-capture; clipboard-write"
+                loading="lazy"
+              ></iframe>
+            </div>
+
+            <!-- 2. BUILT-IN WORKING INTERACTIVE HUD PROTOTYPE -->
+            <div id="builtInPrototype" class="hud-prototype hidden">
+              <div class="hud-top">
+                <div class="hud-brand">
+                  <span class="arc-dot"></span>
+                  <strong>JARVIS</strong>
+                  <span class="status-tag">ONLINE • INTERACTIVE PROTOTYPE</span>
+                </div>
+                <div class="hud-top-btns">
+                  <button type="button" id="protoResetBtn" class="mini-btn">Core HUD</button>
+                  <button type="button" id="protoVoiceBtn" class="mini-btn cyan">🎙 Voice</button>
+                </div>
+              </div>
+
+              <div class="hud-body">
+                <div class="hud-left">
+                  <div class="radial-ring">
+                    <div class="radial-core" id="protoCoreBtn">
+                      <strong>JARVIS</strong>
+                      <span>CORE</span>
+                    </div>
+                    <button type="button" class="node n1" data-prompt="Give me today's top world and technology news.">News</button>
+                    <button type="button" class="node n2" data-prompt="Full form of DHA">Acronyms</button>
+                    <button type="button" class="node n3" data-prompt="Solve 2x + 5 = 19">Math</button>
+                    <button type="button" class="node n4" data-prompt="Write a formal leave application to the Principal.">Write</button>
+                  </div>
+                </div>
+
+                <div class="hud-center">
+                  <div id="protoWelcome" class="proto-welcome">
+                    <div class="core-circle">
+                      <h2>JARVIS</h2>
+                      <p>Your Personal AI Assistant</p>
+                    </div>
+                    <div class="sample-chips">
+                      <button type="button" class="chip" data-prompt="Today's Top News">Today's Top News</button>
+                      <button type="button" class="chip" data-prompt="Full form of DHA">Full form of DHA</button>
+                      <button type="button" class="chip" data-prompt="Solve 2x + 5 = 19">Solve 2x + 5 = 19</button>
+                      <button type="button" class="chip" data-prompt="Create futuristic car image">Create futuristic car image</button>
+                    </div>
+                  </div>
+
+                  <div id="protoMessages" class="proto-messages hidden"></div>
+
+                  <form id="protoForm" class="proto-input-bar">
+                    <input
+                      type="text"
+                      id="protoInput"
+                      placeholder="Write your question to JARVIS..."
+                      autocomplete="off"
+                    />
+                    <button type="submit" class="send-btn">↑</button>
+                  </form>
+                </div>
+
+                <div class="hud-right">
+                  <div class="panel-title">JARVIS FEATURES</div>
+                  <button type="button" class="feat-item" data-prompt="Activate Two-Way Voice Conversation">
+                    <span>Two-Way Voice Conversation</span>
+                    <em>VOICE</em>
+                  </button>
+                  <button type="button" class="feat-item" data-prompt="List the 16 Specialist Domains in JARVIS">
+                    <span>Specialist Matrix (16 Domains)</span>
+                    <em>PRO</em>
+                  </button>
+                  <button type="button" class="feat-item" data-prompt="Create futuristic car image">
+                    <span>Neural Image Studio</span>
+                    <em>FREE</em>
+                  </button>
+                  <button type="button" class="feat-item" data-prompt="Today's Top News">
+                    <span>Real-Time World News</span>
+                    <em>LIVE</em>
+                  </button>
+                  <button type="button" class="feat-item" data-prompt="Solve 2x + 5 = 19">
+                    <span>Engineering & Medical Lab</span>
+                    <em>LAB</em>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================================
+               MONETIZATION SYSTEM 1B: GOOGLE ADSENSE DISPLAY AD SLOT
+               Uncomment <ins> + <script> after AdSense approves your site
+               ============================================================ -->
+          <div class="ad-slot-container" aria-label="Advertisement">
+            <span class="ad-label">ADVERTISEMENT</span>
+            <div class="ad-placeholder">
+              Google AdSense Responsive Banner Slot (728×90 / Auto) — Paste your Ad Unit code here
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CAPABILITIES SECTION -->
+      <section id="features" class="section">
+        <div class="container">
+          <div class="section-head">
+            <span class="eyebrow">CAPABILITIES</span>
+            <h2>Everything you expect from a modern AI workspace</h2>
+            <p>
+              Engineered for speed, accuracy, and seamless creativity across desktop and mobile.
+            </p>
+          </div>
+
+          <div class="bento-grid">
+            <article class="card span-2">
+              <div class="card-icon cyan">🌐</div>
+              <h3>Live Web Knowledge & Citations</h3>
+              <p>
+                Connects directly to real-time Google news and web search to deliver up-to-date
+                briefings with clickable, verified source links.
+              </p>
+            </article>
+
+            <article class="card">
+              <div class="card-icon blue">⚡</div>
+              <h3>Dual Engine Pro</h3>
+              <p>
+                Switch seamlessly between ultra-fast JARVIS Turbo responses and deep multi-step
+                reasoning across 16 specialist professions.
+              </p>
+            </article>
+
+            <article class="card">
+              <div class="card-icon purple">🎨</div>
+              <h3>Neural Art Studio</h3>
+              <p>
+                Generate high-resolution artwork, holographic blueprints, and 3D renders from
+                natural language prompts in seconds.
+              </p>
+            </article>
+
+            <article class="card">
+              <div class="card-icon emerald">👁</div>
+              <h3>Vision & Screen Scan</h3>
+              <p>
+                Attach photos, screenshots, or capture your live screen for instant OCR text
+                extraction and visual analysis.
+              </p>
+            </article>
+
+            <article class="card span-2">
+              <div class="card-icon amber">🎙</div>
+              <h3>Two-Way Voice Core & Smart Export</h3>
+              <p>
+                Speak hands-free with animated dual-sided waveforms and auto-loop conversation, or
+                export any chat to HTML, JSON, Markdown, or TXT and share full sessions via link.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           MONETIZATION SYSTEM 2: FREEMIUM PRO PLANS
+           Replace the checkout href URLs with your Lemon Squeezy / Gumroad links
+           ============================================================ -->
+      <section id="pricing" class="section">
+        <div class="container">
+          <div class="section-head">
+            <span class="eyebrow">FREEMIUM & PRO ACCESS</span>
+            <h2>Start Free Forever — Upgrade for Pro Power</h2>
+            <p>
+              Use JARVIS Turbo for free in Guest Mode, or unlock Dual Engine Pro and commercial
+              specialist tools with a Pro License Key.
+            </p>
+          </div>
+
+          <div class="tiers-grid">
+            <!-- FREE TIER -->
+            <article class="card">
+              <span class="tier-badge">Free Forever</span>
+              <h3>JARVIS Starter</h3>
+              <div class="price-tag">$0 <span>/ month</span></div>
+              <ul class="plan-list">
+                <li>✓ Unlimited JARVIS Turbo everyday chat</li>
+                <li>✓ Real-time Google News & web lookup</li>
+                <li>✓ Standard Neural Art Studio generation</li>
+                <li>✓ Export chats to TXT, Markdown & JSON</li>
+              </ul>
+              <a
+                href="https://jarvis-ai-wine-seven.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-secondary full-w"
+              >
+                Use Free Now ↗
+              </a>
+            </article>
+
+            <!-- PRO MONTHLY TIER -->
+            <article class="card featured">
+              <span class="tier-badge cyan">Most Popular • Pro</span>
+              <h3>JARVIS Dual Engine Pro</h3>
+              <div class="price-tag">$7 <span>/ month</span></div>
+              <ul class="plan-list">
+                <li>✓ Full access to 16 Specialist Domains</li>
+                <li>✓ Engineering & Medical Clinical Lab</li>
+                <li>✓ Priority HD Image Studio (No watermarks)</li>
+                <li>✓ Unlimited Two-Way Voice & Screen Vision</li>
+              </ul>
+              <!-- REPLACE THIS URL WITH YOUR LEMON SQUEEZY OR GUMROAD CHECKOUT LINK -->
+              <a
+                href="https://gumroad.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-primary full-w"
+              >
+                Unlock Pro License ↗
+              </a>
+            </article>
+
+            <!-- LIFETIME / TEAM TIER -->
+            <article class="card">
+              <span class="tier-badge purple">One-Time Pass</span>
+              <h3>JARVIS Lifetime Founder</h3>
+              <div class="price-tag">$29 <span>one-time</span></div>
+              <ul class="plan-list">
+                <li>✓ Everything in Dual Engine Pro forever</li>
+                <li>✓ Early access to JARVIS 4.0 beta engines</li>
+                <li>✓ Commercial usage rights for client work</li>
+                <li>✓ Direct developer priority support</li>
+              </ul>
+              <!-- REPLACE THIS URL WITH YOUR LEMON SQUEEZY OR GUMROAD CHECKOUT LINK -->
+              <a
+                href="https://gumroad.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-pro full-w"
+              >
+                Get Lifetime Access ↗
+              </a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           MONETIZATION SYSTEM 3 & 4: SPONSORED TOOLS & AFFILIATE PARTNERS
+           Replace href="#" with your real affiliate referral links or sponsor URLs
+           ============================================================ -->
+      <section id="partners" class="section">
+        <div class="container">
+          <div class="section-head">
+            <span class="eyebrow">ECOSYSTEM & PARTNERS</span>
+            <h2>Sponsored Tools & Recommended AI Stack</h2>
+            <p class="disclosure-note">
+              Disclosure: Some links below are sponsored placements or affiliate partner links.
+              We may earn a commission at zero extra cost to you.
+            </p>
+          </div>
+
+          <!-- FEATURED SPONSORED TOOL BANNER -->
+          <div class="sponsor-banner">
+            <div class="sponsor-left">
+              <span class="sponsor-pill">SPONSORED TOOL</span>
+              <h3>Deploy Your Own AI Apps Globally in 60 Seconds</h3>
+              <p>
+                Host high-speed AI frontends, serverless APIs, and custom domains with automatic
+                SSL and edge caching—the exact stack powering JARVIS AI.
+              </p>
+            </div>
+            <div class="sponsor-right">
+              <a
+                href="https://vercel.com/"
+                target="_blank"
+                rel="noopener noreferrer sponsored"
+                class="btn btn-primary"
+              >
+                Try Featured Host ↗
+              </a>
+            </div>
+          </div>
+
+          <!-- AFFILIATE PARTNER CARDS -->
+          <div class="tiers-grid">
+            <article class="card">
+              <span class="tier-badge">Affiliate Partner</span>
+              <h3>Cloud GPU & AI APIs</h3>
+              <p>
+                Run open-source LLMs, Whisper voice transcription, and image diffusion models on
+                pay-as-you-go cloud GPUs.
+              </p>
+              <a
+                href="https://runpod.io/"
+                target="_blank"
+                rel="noopener noreferrer nofollow sponsored"
+                class="partner-link"
+              >
+                Claim Starter Credits →
+              </a>
+            </article>
+
+            <article class="card">
+              <span class="tier-badge cyan">Affiliate Partner</span>
+              <h3>Custom .COM & .AI Domains</h3>
+              <p>
+                Register a custom domain name for your own AI project and connect it to GitHub
+                Pages or Vercel in two clicks.
+              </p>
+              <a
+                href="https://www.namecheap.com/"
+                target="_blank"
+                rel="noopener noreferrer nofollow sponsored"
+                class="partner-link"
+              >
+                Search Domains →
+              </a>
+            </article>
+
+            <article class="card">
+              <span class="tier-badge purple">Sponsor Slot Open</span>
+              <h3>Promote Your AI Tool Here</h3>
+              <p>
+                Reach thousands of AI builders, students, and developers using JARVIS AI 3.5 every
+                month.
+              </p>
+              <a href="mailto:sponsor@jarvis-ai.example.com" class="partner-link">
+                Book This Sponsor Slot →
+              </a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- REQUIRED FOR GOOGLE ADSENSE APPROVAL: ABOUT, PRIVACY & TERMS -->
+      <section id="about" class="section">
+        <div class="container">
+          <div class="policy-grid">
+            <article class="card">
+              <h3>About JARVIS AI 3.5</h3>
+              <p>
+                JARVIS AI 3.5 is an independent web workspace built to combine fast conversational
+                assistance, real-time web lookup, educational problem solving, and creative visual
+                synthesis in one accessible interface.
+              </p>
+            </article>
+
+            <article class="card">
+              <h3>Privacy & Advertising Policy</h3>
+              <p>
+                Guest conversations stay locally in your browser unless you sign in. Third-party
+                vendors, including Google AdSense, may use cookies to serve ads based on prior
+                visits. You can opt out of personalized advertising in Google Ads Settings.
+              </p>
+            </article>
+
+            <article class="card">
+              <h3>Contact & Support</h3>
+              <p>
+                For Pro license support, sponsorship inquiries, or copyright questions, contact our
+                developer team directly at <strong>support@jarvis-ai.example.com</strong>.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="container footer-inner">
+        <div class="brand">
+          <span class="arc-dot"></span>
+          <span>JARVIS <strong>AI 3.5</strong></span>
+        </div>
+        <div class="footer-links">
+          <a href="#pricing">Freemium Pro</a>
+          <a href="#partners">Affiliate Disclosure</a>
+          <a href="#about">Privacy Policy</a>
+          <a
+            href="https://jarvis-ai-wine-seven.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Live App ↗
+          </a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      (function () {
+        let deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          deferredPrompt = e;
+        });
+
+        function triggerDirectInstall() {
+          if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.finally(function () {
+              deferredPrompt = null;
+            });
             return;
           }
-          origConsoleError.apply(console, args);
-        };
-        window.addEventListener('error', function (e) {
-          if (
-            e.message &&
-            (e.message.includes('WebSocket') || e.message.includes('ws') || e.message.includes('vite'))
-          ) {
-            e.stopImmediatePropagation();
-            e.preventDefault();
-          }
+          window.open(
+            'https://jarvis-ai-wine-seven.vercel.app/?autoinstall=1',
+            '_blank',
+            'noopener,noreferrer'
+          );
+        }
+
+        ['installTopBtn', 'installHeroBtn'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.addEventListener('click', triggerDirectInstall);
         });
-        window.addEventListener('unhandledrejection', function (e) {
-          if (
-            e.reason &&
-            (String(e.reason).includes('WebSocket') || String(e.reason).includes('vite'))
-          ) {
-            e.stopImmediatePropagation();
-            e.preventDefault();
+
+        var toggleBtn = document.getElementById('toggleEmbedModeBtn');
+        var iframeWrap = document.getElementById('liveIframeWrap');
+        var builtInProto = document.getElementById('builtInPrototype');
+        var showingBuiltIn = false;
+
+        function setPrototypeMode(useBuiltIn) {
+          showingBuiltIn = useBuiltIn;
+          if (useBuiltIn) {
+            iframeWrap.classList.add('hidden');
+            builtInProto.classList.remove('hidden');
+            toggleBtn.textContent = 'Prototype Mode: Built-in HUD';
+          } else {
+            builtInProto.classList.add('hidden');
+            iframeWrap.classList.remove('hidden');
+            toggleBtn.textContent = 'Prototype Mode: Live';
           }
+        }
+
+        if (toggleBtn) {
+          toggleBtn.addEventListener('click', function () {
+            setPrototypeMode(!showingBuiltIn);
+          });
+        }
+
+        var protoWelcome = document.getElementById('protoWelcome');
+        var protoMessages = document.getElementById('protoMessages');
+        var protoForm = document.getElementById('protoForm');
+        var protoInput = document.getElementById('protoInput');
+        var protoResetBtn = document.getElementById('protoResetBtn');
+        var protoCoreBtn = document.getElementById('protoCoreBtn');
+        var protoVoiceBtn = document.getElementById('protoVoiceBtn');
+
+        function resetPrototype() {
+          protoMessages.innerHTML = '';
+          protoMessages.classList.add('hidden');
+          protoWelcome.classList.remove('hidden');
+        }
+
+        if (protoResetBtn) protoResetBtn.addEventListener('click', resetPrototype);
+        if (protoCoreBtn) protoCoreBtn.addEventListener('click', resetPrototype);
+
+        function appendBubble(role, text, imageUrl) {
+          protoWelcome.classList.add('hidden');
+          protoMessages.classList.remove('hidden');
+          var div = document.createElement('div');
+          div.className = 'msg-bubble ' + role;
+          var label = document.createElement('div');
+          label.className = 'msg-role';
+          label.textContent = role === 'user' ? 'YOU' : 'JARVIS';
+          var body = document.createElement('div');
+          body.className = 'msg-text';
+          body.textContent = text;
+          div.appendChild(label);
+          div.appendChild(body);
+          if (imageUrl) {
+            var img = document.createElement('img');
+            img.src = imageUrl;
+            img.alt = 'JARVIS Generated Visual';
+            img.className = 'msg-img';
+            div.appendChild(img);
+          }
+          protoMessages.appendChild(div);
+          protoMessages.scrollTop = protoMessages.scrollHeight;
+        }
+
+        async function runPrototypeQuery(promptText) {
+          var q = promptText.trim();
+          if (!q) return;
+          appendBubble('user', q);
+
+          if (/full form of dha/i.test(q)) {
+            appendBubble(
+              'assistant',
+              'Here are the major full forms of DHA:\n\n1. Defence Housing Authority — Major residential housing authority in Pakistan.\n2. Docosahexaenoic Acid — Essential omega-3 fatty acid vital for brain and retina health.\n3. Dubai Health Authority — Government healthcare regulator in Dubai, UAE.'
+            );
+            return;
+          }
+          if (/2x\s*\+\s*5\s*=\s*19/i.test(q)) {
+            appendBubble(
+              'assistant',
+              'Given equation: 2x + 5 = 19\nStep 1: Subtract 5 from both sides: 2x = 14\nStep 2: Divide both sides by 2: x = 7'
+            );
+            return;
+          }
+          if (/create|generate|draw.*image/i.test(q)) {
+            var imgUrl =
+              'https://image.pollinations.ai/prompt/' +
+              encodeURIComponent(q) +
+              '?width=768&height=512&nologo=true';
+            appendBubble('assistant', 'Here is the generated visual for "' + q + '":', imgUrl);
+            return;
+          }
+
+          try {
+            var res = await fetch(
+              'https://text.pollinations.ai/' +
+                encodeURIComponent(
+                  'Answer clearly in plain notebook style without markdown asterisks or hashes: ' + q
+                )
+            );
+            if (res.ok) {
+              var reply = (await res.text()).replace(/[*#`$]/g, '').trim();
+              appendBubble('assistant', reply || 'JARVIS is online and ready.');
+              return;
+            }
+          } catch (err) {}
+          appendBubble(
+            'assistant',
+            'JARVIS AI 3.5 Prototype active. Click "Launch Free Workspace" for full multi-modal voice, vision, and 16 specialist engines.'
+          );
+        }
+
+        if (protoForm) {
+          protoForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var val = protoInput.value;
+            protoInput.value = '';
+            runPrototypeQuery(val);
+          });
+        }
+
+        document.querySelectorAll('[data-prompt]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var p = btn.getAttribute('data-prompt');
+            if (p) runPrototypeQuery(p);
+          });
         });
+
+        if (protoVoiceBtn) {
+          protoVoiceBtn.addEventListener('click', function () {
+            var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRec) {
+              appendBubble(
+                'assistant',
+                'Voice recognition is ready in the full app window. Click "Launch Free Workspace" to start two-way voice.'
+              );
+              return;
+            }
+            var rec = new SpeechRec();
+            rec.lang = 'en-US';
+            protoVoiceBtn.textContent = 'Listening...';
+            rec.onresult = function (ev) {
+              var transcript = ev.results[0][0].transcript;
+              runPrototypeQuery(transcript);
+            };
+            rec.onend = function () {
+              protoVoiceBtn.textContent = '🎙 Voice';
+            };
+            rec.start();
+          });
+        }
       })();
     </script>
-  </head>
-  <body class="bg-[#070b12] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200 overflow-hidden">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
