@@ -2,642 +2,656 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>JARVIS AI</title>
-    <meta name="description" content="JARVIS AI is a general-purpose assistant with web search, AI artwork, voice features, file analysis, and locally saved conversations." />
-    <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="https://jarvis-ai-wine-seven.vercel.app/" />
-    <meta property="og:title" content="JARVIS AI" />
-    <meta property="og:description" content="JARVIS AI is a general-purpose assistant with web search, AI artwork, voice features, file analysis, and locally saved conversations." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://jarvis-ai-wine-seven.vercel.app/" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#060b13" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="JARVIS AI" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/png" href="/jarvis-app-icon.png" />
-    <link rel="apple-touch-icon" href="/jarvis-app-icon.png" />
-    <script>
-      // Capture beforeinstallprompt early before React mounts so Install App works immediately
-      window.__jarvisDeferredPrompt = null;
-      window.addEventListener('beforeinstallprompt', function (e) {
-        e.preventDefault();
-        window.__jarvisDeferredPrompt = e;
-      });
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JARVIS AI 3.5 — Personal AI Assistant & Radial HUD</title>
+    <meta
+      name="description"
+      content="JARVIS AI 3.5 workspace with radial command wheel, two-way voice conversation, 16 specialist domains, neural image studio, live Google news, and Pro reasoning."
+    />
+    <meta name="theme-color" content="#020813" />
+    <meta name="google-site-verification" content="Wmh9OFfNjSLlFBakbWeXcPKD8KeuhiwWGDIJ9eyliwY" />
+    <style>
+      :root {
+        --bg: #020813;
+        --panel: rgba(6, 17, 36, 0.92);
+        --border: rgba(34, 211, 238, 0.25);
+        --cyan: #22d3ee;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+      }
 
-      // Gracefully absorb harmless Vite HMR WebSocket closed errors in preview/iframe environment
-      (function() {
-        var origConsoleError = console.error;
-        console.error = function() {
-          var args = Array.prototype.slice.call(arguments);
-          var msg = args.map(function(a) {
-            return typeof a === 'object' && a !== null ? (a.message || a.stack || JSON.stringify(a)) : String(a);
-          }).join(' ');
-          if (
-            msg.indexOf('WebSocket closed without opened') !== -1 ||
-            (msg.indexOf('WebSocket') !== -1 && msg.indexOf('vite') !== -1) ||
-            msg.indexOf('[vite] failed to connect to websocket') !== -1
-          ) {
-            return;
-          }
-          origConsoleError.apply(console, args);
-        };
-        window.addEventListener('error', function (e) {
-          if (
-            e.message &&
-            (e.message.includes('WebSocket') || e.message.includes('ws') || e.message.includes('vite'))
-          ) {
-            e.stopImmediatePropagation();
-            e.preventDefault();
-          }
-        });
-        window.addEventListener('unhandledrejection', function (e) {
-          if (
-            e.reason &&
-            (String(e.reason).includes('WebSocket') || String(e.reason).includes('vite'))
-          ) {
-            e.stopImmediatePropagation();
-            e.preventDefault();
-          }
-        });
-      })();
-    </script>
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html, body {
+        background-color: #020813;
+        background-image: radial-gradient(circle at top, #071936 0%, #020813 65%);
+        color: #f1f5f9;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.6;
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+
+      .container {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      a {
+        color: var(--cyan);
+        text-decoration: none;
+      }
+
+      /* Top Navigation */
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: rgba(2, 8, 19, 0.94);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .topbar-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 64px;
+        gap: 16px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #ffffff;
+        font-size: 18px;
+      }
+
+      .arc-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--cyan);
+        box-shadow: 0 0 12px var(--cyan);
+        flex-shrink: 0;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 20px;
+        font-size: 14px;
+      }
+
+      .nav-links a {
+        color: var(--muted);
+        transition: color 0.2s ease;
+      }
+
+      .nav-links a:hover {
+        color: #ffffff;
+      }
+
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 9px 16px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: transform 0.15s ease, opacity 0.15s ease;
+      }
+
+      .btn:hover {
+        opacity: 0.92;
+        transform: translateY(-1px);
+      }
+
+      .btn-lg {
+        padding: 12px 22px;
+        font-size: 15px;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #06b6d4, #2563eb);
+        color: #ffffff;
+        box-shadow: 0 0 20px rgba(6, 182, 212, 0.35);
+      }
+
+      .btn-secondary {
+        background: rgba(15, 23, 42, 0.9);
+        color: #e2e8f0;
+        border-color: var(--border);
+      }
+
+      .btn-pro {
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        color: #020813;
+        font-weight: 700;
+      }
+
+      .btn-vip {
+        background: linear-gradient(135deg, #7c3aed, #a855f7);
+        color: #ffffff;
+      }
+
+      .full-w {
+        width: 100%;
+        margin-top: auto;
+        padding-top: 10px;
+        padding-bottom: 10px;
+      }
+
+      /* Hero Section */
+      .hero {
+        padding: 56px 0 36px;
+        text-align: center;
+      }
+
+      .pill-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        background: rgba(34, 211, 238, 0.1);
+        border: 1px solid var(--border);
+        color: var(--cyan);
+        margin-bottom: 18px;
+      }
+
+      .pulse-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 8px #22c55e;
+        flex-shrink: 0;
+      }
+
+      h1 {
+        font-size: clamp(32px, 5vw, 54px);
+        font-weight: 800;
+        color: #ffffff;
+      }
+
+      .gradient-text {
+        color: #22d3ee;
+        background: linear-gradient(90deg, #22d3ee, #60a5fa, #a78bfa);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .hero-sub {
+        max-width: 680px;
+        margin: 14px auto 26px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .hero-cta {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 36px;
+      }
+
+      /* Workspace Iframe */
+      .workspace-frame {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        text-align: left;
+      }
+
+      .frame-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        background: rgba(4, 12, 26, 0.98);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .frame-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #cbd5e1;
+      }
+
+      .iframe-wrap {
+        position: relative;
+        width: 100%;
+        height: 640px;
+        background: #020813;
+      }
+
+      .iframe-wrap iframe {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        display: block;
+        background: transparent;
+      }
+
+      .iframe-fallback {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px;
+        color: var(--muted);
+        gap: 14px;
+      }
+
+      /* Sections & Cards */
+      .section {
+        padding: 56px 0;
+      }
+
+      .section-head {
+        text-align: center;
+        max-width: 640px;
+        margin: 0 auto 36px;
+      }
+
+      .eyebrow {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        color: var(--cyan);
+      }
+
+      .section-head h2 {
+        font-size: 30px;
+        margin: 6px 0 10px;
+        color: #ffffff;
+      }
+
+      .section-head p {
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .tiers-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+      }
+
+      .pricing-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 18px;
+      }
+
+      .card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+      }
+
+      .card.featured {
+        border-color: var(--cyan);
+        box-shadow: 0 0 28px rgba(34, 211, 238, 0.14);
+      }
+
+      .card.vip {
+        border-color: rgba(168, 85, 247, 0.55);
+        box-shadow: 0 0 28px rgba(168, 85, 247, 0.14);
+      }
+
+      .card h3 {
+        margin: 10px 0 8px;
+        font-size: 19px;
+        color: #ffffff;
+      }
+
+      .card p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .tier-badge {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.15);
+        color: #cbd5e1;
+      }
+
+      .tier-badge.cyan {
+        background: rgba(34, 211, 238, 0.16);
+        color: var(--cyan);
+      }
+
+      .tier-badge.purple {
+        background: rgba(168, 85, 247, 0.18);
+        color: #d8b4fe;
+      }
+
+      .price-tag {
+        font-size: 32px;
+        font-weight: 800;
+        color: #ffffff;
+        margin: 10px 0 14px;
+      }
+
+      .price-tag span {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--muted);
+      }
+
+      .plan-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 13px;
+        color: #cbd5e1;
+        margin-bottom: 20px;
+        width: 100%;
+      }
+
+      /* Footer */
+      .footer {
+        border-top: 1px solid var(--border);
+        padding: 28px 0;
+        margin-top: 30px;
+      }
+
+      .footer-inner {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 18px;
+        font-size: 13px;
+      }
+
+      @media (max-width: 860px) {
+        .tiers-grid {
+          grid-template-columns: 1fr;
+        }
+        .nav-links {
+          display: none;
+        }
+        .iframe-wrap {
+          height: 500px;
+        }
+      }
+    </style>
   </head>
-  <body class="bg-[#070b12] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200 overflow-hidden">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-    <!-- JARVIS PRO LICENSE GATE & GUMROAD CHECKOUT MODAL -->
-<div id="jarvisProModal" style="display:none; position:fixed; inset:0; z-index:99999; background:rgba(2,8,19,0.86); backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:16px; font-family:system-ui,-apple-system,sans-serif;">
-  <div style="width:100%; max-width:440px; background:#061224; border:1px solid rgba(34,211,238,0.4); border-radius:18px; padding:24px; color:#f1f5f9; box-shadow:0 24px 60px rgba(0,0,0,0.75); position:relative;">
-    <button type="button" id="closeProModalBtn" style="position:absolute; top:14px; right:16px; background:none; border:none; color:#94a3b8; font-size:20px; cursor:pointer;">✕</button>
-
-    <div style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.12em; padding:4px 10px; border-radius:999px; background:rgba(245,158,11,0.18); color:#fbbf24; margin-bottom:10px;">
-      ⚡ JARVIS DUAL ENGINE PRO
-    </div>
-
-    <h2 style="margin:0 0 8px; font-size:22px; font-weight:800; color:#fff;">Unlock Dual Engine & 16 Specialists</h2>
-    <p style="margin:0 0 18px; font-size:13px; color:#94a3b8; line-height:1.5;">
-      JARVIS Turbo is free forever. Upgrade to <strong>Dual Engine Pro</strong> to unlock multi-engine deep reasoning, 16 Specialist Domains, and priority HD image generation.
-    </p>
-
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;">
-      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 10px; border-radius:12px; background:linear-gradient(135deg,#06b6d4,#2563eb); color:#fff; text-decoration:none; font-weight:700; font-size:13px;">
-        Pro Monthly<br><span style="font-size:17px;">$7 / mo ↗</span>
-      </a>
-      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 10px; border-radius:12px; background:linear-gradient(135deg,#f59e0b,#ea580c); color:#020813; text-decoration:none; font-weight:800; font-size:13px;">
-        Lifetime Pass<br><span style="font-size:17px;">$29 once ↗</span>
-      </a>
-    </div>
-
-    <div style="border-top:1px solid rgba(148,163,184,0.2); padding-top:14px;">
-      <label for="jarvisLicenseInput" style="display:block; font-size:12px; color:#cbd5e1; margin-bottom:6px;">
-        Already purchased? Paste your Gumroad License Key:
-      </label>
-      <div style="display:flex; gap:8px;">
-        <input id="jarvisLicenseInput" type="text" placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid rgba(34,211,238,0.35); background:#020813; color:#fff; font-size:12px; outline:none;" />
-        <button type="button" id="activateProKeyBtn" style="padding:10px 14px; border-radius:10px; border:none; background:#22d3ee; color:#020813; font-weight:700; font-size:13px; cursor:pointer;">
-          Activate
-        </button>
+  <body>
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <a href="#top" class="brand">
+          <span class="arc-dot"></span>
+          <span>JARVIS <strong>AI 3.5</strong></span>
+        </a>
+        <nav class="nav-links">
+          <a href="#workspace">Live Workspace</a>
+          <a href="#features">Features</a>
+          <a href="#pricing">Freemium Pro</a>
+        </nav>
+        <div class="topbar-actions">
+          <a href="#pricing" class="btn btn-pro">⚡ Upgrade Pro</a>
+          <a
+            href="https://jarvis-ai-wine-seven.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-primary"
+          >
+            Open App ↗
+          </a>
+        </div>
       </div>
-      <div id="proKeyStatus" style="font-size:12px; margin-top:8px; color:#22d3ee;"></div>
-    </div>
-  </div>
-</div>
+    </header>
 
-<script>
-  (function () {
-    const STORAGE_KEY = 'jarvis_pro_license_key';
-    const modal = document.getElementById('jarvisProModal');
-    const closeBtn = document.getElementById('closeProModalBtn');
-    const activateBtn = document.getElementById('activateProKeyBtn');
-    const keyInput = document.getElementById('jarvisLicenseInput');
-    const statusEl = document.getElementById('proKeyStatus');
+    <main id="top">
+      <section class="hero">
+        <div class="container">
+          <div class="pill-badge">
+            <span class="pulse-dot"></span>
+            <span>Powered by JARVIS Turbo (Free) & Dual Engine Pro</span>
+          </div>
 
-    function isProUnlocked() {
-      return Boolean(localStorage.getItem(STORAGE_KEY));
-    }
+          <h1>Meet <span class="gradient-text">JARVIS AI 3.5</span></h1>
+          <p class="hero-sub">
+            Your personal AI workspace with a 3D radial command wheel, two-way voice waveform,
+            16 specialist domains, neural art studio, and real-time Google news.
+          </p>
 
-    function openProModal() {
-      modal.style.display = 'flex';
-    }
+          <div class="hero-cta">
+            <a
+              href="https://jarvis-ai-wine-seven.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-primary btn-lg"
+            >
+              Launch Free Workspace ↗
+            </a>
+            <a href="#pricing" class="btn btn-pro btn-lg">
+              Get JARVIS Pro ($7/mo)
+            </a>
+          </div>
 
-    function closeProModal() {
-      modal.style.display = 'none';
-    }
+          <div id="workspace" class="workspace-frame">
+            <div class="frame-header">
+              <div class="frame-title">
+                <span class="pulse-dot"></span>
+                <span>JARVIS AI 3.5 — Live Interactive Workspace</span>
+              </div>
+              <a
+                href="https://jarvis-ai-wine-seven.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-secondary"
+              >
+                Full Screen ↗
+              </a>
+            </div>
 
-    closeBtn.addEventListener('click', closeProModal);
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) closeProModal();
-    });
+            <div class="iframe-wrap">
+              <div class="iframe-fallback">
+                <p>Loading JARVIS AI 3.5 Workspace...</p>
+                <a
+                  href="https://jarvis-ai-wine-seven.vercel.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="btn btn-primary"
+                >
+                  Open Workspace Directly ↗
+                </a>
+              </div>
+              <iframe
+                src="https://jarvis-ai-wine-seven.vercel.app/"
+                title="JARVIS AI 3.5 Live Workspace"
+                allow="microphone; camera; display-capture; clipboard-write"
+              ></iframe>
+            </div>
+          </div>
+        </div>
+      </section>
 
-    activateBtn.addEventListener('click', function () {
-      const code = keyInput.value.trim();
-      // Accepts standard Gumroad 35-char license keys (with hyphens) or your master test key
-      if (code.length >= 16) {
-        localStorage.setItem(STORAGE_KEY, code);
-        statusEl.style.color = '#22c55e';
-        statusEl.textContent = '✓ Dual Engine Pro unlocked! You can now use all Pro features.';
-        setTimeout(closeProModal, 900);
-      } else {
-        statusEl.style.color = '#f87171';
-        statusEl.textContent = 'Please enter a valid Gumroad License Key.';
-      }
-    });
+      <section id="features" class="section">
+        <div class="container">
+          <div class="section-head">
+            <span class="eyebrow">CAPABILITIES</span>
+            <h2>Everything you expect from a modern AI workspace</h2>
+            <p>Engineered for speed, accuracy, and seamless creativity across desktop and mobile.</p>
+          </div>
 
-    // Intercept clicks on "Dual Engine" or "Specialist Matrix" when Pro is not unlocked
-    document.addEventListener('click', function (e) {
-      if (isProUnlocked()) return;
-      const target = e.target.closest('button, [role="button"], div, span');
-      if (!target) return;
-      const text = (target.textContent || '').trim();
-      if (/^Dual Engine$/i.test(text) || /Specialist Matrix/i.test(text)) {
-        e.preventDefault();
-        e.stopPropagation();
-        openProModal();
-      }
-    }, true);
-  })();
-</script>
-<!-- JARVIS FULL AUTOMATIC IMAGE VISION, OCR CLEANUP & PRO LICENSE GATE -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+          <div class="tiers-grid">
+            <article class="card">
+              <h3>🌐 Live Web Knowledge</h3>
+              <p>Connects directly to real-time Google news and web search with verified source links.</p>
+            </article>
+            <article class="card">
+              <h3>⚡ Dual Engine Pro</h3>
+              <p>Switch between fast JARVIS Turbo responses and deep reasoning across 16 specialist domains.</p>
+            </article>
+            <article class="card">
+              <h3>🎨 Neural Art & Voice</h3>
+              <p>Generate high-resolution artwork and talk hands-free with two-way voice conversation.</p>
+            </article>
+          </div>
+        </div>
+      </section>
 
-<div id="jarvisProModal" style="display:none; position:fixed; inset:0; z-index:99999; background:rgba(2,8,19,0.88); backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:16px; font-family:system-ui,-apple-system,sans-serif;">
-  <div style="width:100%; max-width:440px; background:#061224; border:1px solid rgba(34,211,238,0.4); border-radius:18px; padding:24px; color:#f1f5f9; box-shadow:0 24px 60px rgba(0,0,0,0.75); position:relative;">
-    <button type="button" id="closeProModalBtn" style="position:absolute; top:14px; right:16px; background:none; border:none; color:#94a3b8; font-size:20px; cursor:pointer;">✕</button>
-    <div style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.12em; padding:4px 10px; border-radius:999px; background:rgba(245,158,11,0.18); color:#fbbf24; margin-bottom:10px;">
-      ⚡ JARVIS DUAL ENGINE PRO
-    </div>
-    <h2 style="margin:0 0 8px; font-size:22px; font-weight:800; color:#fff;">Unlock Dual Engine & 16 Specialists</h2>
-    <p style="margin:0 0 18px; font-size:13px; color:#94a3b8; line-height:1.5;">
-      JARVIS Turbo is free forever. Upgrade to <strong>Dual Engine Pro</strong> for deep reasoning, 16 Specialist Domains, and priority HD image generation.
-    </p>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;">
-      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 10px; border-radius:12px; background:linear-gradient(135deg,#06b6d4,#2563eb); color:#fff; text-decoration:none; font-weight:700; font-size:13px;">
-        Pro Monthly<br><span style="font-size:17px;">$7 / mo ↗</span>
-      </a>
-      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 10px; border-radius:12px; background:linear-gradient(135deg,#f59e0b,#ea580c); color:#020813; text-decoration:none; font-weight:800; font-size:13px;">
-        Lifetime Pass<br><span style="font-size:17px;">$29 once ↗</span>
-      </a>
-    </div>
-    <div style="border-top:1px solid rgba(148,163,184,0.2); padding-top:14px;">
-      <label for="jarvisLicenseInput" style="display:block; font-size:12px; color:#cbd5e1; margin-bottom:6px;">
-        Already purchased? Paste your Gumroad License Key:
-      </label>
-      <div style="display:flex; gap:8px;">
-        <input id="jarvisLicenseInput" type="text" placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid rgba(34,211,238,0.35); background:#020813; color:#fff; font-size:12px; outline:none;" />
-        <button type="button" id="activateProKeyBtn" style="padding:10px 14px; border-radius:10px; border:none; background:#22d3ee; color:#020813; font-weight:700; font-size:13px; cursor:pointer;">
-          Activate
-        </button>
+      <section id="pricing" class="section">
+        <div class="container">
+          <div class="section-head">
+            <span class="eyebrow">FREEMIUM & PRO ACCESS</span>
+            <h2>Start Free Forever — Upgrade for Pro Power</h2>
+            <p>Use JARVIS Turbo for free in Guest Mode, or unlock Dual Engine Pro with a Gumroad License Key or VIP Code.</p>
+          </div>
+
+          <div class="pricing-grid">
+            <article class="card">
+              <span class="tier-badge">Free Forever</span>
+              <h3>JARVIS Starter</h3>
+              <div class="price-tag">$0 <span>/ month</span></div>
+              <ul class="plan-list">
+                <li>✓ Unlimited JARVIS Turbo chat</li>
+                <li>✓ Real-time Google News</li>
+                <li>✓ Standard Image Studio</li>
+                <li>✓ Export chats to TXT & JSON</li>
+              </ul>
+              <a
+                href="https://jarvis-ai-wine-seven.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-secondary full-w"
+              >
+                Use Free Now ↗
+              </a>
+            </article>
+
+            <article class="card featured">
+              <span class="tier-badge cyan">Most Popular • Pro</span>
+              <h3>JARVIS Dual Engine Pro</h3>
+              <div class="price-tag">$7 <span>/ month</span></div>
+              <ul class="plan-list">
+                <li>✓ All 16 Specialist Domains</li>
+                <li>✓ Engineering & Medical Lab</li>
+                <li>✓ HD Image Studio (No watermark)</li>
+                <li>✓ Unlimited Voice & Vision</li>
+              </ul>
+              <a
+                href="https://paragonista3.gumroad.com/l/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-primary full-w"
+              >
+                Unlock Pro ($7/mo) ↗
+              </a>
+            </article>
+
+            <article class="card">
+              <span class="tier-badge purple">One-Time Pass</span>
+              <h3>JARVIS Lifetime Founder</h3>
+              <div class="price-tag">$29 <span>one-time</span></div>
+              <ul class="plan-list">
+                <li>✓ Dual Engine Pro forever</li>
+                <li>✓ Early JARVIS 4.0 beta access</li>
+                <li>✓ Commercial usage rights</li>
+                <li>✓ Priority developer support</li>
+              </ul>
+              <a
+                href="https://paragonista3.gumroad.com/l/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-pro full-w"
+              >
+                Get Lifetime ($29) ↗
+              </a>
+            </article>
+
+            <article class="card vip">
+              <span class="tier-badge purple">🔑 Exclusive Access</span>
+              <h3>JARVIS VIP Pass</h3>
+              <div class="price-tag">VIP <span>Password</span></div>
+              <ul class="plan-list">
+                <li>✓ Instant Dual Engine unlock</li>
+                <li>✓ Full access for VIP members</li>
+                <li>✓ No checkout required with code</li>
+                <li>✓ Enter password inside app</li>
+              </ul>
+              <a
+                href="https://jarvis-ai-wine-seven.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-vip full-w"
+              >
+                Enter VIP Code in App ↗
+              </a>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <div class="brand">
+          <span class="arc-dot"></span>
+          <span>JARVIS <strong>AI 3.5</strong></span>
+        </div>
+        <div class="footer-links">
+          <a href="#workspace">Live Workspace</a>
+          <a href="#features">Features</a>
+          <a href="#pricing">Freemium Pro</a>
+          <a
+            href="https://jarvis-ai-wine-seven.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Live App ↗
+          </a>
+        </div>
       </div>
-      <div id="proKeyStatus" style="font-size:12px; margin-top:8px; color:#22d3ee;"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-  (function () {
-    /* =====================================================================
-       PART 1: AUTOMATIC HIGH-ACCURACY IMAGE VISION & OCR RECONSTRUCTOR
-       ===================================================================== */
-    let lastUploadedImageDataUrl = null;
-    let lastUserPromptText = '';
-
-    // Capture any image file chosen through <input type="file"> automatically
-    document.addEventListener('change', function (e) {
-      const input = e.target;
-      if (input && input.type === 'file' && input.files && input.files[0]) {
-        const file = input.files[0];
-        if (file.type && file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = function (ev) {
-            lastUploadedImageDataUrl = ev.target.result;
-          };
-          reader.readAsDataURL(file);
-        }
-      }
-    }, true);
-
-    // Capture the user's latest prompt text when Enter is pressed or Send is clicked
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        const active = document.activeElement;
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.value.trim()) {
-          lastUserPromptText = active.value.trim();
-        }
-      }
-    }, true);
-
-    document.addEventListener('click', function (e) {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const box = document.querySelector('textarea, input[type="text"]');
-      if (box && box.value && box.value.trim()) {
-        lastUserPromptText = box.value.trim();
-      }
-    }, true);
-
-    // Upscale, grayscale, and sharpen contrast on an HTML5 Canvas
-    function preprocessImage(dataUrl) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = function () {
-          const minWidth = 1800;
-          const scale = img.width < minWidth ? minWidth / img.width : 1;
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.filter = 'grayscale(100%) contrast(180%) brightness(108%)';
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = reject;
-        img.src = dataUrl;
-      });
-    }
-
-    // Run Tesseract v5 with auto-rotation on preprocessed image
-    async function runEnhancedOCR(dataUrl) {
-      if (!window.Tesseract || !dataUrl) return '';
-      const cleanImg = await preprocessImage(dataUrl);
-      const worker = await window.Tesseract.createWorker('eng', 1);
-      try {
-        const { data } = await worker.recognize(cleanImg, { rotateAuto: true });
-        return (data.text || '').trim();
-      } finally {
-        await worker.terminate();
-      }
-    }
-
-    // Reconstruct broken OCR text & execute the user's instruction via AI
-    async function repairAndAnswerOCR(rawText, userTask) {
-      const instruction = userTask || 'Reconstruct, fix spelling/cut-off margins, and rewrite this clearly';
-      const prompt = [
-        'You are JARVIS AI Vision & Document Specialist.',
-        'The text below came from OCR of a camera photo of a printed page. It may have missing first letters on left margins and OCR typos (e.g., "Britush" -> "British", "Govemor" -> "Governor").',
-        '1. Accurately reconstruct the complete original text by repairing broken words and typos from context.',
-        '2. Follow this user instruction: "' + instruction + '".',
-        '3. Return clean, well-formatted plain text only (no markdown asterisks or hash symbols).',
-        '\n--- EXTRACTED TEXT ---\n' + rawText
-      ].join('\n');
-
-      try {
-        const res = await fetch('https://text.pollinations.ai/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [{ role: 'user', content: prompt }],
-            model: 'openai'
-          })
-        });
-        if (res.ok) {
-          const out = (await res.text()).replace(/[*#`]/g, '').trim();
-          if (out) return out;
-        }
-      } catch (err) {}
-
-      return rawText
-        .replace(/\bBritush\b/gi, 'British')
-        .replace(/\bGovemor\b/gi, 'Governor')
-        .replace(/\bdiscritination\b/gi, 'discrimination');
-    }
-
-    // Automatically upgrade any raw "Text read from your image:" bubble in the DOM
-    const repairedNodes = new WeakSet();
-    const observer = new MutationObserver(function () {
-      const candidates = document.querySelectorAll('div, p, pre, span');
-      candidates.forEach(async function (el) {
-        if (repairedNodes.has(el)) return;
-        const txt = el.textContent || '';
-        if (
-          txt.includes('Text read from your image:') &&
-          el.children.length === 0 &&
-          txt.length > 35
-        ) {
-          repairedNodes.add(el);
-          const rawExisting = txt.replace(/^[\s\S]*?Text read from your image:\s*/i, '').trim();
-          el.textContent = 'JARVIS Vision: Enhancing image contrast & reconstructing text...';
-
-          try {
-            let bestRaw = rawExisting;
-            // Find the latest <img> in chat if available
-            const chatImgs = document.querySelectorAll('img');
-            const latestImg = chatImgs.length ? chatImgs[chatImgs.length - 1].src : lastUploadedImageDataUrl;
-            if (latestImg && latestImg.startsWith('data:image')) {
-              const enhancedText = await runEnhancedOCR(latestImg);
-              if (enhancedText && enhancedText.length > 15) {
-                bestRaw = enhancedText;
-              }
-            }
-            const fixedAnswer = await repairAndAnswerOCR(bestRaw, lastUserPromptText);
-            el.style.whiteSpace = 'pre-wrap';
-            el.textContent = fixedAnswer;
-          } catch (err) {
-            el.style.whiteSpace = 'pre-wrap';
-            el.textContent = rawExisting;
-          }
-        }
-      });
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-
-    /* =====================================================================
-       PART 2: GUMROAD FREEMIUM PRO LICENSE GATE ($7/mo & $29 Lifetime)
-       ===================================================================== */
-    const STORAGE_KEY = 'jarvis_pro_license_key';
-    const modal = document.getElementById('jarvisProModal');
-    const closeBtn = document.getElementById('closeProModalBtn');
-    const activateBtn = document.getElementById('activateProKeyBtn');
-    const keyInput = document.getElementById('jarvisLicenseInput');
-    const statusEl = document.getElementById('proKeyStatus');
-
-    closeBtn.addEventListener('click', () => (modal.style.display = 'none'));
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.style.display = 'none';
-    });
-
-    activateBtn.addEventListener('click', function () {
-      const code = keyInput.value.trim();
-      if (code.length >= 16) {
-        localStorage.setItem(STORAGE_KEY, code);
-        statusEl.style.color = '#22c55e';
-        statusEl.textContent = '✓ Dual Engine Pro unlocked!';
-        setTimeout(() => (modal.style.display = 'none'), 800);
-      } else {
-        statusEl.style.color = '#f87171';
-        statusEl.textContent = 'Please enter a valid Gumroad License Key.';
-      }
-    });
-
-    document.addEventListener('click', function (e) {
-      if (localStorage.getItem(STORAGE_KEY)) return;
-      const target = e.target.closest('button, [role="button"], div, span');
-      if (!target) return;
-      const text = (target.textContent || '').trim();
-      if (/^Dual Engine$/i.test(text) || /Specialist Matrix/i.test(text)) {
-        e.preventDefault();
-        e.stopPropagation();
-        modal.style.display = 'flex';
-      }
-    }, true);
-  })();
-</script>
-<!-- JARVIS FULL AUTOMATIC IMAGE VISION, OCR CLEANUP & PRO/VIP LICENSE GATE -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-<div id="jarvisProModal" style="display:none; position:fixed; inset:0; z-index:99999; background:rgba(2,8,19,0.88); backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:16px; font-family:system-ui,-apple-system,sans-serif;">
-  <div style="width:100%; max-width:480px; background:#061224; border:1px solid rgba(34,211,238,0.4); border-radius:18px; padding:24px; color:#f1f5f9; box-shadow:0 24px 60px rgba(0,0,0,0.75); position:relative;">
-    <button type="button" id="closeProModalBtn" style="position:absolute; top:14px; right:16px; background:none; border:none; color:#94a3b8; font-size:20px; cursor:pointer;">✕</button>
-
-    <div style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.12em; padding:4px 10px; border-radius:999px; background:rgba(245,158,11,0.18); color:#fbbf24; margin-bottom:10px;">
-      ⚡ JARVIS DUAL ENGINE PRO & VIP
-    </div>
-
-    <h2 style="margin:0 0 8px; font-size:22px; font-weight:800; color:#fff;">Unlock Dual Engine & 16 Specialists</h2>
-    <p style="margin:0 0 18px; font-size:13px; color:#94a3b8; line-height:1.5;">
-      JARVIS Turbo is free forever. Choose a plan or enter your <strong>Gumroad License Key / VIP Pass Password</strong> below to unlock Dual Engine immediately.
-    </p>
-
-    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:18px;">
-      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 8px; border-radius:12px; background:linear-gradient(135deg,#06b6d4,#2563eb); color:#fff; text-decoration:none; font-weight:700; font-size:12px;">
-        Pro Monthly<br><span style="font-size:16px;">$7 / mo ↗</span>
-      </a>
-      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 8px; border-radius:12px; background:linear-gradient(135deg,#f59e0b,#ea580c); color:#020813; text-decoration:none; font-weight:800; font-size:12px;">
-        Lifetime Pass<br><span style="font-size:16px;">$29 once ↗</span>
-      </a>
-      <button type="button" id="focusVipBtn" style="display:block; width:100%; text-align:center; padding:12px 8px; border-radius:12px; border:1px solid rgba(168,85,247,0.6); background:linear-gradient(135deg,#7c3aed,#a855f7); color:#fff; font-weight:800; font-size:12px; cursor:pointer;">
-        VIP Pass<br><span style="font-size:14px;">🔑 VIP Code</span>
-      </button>
-    </div>
-
-    <div style="border-top:1px solid rgba(148,163,184,0.2); padding-top:14px;">
-      <label for="jarvisLicenseInput" style="display:block; font-size:12px; color:#cbd5e1; margin-bottom:6px;">
-        Enter Gumroad License Key or VIP Password:
-      </label>
-      <div style="display:flex; gap:8px;">
-        <input id="jarvisLicenseInput" type="password" placeholder="License Key or VIP Password..." style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid rgba(34,211,238,0.35); background:#020813; color:#fff; font-size:13px; outline:none;" />
-        <button type="button" id="activateProKeyBtn" style="padding:10px 16px; border-radius:10px; border:none; background:#22d3ee; color:#020813; font-weight:700; font-size:13px; cursor:pointer;">
-          Unlock
-        </button>
-      </div>
-      <div id="proKeyStatus" style="font-size:12px; margin-top:8px; color:#22d3ee;"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-  (function () {
-    /* =====================================================================
-       PART 1: AUTOMATIC HIGH-ACCURACY IMAGE VISION & OCR RECONSTRUCTOR
-       ===================================================================== */
-    let lastUploadedImageDataUrl = null;
-    let lastUserPromptText = '';
-
-    document.addEventListener('change', function (e) {
-      const input = e.target;
-      if (input && input.type === 'file' && input.files && input.files[0]) {
-        const file = input.files[0];
-        if (file.type && file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = function (ev) {
-            lastUploadedImageDataUrl = ev.target.result;
-          };
-          reader.readAsDataURL(file);
-        }
-      }
-    }, true);
-
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        const active = document.activeElement;
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.value.trim()) {
-          lastUserPromptText = active.value.trim();
-        }
-      }
-    }, true);
-
-    document.addEventListener('click', function (e) {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const box = document.querySelector('textarea, input[type="text"]');
-      if (box && box.value && box.value.trim()) {
-        lastUserPromptText = box.value.trim();
-      }
-    }, true);
-
-    function preprocessImage(dataUrl) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = function () {
-          const minWidth = 1800;
-          const scale = img.width < minWidth ? minWidth / img.width : 1;
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.filter = 'grayscale(100%) contrast(180%) brightness(108%)';
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = reject;
-        img.src = dataUrl;
-      });
-    }
-
-    async function runEnhancedOCR(dataUrl) {
-      if (!window.Tesseract || !dataUrl) return '';
-      const cleanImg = await preprocessImage(dataUrl);
-      const worker = await window.Tesseract.createWorker('eng', 1);
-      try {
-        const { data } = await worker.recognize(cleanImg, { rotateAuto: true });
-        return (data.text || '').trim();
-      } finally {
-        await worker.terminate();
-      }
-    }
-
-    async function repairAndAnswerOCR(rawText, userTask) {
-      const instruction = userTask || 'Reconstruct, fix spelling/cut-off margins, and rewrite this clearly';
-      const prompt = [
-        'You are JARVIS AI Vision & Document Specialist.',
-        'The text below came from OCR of a camera photo of a printed page. It may have missing first letters on left margins and OCR typos (e.g., "Britush" -> "British", "Govemor" -> "Governor").',
-        '1. Accurately reconstruct the complete original text by repairing broken words and typos from context.',
-        '2. Follow this user instruction: "' + instruction + '".',
-        '3. Return clean, well-formatted plain text only (no markdown asterisks or hash symbols).',
-        '\n--- EXTRACTED TEXT ---\n' + rawText
-      ].join('\n');
-
-      try {
-        const res = await fetch('https://text.pollinations.ai/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [{ role: 'user', content: prompt }],
-            model: 'openai'
-          })
-        });
-        if (res.ok) {
-          const out = (await res.text()).replace(/[*#`]/g, '').trim();
-          if (out) return out;
-        }
-      } catch (err) {}
-
-      return rawText
-        .replace(/\bBritush\b/gi, 'British')
-        .replace(/\bGovemor\b/gi, 'Governor')
-        .replace(/\bdiscritination\b/gi, 'discrimination');
-    }
-
-    const repairedNodes = new WeakSet();
-    const observer = new MutationObserver(function () {
-      const candidates = document.querySelectorAll('div, p, pre, span');
-      candidates.forEach(async function (el) {
-        if (repairedNodes.has(el)) return;
-        const txt = el.textContent || '';
-        if (
-          txt.includes('Text read from your image:') &&
-          el.children.length === 0 &&
-          txt.length > 35
-        ) {
-          repairedNodes.add(el);
-          const rawExisting = txt.replace(/^[\s\S]*?Text read from your image:\s*/i, '').trim();
-          el.textContent = 'JARVIS Vision: Enhancing image contrast & reconstructing text...';
-
-          try {
-            let bestRaw = rawExisting;
-            const chatImgs = document.querySelectorAll('img');
-            const latestImg = chatImgs.length ? chatImgs[chatImgs.length - 1].src : lastUploadedImageDataUrl;
-            if (latestImg && latestImg.startsWith('data:image')) {
-              const enhancedText = await runEnhancedOCR(latestImg);
-              if (enhancedText && enhancedText.length > 15) {
-                bestRaw = enhancedText;
-              }
-            }
-            const fixedAnswer = await repairAndAnswerOCR(bestRaw, lastUserPromptText);
-            el.style.whiteSpace = 'pre-wrap';
-            el.textContent = fixedAnswer;
-          } catch (err) {
-            el.style.whiteSpace = 'pre-wrap';
-            el.textContent = rawExisting;
-          }
-        }
-      });
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-
-    /* =====================================================================
-       PART 2: GUMROAD PRO ($7 / $29) & VIP PASS UNLOCK GATE
-       ===================================================================== */
-    const STORAGE_KEY = 'jarvis_pro_license_key';
-    const VIP_PASSWORD = 'Jarvis.987abc';
-
-    const modal = document.getElementById('jarvisProModal');
-    const closeBtn = document.getElementById('closeProModalBtn');
-    const focusVipBtn = document.getElementById('focusVipBtn');
-    const activateBtn = document.getElementById('activateProKeyBtn');
-    const keyInput = document.getElementById('jarvisLicenseInput');
-    const statusEl = document.getElementById('proKeyStatus');
-
-    closeBtn.addEventListener('click', () => (modal.style.display = 'none'));
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.style.display = 'none';
-    });
-
-    focusVipBtn.addEventListener('click', () => {
-      keyInput.focus();
-      statusEl.style.color = '#c084fc';
-      statusEl.textContent = 'Enter your VIP Pass password above and click Unlock.';
-    });
-
-    function unlockWithInput() {
-      const code = keyInput.value.trim();
-      if (code === VIP_PASSWORD) {
-        localStorage.setItem(STORAGE_KEY, 'VIP_ACCESS_GRANTED');
-        statusEl.style.color = '#a855f7';
-        statusEl.textContent = '👑 VIP Pass accepted! Dual Engine & all 16 Specialists unlocked.';
-        setTimeout(() => (modal.style.display = 'none'), 800);
-      } else if (code.length >= 24) {
-        localStorage.setItem(STORAGE_KEY, code);
-        statusEl.style.color = '#22c55e';
-        statusEl.textContent = '✓ Gumroad Pro License activated! Dual Engine unlocked.';
-        setTimeout(() => (modal.style.display = 'none'), 800);
-      } else {
-        statusEl.style.color = '#f87171';
-        statusEl.textContent = 'Invalid VIP password or Gumroad License Key.';
-      }
-    }
-
-    activateBtn.addEventListener('click', unlockWithInput);
-    keyInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        unlockWithInput();
-      }
-    });
-
-    document.addEventListener('click', function (e) {
-      if (localStorage.getItem(STORAGE_KEY)) return;
-      const target = e.target.closest('button, [role="button"], div, span');
-      if (!target) return;
-      const text = (target.textContent || '').trim();
-      if (/^Dual Engine$/i.test(text) || /Specialist Matrix/i.test(text)) {
-        e.preventDefault();
-        e.stopPropagation();
-        modal.style.display = 'flex';
-      }
-    }, true);
-  })();
-</script>
+    </footer>
   </body>
 </html>
