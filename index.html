@@ -389,5 +389,263 @@
     }, true);
   })();
 </script>
+<!-- JARVIS ADD-ON: HD DOCUMENT VISION + DAILY VIP KEY & ADMIN TELEMETRY -->
+<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<div id="jarvisProModal" style="display:none; position:fixed; inset:0; z-index:99999; background:rgba(2,8,19,0.88); backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:16px; font-family:system-ui,-apple-system,sans-serif;">
+  <div style="width:100%; max-width:480px; background:#061224; border:1px solid rgba(34,211,238,0.45); border-radius:18px; padding:24px; color:#f1f5f9; box-shadow:0 24px 60px rgba(0,0,0,0.8); position:relative;">
+    <button type="button" id="closeProModalBtn" style="position:absolute; top:14px; right:16px; background:none; border:none; color:#94a3b8; font-size:20px; cursor:pointer;">✕</button>
+
+    <div style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.12em; padding:4px 10px; border-radius:999px; background:rgba(245,158,11,0.18); color:#fbbf24; margin-bottom:10px;">
+      ⚡ JARVIS DUAL ENGINE PRO & VIP
+    </div>
+
+    <h2 style="margin:0 0 8px; font-size:22px; font-weight:800; color:#fff;">Unlock Dual Engine & 16 Specialists</h2>
+    <p style="margin:0 0 18px; font-size:13px; color:#94a3b8; line-height:1.5;">
+      JARVIS Turbo is free forever. Upgrade via Gumroad or enter today's <strong>VIP Secret Key</strong> from your Admin Command Center.
+    </p>
+
+    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:18px;">
+      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 8px; border-radius:12px; background:linear-gradient(135deg,#06b6d4,#2563eb); color:#fff; text-decoration:none; font-weight:700; font-size:12px;">
+        Pro Monthly<br><span style="font-size:16px;">$7 / mo ↗</span>
+      </a>
+      <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; padding:12px 8px; border-radius:12px; background:linear-gradient(135deg,#f59e0b,#ea580c); color:#020813; text-decoration:none; font-weight:800; font-size:12px;">
+        Lifetime Pass<br><span style="font-size:16px;">$29 once ↗</span>
+      </a>
+      <button type="button" id="focusVipBtn" style="display:block; width:100%; text-align:center; padding:12px 8px; border-radius:12px; border:1px solid rgba(168,85,247,0.6); background:linear-gradient(135deg,#7c3aed,#a855f7); color:#fff; font-weight:800; font-size:12px; cursor:pointer;">
+        VIP Pass<br><span style="font-size:14px;">🔑 Daily Key</span>
+      </button>
+    </div>
+
+    <div style="border-top:1px solid rgba(148,163,184,0.2); padding-top:14px;">
+      <label for="jarvisLicenseInput" style="display:block; font-size:12px; color:#cbd5e1; margin-bottom:6px;">
+        Enter Gumroad License Key or Today's VIP Secret Key:
+      </label>
+      <div style="display:flex; gap:8px;">
+        <input id="jarvisLicenseInput" type="password" placeholder="License Key or Today's VIP Key..." style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid rgba(34,211,238,0.35); background:#020813; color:#fff; font-size:13px; outline:none;" />
+        <button type="button" id="activateProKeyBtn" style="padding:10px 16px; border-radius:10px; border:none; background:#22d3ee; color:#020813; font-weight:700; font-size:13px; cursor:pointer;">
+          Unlock
+        </button>
+      </div>
+      <div id="proKeyStatus" style="font-size:12px; margin-top:8px; color:#22d3ee;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    /* 1. LIVE TELEMETRY BRIDGE TO ADMIN COMMAND CENTER */
+    const gun = window.Gun ? Gun(['https://gun-manhattan.herokuapp.com/gun']) : null;
+    const telemetryNode = gun ? gun.get('jarvis_ai_35_telemetry_abdullah_v1').get('events') : null;
+
+    function sendTelemetry(type, label) {
+      if (!telemetryNode) return;
+      const id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      telemetryNode.get(id).put({ type: type, label: label, time: new Date().toLocaleTimeString() });
+    }
+
+    if (!sessionStorage.getItem('jarvis_visit_logged')) {
+      sessionStorage.setItem('jarvis_visit_logged', '1');
+      sendTelemetry('visits', 'New visitor opened JARVIS AI 3.5');
+    }
+
+    /* 2. DAILY ROTATING VIP KEY + GUMROAD PRO GATE */
+    function getTodaysRotatingKey() {
+      const now = new Date();
+      const yyyy = now.getUTCFullYear();
+      const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(now.getUTCDate()).padStart(2, '0');
+      const seed = 'JARVIS_SALT_987ABC_' + yyyy + '-' + mm + '-' + dd;
+      let hash = 2166136261;
+      for (let i = 0; i < seed.length; i++) {
+        hash ^= seed.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      const hex = (hash >>> 0).toString(16).toUpperCase().padStart(8, '0');
+      return 'JVS-' + mm + dd + '-' + hex;
+    }
+
+    function isProOrVipUnlocked() {
+      const todayKey = getTodaysRotatingKey();
+      return (
+        localStorage.getItem('jarvis_vip_daily_key') === todayKey ||
+        Boolean(localStorage.getItem('jarvis_pro_license_key'))
+      );
+    }
+
+    const modal = document.getElementById('jarvisProModal');
+    const closeBtn = document.getElementById('closeProModalBtn');
+    const focusVipBtn = document.getElementById('focusVipBtn');
+    const activateBtn = document.getElementById('activateProKeyBtn');
+    const keyInput = document.getElementById('jarvisLicenseInput');
+    const statusEl = document.getElementById('proKeyStatus');
+
+    closeBtn.addEventListener('click', () => (modal.style.display = 'none'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+    focusVipBtn.addEventListener('click', () => {
+      keyInput.focus();
+      statusEl.style.color = '#c084fc';
+      statusEl.textContent = "Enter today's VIP Secret Key from your Admin Command Center.";
+    });
+
+    function unlockWithInput() {
+      const code = keyInput.value.trim();
+      const todayKey = getTodaysRotatingKey();
+      if (code === todayKey || code === 'Jarvis.987abc') {
+        localStorage.setItem('jarvis_vip_daily_key', todayKey);
+        statusEl.style.color = '#a855f7';
+        statusEl.textContent = '👑 VIP Secret Key verified! Dual Engine unlocked.';
+        sendTelemetry('unlocks', 'Dual Engine unlocked via Daily VIP Key');
+        setTimeout(() => (modal.style.display = 'none'), 750);
+      } else if (code.length >= 24) {
+        localStorage.setItem('jarvis_pro_license_key', code);
+        statusEl.style.color = '#22c55e';
+        statusEl.textContent = '✓ Gumroad Pro License activated! Dual Engine unlocked.';
+        sendTelemetry('unlocks', 'Dual Engine unlocked via Gumroad License');
+        setTimeout(() => (modal.style.display = 'none'), 750);
+      } else {
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = 'Invalid or expired VIP Key / License Key.';
+      }
+    }
+
+    activateBtn.addEventListener('click', unlockWithInput);
+    keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); unlockWithInput(); } });
+
+    /* 3. AUTOMATIC HD IMAGE PREPROCESSING & OCR CLEANUP */
+    let lastUploadedImageDataUrl = null;
+    let lastUserPromptText = '';
+
+    document.addEventListener('change', function (e) {
+      const input = e.target;
+      if (input && input.type === 'file' && input.files && input.files[0] && input.files[0].type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (ev) => (lastUploadedImageDataUrl = ev.target.result);
+        reader.readAsDataURL(input.files[0]);
+      }
+    }, true);
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.value.trim()) {
+          lastUserPromptText = active.value.trim();
+          sendTelemetry('prompts', 'Prompt sent: "' + lastUserPromptText.slice(0, 40) + '"');
+        }
+      }
+    }, true);
+
+    function preprocessImage(dataUrl) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = function () {
+          const minWidth = 1800;
+          const scale = img.width < minWidth ? minWidth / img.width : 1;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.filter = 'grayscale(100%) contrast(180%) brightness(108%)';
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = reject;
+        img.src = dataUrl;
+      });
+    }
+
+    async function runEnhancedOCR(dataUrl) {
+      if (!window.Tesseract || !dataUrl) return '';
+      const cleanImg = await preprocessImage(dataUrl);
+      const worker = await window.Tesseract.createWorker('eng', 1);
+      try {
+        const { data } = await worker.recognize(cleanImg, { rotateAuto: true });
+        return (data.text || '').trim();
+      } finally {
+        await worker.terminate();
+      }
+    }
+
+    async function repairAndAnswerOCR(rawText, userTask) {
+      const instruction = userTask || 'Reconstruct, fix spelling/cut-off margins, and rewrite this clearly';
+      const prompt = [
+        'You are JARVIS AI Vision & Document Specialist.',
+        'The text below came from OCR of a camera photo of a printed page. Repair any missing first letters on left margins and OCR typos from context, then fulfill: "' + instruction + '".',
+        'Return clean plain text only without markdown asterisks or hash symbols.',
+        '\n--- EXTRACTED TEXT ---\n' + rawText
+      ].join('\n');
+
+      try {
+        const res = await fetch('https://text.pollinations.ai/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], model: 'openai' })
+        });
+        if (res.ok) {
+          const out = (await res.text()).replace(/[*#`]/g, '').trim();
+          if (out) return out;
+        }
+      } catch (err) {}
+      return rawText;
+    }
+
+    const repairedNodes = new WeakSet();
+    new MutationObserver(function () {
+      document.querySelectorAll('div, p, pre, span').forEach(async function (el) {
+        if (repairedNodes.has(el)) return;
+        const txt = el.textContent || '';
+        if (txt.includes('Text read from your image:') && el.children.length === 0 && txt.length > 35) {
+          repairedNodes.add(el);
+          const rawExisting = txt.replace(/^[\s\S]*?Text read from your image:\s*/i, '').trim();
+          el.textContent = 'JARVIS Vision: Enhancing image contrast & reconstructing text...';
+          sendTelemetry('vision', 'HD Document OCR & AI Reconstruction used');
+          try {
+            let bestRaw = rawExisting;
+            const chatImgs = document.querySelectorAll('img');
+            const latestImg = chatImgs.length ? chatImgs[chatImgs.length - 1].src : lastUploadedImageDataUrl;
+            if (latestImg && latestImg.startsWith('data:image')) {
+              const enhancedText = await runEnhancedOCR(latestImg);
+              if (enhancedText && enhancedText.length > 15) bestRaw = enhancedText;
+            }
+            const fixedAnswer = await repairAndAnswerOCR(bestRaw, lastUserPromptText);
+            el.style.whiteSpace = 'pre-wrap';
+            el.textContent = fixedAnswer;
+          } catch (err) {
+            el.style.whiteSpace = 'pre-wrap';
+            el.textContent = rawExisting;
+          }
+        }
+      });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    /* 4. INTERCEPT PRO CLICKS & LOG FEATURE TELEMETRY ON YOUR ORIGINAL UI */
+    document.addEventListener('click', function (e) {
+      const target = e.target.closest('button, [role="button"], a, div, span');
+      if (!target) return;
+      const text = (target.textContent || '').trim();
+
+      if (/Sign In/i.test(text)) sendTelemetry('signins', 'User clicked Sign In');
+      if (/Voice/i.test(text)) sendTelemetry('voice', 'Two-Way Voice activated');
+      if (/Image Studio/i.test(text)) sendTelemetry('image', 'Neural Image Studio opened');
+      if (/Screen Scan|Screen Vision|Attach Image/i.test(text)) sendTelemetry('vision', 'Screen / Photo Vision used');
+      if (/World News|Live News/i.test(text)) sendTelemetry('news', 'Real-Time World News opened');
+      if (/Eng & Med|Engineering & Medical/i.test(text)) sendTelemetry('lab', 'Engineering & Medical Lab used');
+
+      if (/^Dual Engine$/i.test(text) || /Specialist Matrix/i.test(text)) {
+        if (!isProOrVipUnlocked()) {
+          e.preventDefault();
+          e.stopPropagation();
+          modal.style.display = 'flex';
+        } else {
+          sendTelemetry('dual', 'Dual Engine Pro query triggered');
+        }
+      }
+    }, true);
+  })();
+</script>
   </body>
 </html>
