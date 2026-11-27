@@ -10,28 +10,143 @@
     />
     <meta name="theme-color" content="#020813" />
     <meta name="google-site-verification" content="Wmh9OFfNjSLlFBakbWeXcPKD8KeuhiwWGDIJ9eyliwY" />
-    <link rel="stylesheet" href="./css/style.css" />
+    <style>
+      :root {
+        --bg: #020813;
+        --panel: rgba(6, 17, 36, 0.9);
+        --border: rgba(34, 211, 238, 0.25);
+        --cyan: #22d3ee;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: radial-gradient(circle at top, #071936 0%, var(--bg) 65%);
+        color: var(--text);
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+      .container { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+      a { color: var(--cyan); text-decoration: none; }
+
+      .topbar {
+        position: sticky; top: 0; z-index: 50;
+        background: rgba(2, 8, 19, 0.9);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+      .topbar-inner {
+        display: flex; align-items: center; justify-content: space-between;
+        height: 64px; gap: 16px;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 18px; }
+      .arc-dot {
+        width: 12px; height: 12px; border-radius: 50%;
+        background: var(--cyan); box-shadow: 0 0 12px var(--cyan);
+      }
+      .nav-links { display: flex; gap: 20px; font-size: 14px; }
+      .nav-links a { color: var(--muted); }
+      .nav-links a:hover { color: #fff; }
+      .topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+        border: 1px solid transparent; cursor: pointer;
+      }
+      .btn-lg { padding: 12px 22px; font-size: 15px; }
+      .btn-primary {
+        background: linear-gradient(135deg, #06b6d4, #2563eb);
+        color: #fff; box-shadow: 0 0 20px rgba(6, 182, 212, 0.35);
+      }
+      .btn-secondary {
+        background: rgba(15, 23, 42, 0.9); color: #e2e8f0; border-color: var(--border);
+      }
+      .btn-pro {
+        background: linear-gradient(135deg, #f59e0b, #ea580c);
+        color: #020813; font-weight: 700;
+      }
+      .full-w { width: 100%; margin-top: 16px; }
+
+      .hero { padding: 56px 0 36px; text-align: center; }
+      .pill-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 14px; border-radius: 999px; font-size: 12px;
+        background: rgba(34, 211, 238, 0.1); border: 1px solid var(--border);
+        color: var(--cyan); margin-bottom: 18px;
+      }
+      .pulse-dot {
+        width: 8px; height: 8px; border-radius: 50%; background: #22c55e;
+        box-shadow: 0 0 8px #22c55e;
+      }
+      h1 { font-size: clamp(32px, 5vw, 54px); font-weight: 800; }
+      .gradient-text {
+        background: linear-gradient(90deg, #22d3ee, #60a5fa, #a78bfa);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .hero-sub { max-width: 680px; margin: 14px auto 26px; color: var(--muted); font-size: 16px; }
+      .hero-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-bottom: 36px; }
+
+      .workspace-frame {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 18px; overflow: hidden; text-align: left;
+      }
+      .frame-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 16px; background: rgba(4, 12, 26, 0.95);
+        border-bottom: 1px solid var(--border);
+      }
+      .frame-title { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #cbd5e1; }
+      .iframe-wrap iframe { width: 100%; height: 640px; border: 0; display: block; background: #020813; }
+
+      .section { padding: 56px 0; }
+      .section-head { text-align: center; max-width: 640px; margin: 0 auto 36px; }
+      .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.16em; color: var(--cyan); }
+      .section-head h2 { font-size: 30px; margin: 6px 0 10px; }
+      .section-head p { color: var(--muted); font-size: 15px; }
+      .tiers-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+      .card {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 16px; padding: 24px;
+      }
+      .card.featured { border-color: var(--cyan); box-shadow: 0 0 28px rgba(34, 211, 238, 0.14); }
+      .card h3 { margin: 10px 0 8px; font-size: 19px; }
+      .card p { color: var(--muted); font-size: 14px; }
+      .tier-badge {
+        display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px;
+        border-radius: 999px; background: rgba(148, 163, 184, 0.15); color: #cbd5e1;
+      }
+      .tier-badge.cyan { background: rgba(34, 211, 238, 0.16); color: var(--cyan); }
+      .tier-badge.purple { background: rgba(168, 85, 247, 0.18); color: #d8b4fe; }
+      .price-tag { font-size: 32px; font-weight: 800; color: #fff; margin: 10px 0 14px; }
+      .price-tag span { font-size: 13px; font-weight: 500; color: var(--muted); }
+      .plan-list { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #cbd5e1; }
+
+      .footer { border-top: 1px solid var(--border); padding: 28px 0; margin-top: 30px; }
+      .footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; }
+      .footer-links { display: flex; gap: 18px; font-size: 13px; }
+
+      @media (max-width: 860px) {
+        .tiers-grid { grid-template-columns: 1fr; }
+        .nav-links { display: none; }
+      }
+    </style>
   </head>
   <body>
-    <div class="bg-grid" aria-hidden="true"></div>
-
-    <!-- TOP NAVIGATION BAR -->
     <header class="topbar">
       <div class="container topbar-inner">
         <a href="#top" class="brand">
           <span class="arc-dot"></span>
           <span>JARVIS <strong>AI 3.5</strong></span>
         </a>
-
         <nav class="nav-links">
           <a href="#workspace">Live Workspace</a>
           <a href="#features">Features</a>
           <a href="#pricing">Freemium Pro</a>
         </nav>
-
         <div class="topbar-actions">
           <a href="#pricing" class="btn btn-pro">⚡ Upgrade Pro</a>
-          <button type="button" id="installTopBtn" class="btn btn-install">Install App</button>
           <a
             href="https://jarvis-ai-wine-seven.vercel.app/"
             target="_blank"
@@ -45,7 +160,6 @@
     </header>
 
     <main id="top">
-      <!-- HERO & LIVE INTERACTIVE PROTOTYPE -->
       <section class="hero">
         <div class="container">
           <div class="pill-badge">
@@ -56,8 +170,7 @@
           <h1>Meet <span class="gradient-text">JARVIS AI 3.5</span></h1>
           <p class="hero-sub">
             Your personal AI workspace with a 3D radial command wheel, two-way voice waveform,
-            16 specialist domains, neural art studio, and real-time Google news. Start free in
-            Guest Mode or unlock Dual Engine Pro.
+            16 specialist domains, neural art studio, and real-time Google news.
           </p>
 
           <div class="hero-cta">
@@ -72,218 +185,70 @@
             <a href="#pricing" class="btn btn-pro btn-lg">
               Get JARVIS Pro ($7/mo)
             </a>
-            <button type="button" id="installHeroBtn" class="btn btn-secondary btn-lg">
-              Direct Install
-            </button>
           </div>
 
-          <!-- LIVE WORKING WORKSPACE WINDOW -->
           <div id="workspace" class="workspace-frame">
             <div class="frame-header">
-              <div class="traffic-lights">
-                <span class="dot red"></span>
-                <span class="dot yellow"></span>
-                <span class="dot green"></span>
-              </div>
               <div class="frame-title">
                 <span class="pulse-dot"></span>
                 <span>JARVIS AI 3.5 — Live Interactive Workspace</span>
               </div>
-              <div class="frame-controls">
-                <button type="button" id="toggleEmbedModeBtn" class="mini-btn">
-                  Prototype Mode: Live
-                </button>
-                <a
-                  href="https://jarvis-ai-wine-seven.vercel.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="mini-btn"
-                >
-                  Full Screen ↗
-                </a>
-              </div>
+              <a
+                href="https://jarvis-ai-wine-seven.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-secondary"
+              >
+                Full Screen ↗
+              </a>
             </div>
 
-            <!-- 1. LIVE DEPLOYED APP IFRAME -->
-            <div id="liveIframeWrap" class="iframe-wrap">
+            <div class="iframe-wrap">
               <iframe
-                id="jarvisLiveFrame"
                 src="https://jarvis-ai-wine-seven.vercel.app/"
                 title="JARVIS AI 3.5 Live Workspace"
                 allow="microphone; camera; display-capture; clipboard-write"
                 loading="lazy"
               ></iframe>
             </div>
-
-            <!-- 2. BUILT-IN WORKING INTERACTIVE HUD PROTOTYPE -->
-            <div id="builtInPrototype" class="hud-prototype hidden">
-              <div class="hud-top">
-                <div class="hud-brand">
-                  <span class="arc-dot"></span>
-                  <strong>JARVIS</strong>
-                  <span class="status-tag">ONLINE • INTERACTIVE PROTOTYPE</span>
-                </div>
-                <div class="hud-top-btns">
-                  <button type="button" id="protoResetBtn" class="mini-btn">Core HUD</button>
-                  <button type="button" id="protoVoiceBtn" class="mini-btn cyan">🎙 Voice</button>
-                </div>
-              </div>
-
-              <div class="hud-body">
-                <div class="hud-left">
-                  <div class="radial-ring">
-                    <div class="radial-core" id="protoCoreBtn">
-                      <strong>JARVIS</strong>
-                      <span>CORE</span>
-                    </div>
-                    <button type="button" class="node n1" data-prompt="Give me today's top world and technology news.">News</button>
-                    <button type="button" class="node n2" data-prompt="Full form of DHA">Acronyms</button>
-                    <button type="button" class="node n3" data-prompt="Solve 2x + 5 = 19">Math</button>
-                    <button type="button" class="node n4" data-prompt="Write a formal leave application to the Principal.">Write</button>
-                  </div>
-                </div>
-
-                <div class="hud-center">
-                  <div id="protoWelcome" class="proto-welcome">
-                    <div class="core-circle">
-                      <h2>JARVIS</h2>
-                      <p>Your Personal AI Assistant</p>
-                    </div>
-                    <div class="sample-chips">
-                      <button type="button" class="chip" data-prompt="Today's Top News">Today's Top News</button>
-                      <button type="button" class="chip" data-prompt="Full form of DHA">Full form of DHA</button>
-                      <button type="button" class="chip" data-prompt="Solve 2x + 5 = 19">Solve 2x + 5 = 19</button>
-                      <button type="button" class="chip" data-prompt="Create futuristic car image">Create futuristic car image</button>
-                    </div>
-                  </div>
-
-                  <div id="protoMessages" class="proto-messages hidden"></div>
-
-                  <form id="protoForm" class="proto-input-bar">
-                    <input
-                      type="text"
-                      id="protoInput"
-                      placeholder="Write your question to JARVIS..."
-                      autocomplete="off"
-                    />
-                    <button type="submit" class="send-btn">↑</button>
-                  </form>
-                </div>
-
-                <div class="hud-right">
-                  <div class="panel-title">JARVIS FEATURES</div>
-                  <button type="button" class="feat-item" data-prompt="Activate Two-Way Voice Conversation">
-                    <span>Two-Way Voice Conversation</span>
-                    <em>VOICE</em>
-                  </button>
-                  <button type="button" class="feat-item" data-prompt="List the 16 Specialist Domains in JARVIS">
-                    <span>Specialist Matrix (16 Domains)</span>
-                    <em>PRO</em>
-                  </button>
-                  <button type="button" class="feat-item" data-prompt="Create futuristic car image">
-                    <span>Neural Image Studio</span>
-                    <em>FREE</em>
-                  </button>
-                  <button type="button" class="feat-item" data-prompt="Today's Top News">
-                    <span>Real-Time World News</span>
-                    <em>LIVE</em>
-                  </button>
-                  <button type="button" class="feat-item" data-prompt="Solve 2x + 5 = 19">
-                    <span>Engineering & Medical Lab</span>
-                    <em>LAB</em>
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
-
-          <p class="below-frame-note">
-            Prefer a dedicated full-screen app window?
-            <a
-              href="https://jarvis-ai-wine-seven.vercel.app/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Open Full JARVIS AI 3.5 App ↗
-            </a>
-          </p>
         </div>
       </section>
 
-      <!-- CAPABILITIES SECTION -->
       <section id="features" class="section">
         <div class="container">
           <div class="section-head">
             <span class="eyebrow">CAPABILITIES</span>
             <h2>Everything you expect from a modern AI workspace</h2>
-            <p>
-              Engineered for speed, accuracy, and seamless creativity across desktop and mobile.
-            </p>
+            <p>Engineered for speed, accuracy, and seamless creativity across desktop and mobile.</p>
           </div>
 
-          <div class="bento-grid">
-            <article class="card span-2">
-              <div class="card-icon cyan">🌐</div>
-              <h3>Live Web Knowledge & Citations</h3>
-              <p>
-                Connects directly to real-time Google news and web search to deliver up-to-date
-                briefings with clickable, verified source links.
-              </p>
-            </article>
-
+          <div class="tiers-grid">
             <article class="card">
-              <div class="card-icon blue">⚡</div>
-              <h3>Dual Engine Pro</h3>
-              <p>
-                Switch seamlessly between ultra-fast JARVIS Turbo responses and deep multi-step
-                reasoning across 16 specialist professions.
-              </p>
+              <h3>🌐 Live Web Knowledge</h3>
+              <p>Connects directly to real-time Google news and web search with verified source links.</p>
             </article>
-
             <article class="card">
-              <div class="card-icon purple">🎨</div>
-              <h3>Neural Art Studio</h3>
-              <p>
-                Generate high-resolution artwork, holographic blueprints, and 3D renders from
-                natural language prompts in seconds.
-              </p>
+              <h3>⚡ Dual Engine Pro</h3>
+              <p>Switch between fast JARVIS Turbo responses and deep reasoning across 16 specialist domains.</p>
             </article>
-
             <article class="card">
-              <div class="card-icon emerald">👁</div>
-              <h3>Vision & Screen Scan</h3>
-              <p>
-                Attach photos, screenshots, or capture your live screen for instant OCR text
-                extraction and visual analysis.
-              </p>
-            </article>
-
-            <article class="card span-2">
-              <div class="card-icon amber">🎙</div>
-              <h3>Two-Way Voice Core & Smart Export</h3>
-              <p>
-                Speak hands-free with animated dual-sided waveforms and auto-loop conversation, or
-                export any chat to HTML, JSON, Markdown, or TXT and share full sessions via link.
-              </p>
+              <h3>🎨 Neural Art & Voice</h3>
+              <p>Generate high-resolution artwork and talk hands-free with two-way voice conversation.</p>
             </article>
           </div>
         </div>
       </section>
 
-      <!-- FREEMIUM & PRO ACCESS (GUMROAD) -->
       <section id="pricing" class="section">
         <div class="container">
           <div class="section-head">
             <span class="eyebrow">FREEMIUM & PRO ACCESS</span>
             <h2>Start Free Forever — Upgrade for Pro Power</h2>
-            <p>
-              Use JARVIS Turbo for free in Guest Mode, or unlock Dual Engine Pro and commercial
-              specialist tools with a Gumroad Pro License Key.
-            </p>
+            <p>Use JARVIS Turbo for free in Guest Mode, or unlock Dual Engine Pro with a Gumroad License Key.</p>
           </div>
 
           <div class="tiers-grid">
-            <!-- FREE TIER -->
             <article class="card">
               <span class="tier-badge">Free Forever</span>
               <h3>JARVIS Starter</h3>
@@ -304,7 +269,6 @@
               </a>
             </article>
 
-            <!-- PRO MONTHLY TIER ($7) -->
             <article class="card featured">
               <span class="tier-badge cyan">Most Popular • Pro</span>
               <h3>JARVIS Dual Engine Pro</h3>
@@ -325,7 +289,6 @@
               </a>
             </article>
 
-            <!-- LIFETIME TIER ($29) -->
             <article class="card">
               <span class="tier-badge purple">One-Time Pass</span>
               <h3>JARVIS Lifetime Founder</h3>
@@ -350,7 +313,6 @@
       </section>
     </main>
 
-    <!-- FOOTER -->
     <footer class="footer">
       <div class="container footer-inner">
         <div class="brand">
@@ -371,187 +333,5 @@
         </div>
       </div>
     </footer>
-
-    <script>
-      (function () {
-        let deferredPrompt = null;
-        window.addEventListener('beforeinstallprompt', function (e) {
-          e.preventDefault();
-          deferredPrompt = e;
-        });
-
-        function triggerDirectInstall() {
-          if (deferredPrompt) {
-            deferredPrompt.prompt();
-            deferredPrompt.userChoice.finally(function () {
-              deferredPrompt = null;
-            });
-            return;
-          }
-          window.open(
-            'https://jarvis-ai-wine-seven.vercel.app/?autoinstall=1',
-            '_blank',
-            'noopener,noreferrer'
-          );
-        }
-
-        ['installTopBtn', 'installHeroBtn'].forEach(function (id) {
-          var el = document.getElementById(id);
-          if (el) el.addEventListener('click', triggerDirectInstall);
-        });
-
-        var toggleBtn = document.getElementById('toggleEmbedModeBtn');
-        var iframeWrap = document.getElementById('liveIframeWrap');
-        var builtInProto = document.getElementById('builtInPrototype');
-        var showingBuiltIn = false;
-
-        function setPrototypeMode(useBuiltIn) {
-          showingBuiltIn = useBuiltIn;
-          if (useBuiltIn) {
-            iframeWrap.classList.add('hidden');
-            builtInProto.classList.remove('hidden');
-            toggleBtn.textContent = 'Prototype Mode: Built-in HUD';
-          } else {
-            builtInProto.classList.add('hidden');
-            iframeWrap.classList.remove('hidden');
-            toggleBtn.textContent = 'Prototype Mode: Live';
-          }
-        }
-
-        if (toggleBtn) {
-          toggleBtn.addEventListener('click', function () {
-            setPrototypeMode(!showingBuiltIn);
-          });
-        }
-
-        var protoWelcome = document.getElementById('protoWelcome');
-        var protoMessages = document.getElementById('protoMessages');
-        var protoForm = document.getElementById('protoForm');
-        var protoInput = document.getElementById('protoInput');
-        var protoResetBtn = document.getElementById('protoResetBtn');
-        var protoCoreBtn = document.getElementById('protoCoreBtn');
-        var protoVoiceBtn = document.getElementById('protoVoiceBtn');
-
-        function resetPrototype() {
-          protoMessages.innerHTML = '';
-          protoMessages.classList.add('hidden');
-          protoWelcome.classList.remove('hidden');
-        }
-
-        if (protoResetBtn) protoResetBtn.addEventListener('click', resetPrototype);
-        if (protoCoreBtn) protoCoreBtn.addEventListener('click', resetPrototype);
-
-        function appendBubble(role, text, imageUrl) {
-          protoWelcome.classList.add('hidden');
-          protoMessages.classList.remove('hidden');
-          var div = document.createElement('div');
-          div.className = 'msg-bubble ' + role;
-          var label = document.createElement('div');
-          label.className = 'msg-role';
-          label.textContent = role === 'user' ? 'YOU' : 'JARVIS';
-          var body = document.createElement('div');
-          body.className = 'msg-text';
-          body.textContent = text;
-          div.appendChild(label);
-          div.appendChild(body);
-          if (imageUrl) {
-            var img = document.createElement('img');
-            img.src = imageUrl;
-            img.alt = 'JARVIS Generated Visual';
-            img.className = 'msg-img';
-            div.appendChild(img);
-          }
-          protoMessages.appendChild(div);
-          protoMessages.scrollTop = protoMessages.scrollHeight;
-        }
-
-        async function runPrototypeQuery(promptText) {
-          var q = promptText.trim();
-          if (!q) return;
-          appendBubble('user', q);
-
-          if (/full form of dha/i.test(q)) {
-            appendBubble(
-              'assistant',
-              'Here are the major full forms of DHA:\n\n1. Defence Housing Authority — Major residential housing authority in Pakistan.\n2. Docosahexaenoic Acid — Essential omega-3 fatty acid vital for brain and retina health.\n3. Dubai Health Authority — Government healthcare regulator in Dubai, UAE.'
-            );
-            return;
-          }
-          if (/2x\s*\+\s*5\s*=\s*19/i.test(q)) {
-            appendBubble(
-              'assistant',
-              'Given equation: 2x + 5 = 19\nStep 1: Subtract 5 from both sides: 2x = 14\nStep 2: Divide both sides by 2: x = 7'
-            );
-            return;
-          }
-          if (/create|generate|draw.*image/i.test(q)) {
-            var imgUrl =
-              'https://image.pollinations.ai/prompt/' +
-              encodeURIComponent(q) +
-              '?width=768&height=512&nologo=true';
-            appendBubble('assistant', 'Here is the generated visual for "' + q + '":', imgUrl);
-            return;
-          }
-
-          try {
-            var res = await fetch(
-              'https://text.pollinations.ai/' +
-                encodeURIComponent(
-                  'Answer clearly in plain notebook style without markdown asterisks or hashes: ' + q
-                )
-            );
-            if (res.ok) {
-              var reply = (await res.text()).replace(/[*#`$]/g, '').trim();
-              appendBubble('assistant', reply || 'JARVIS is online and ready.');
-              return;
-            }
-          } catch (err) {}
-          appendBubble(
-            'assistant',
-            'JARVIS AI 3.5 Prototype active. Click "Launch Free Workspace" for full multi-modal voice, vision, and 16 specialist engines.'
-          );
-        }
-
-        if (protoForm) {
-          protoForm.addEventListener('submit', function (e) {
-            e.preventDefault();
-            var val = protoInput.value;
-            protoInput.value = '';
-            runPrototypeQuery(val);
-          });
-        }
-
-        document.querySelectorAll('[data-prompt]').forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            var p = btn.getAttribute('data-prompt');
-            if (p) runPrototypeQuery(p);
-          });
-        });
-
-        if (protoVoiceBtn) {
-          protoVoiceBtn.addEventListener('click', function () {
-            var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRec) {
-              appendBubble(
-                'assistant',
-                'Voice recognition is ready in the full app window. Click "Launch Free Workspace" to start two-way voice.'
-              );
-              return;
-            }
-            var rec = new SpeechRec();
-            rec.lang = 'en-US';
-            protoVoiceBtn.textContent = 'Listening...';
-            rec.onresult = function (ev) {
-              var transcript = ev.results[0][0].transcript;
-              runPrototypeQuery(transcript);
-            };
-            rec.onend = function () {
-              protoVoiceBtn.textContent = '🎙 Voice';
-            };
-            rec.start();
-          });
-        }
-      })();
-    </script>
   </body>
 </html>
