@@ -1,657 +1,923 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JARVIS AI 3.5 — Personal AI Assistant & Radial HUD</title>
-    <meta
-      name="description"
-      content="JARVIS AI 3.5 workspace with radial command wheel, two-way voice conversation, 16 specialist domains, neural image studio, live Google news, and Pro reasoning."
-    />
     <meta name="theme-color" content="#020813" />
-    <meta name="google-site-verification" content="Wmh9OFfNjSLlFBakbWeXcPKD8KeuhiwWGDIJ9eyliwY" />
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
       :root {
         --bg: #020813;
-        --panel: rgba(6, 17, 36, 0.92);
+        --panel: rgba(5, 16, 34, 0.92);
+        --panel-soft: rgba(10, 26, 52, 0.72);
         --border: rgba(34, 211, 238, 0.25);
         --cyan: #22d3ee;
-        --text: #f1f5f9;
-        --muted: #94a3b8;
+        --blue: #3b82f6;
+        --purple: #a855f7;
+        --amber: #f59e0b;
+        --green: #22c55e;
+        --text: #e2e8f0;
+        --muted: #7dd3fc;
       }
 
-      *, *::before, *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-
-      html, body {
-        background-color: #020813;
-        background-image: radial-gradient(circle at top, #071936 0%, #020813 65%);
-        color: #f1f5f9;
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        line-height: 1.6;
-        min-height: 100vh;
-        overflow-x: hidden;
+        background: radial-gradient(circle at 50% 35%, #071e42 0%, #020813 70%);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
       }
 
-      .container {
-        max-width: 1120px;
-        margin: 0 auto;
-        padding: 0 20px;
-      }
-
-      a {
-        color: var(--cyan);
-        text-decoration: none;
-      }
-
-      /* Top Navigation */
+      /* TOP STATUS BAR */
       .topbar {
-        position: sticky;
-        top: 0;
-        z-index: 50;
-        background: rgba(2, 8, 19, 0.94);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
+        height: 54px;
+        background: rgba(2, 10, 24, 0.95);
         border-bottom: 1px solid var(--border);
-      }
-
-      .topbar-inner {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        height: 64px;
-        gap: 16px;
-      }
-
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        color: #ffffff;
-        font-size: 18px;
-      }
-
-      .arc-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: var(--cyan);
-        box-shadow: 0 0 12px var(--cyan);
-        flex-shrink: 0;
-      }
-
-      .nav-links {
-        display: flex;
-        gap: 20px;
-        font-size: 14px;
-      }
-
-      .nav-links a {
-        color: var(--muted);
-        transition: color 0.2s ease;
-      }
-
-      .nav-links a:hover {
-        color: #ffffff;
-      }
-
-      .topbar-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      /* Buttons */
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 9px 16px;
-        border-radius: 10px;
-        font-size: 13px;
-        font-weight: 600;
-        border: 1px solid transparent;
-        cursor: pointer;
-        transition: transform 0.15s ease, opacity 0.15s ease;
-      }
-
-      .btn:hover {
-        opacity: 0.92;
-        transform: translateY(-1px);
-      }
-
-      .btn-lg {
-        padding: 12px 22px;
-        font-size: 15px;
-      }
-
-      .btn-primary {
-        background: linear-gradient(135deg, #06b6d4, #2563eb);
-        color: #ffffff;
-        box-shadow: 0 0 20px rgba(6, 182, 212, 0.35);
-      }
-
-      .btn-secondary {
-        background: rgba(15, 23, 42, 0.9);
-        color: #e2e8f0;
-        border-color: var(--border);
-      }
-
-      .btn-pro {
-        background: linear-gradient(135deg, #f59e0b, #ea580c);
-        color: #020813;
-        font-weight: 700;
-      }
-
-      .btn-vip {
-        background: linear-gradient(135deg, #7c3aed, #a855f7);
-        color: #ffffff;
-      }
-
-      .full-w {
-        width: 100%;
-        margin-top: auto;
-        padding-top: 10px;
-        padding-bottom: 10px;
-      }
-
-      /* Hero Section */
-      .hero {
-        padding: 56px 0 36px;
-        text-align: center;
-      }
-
-      .pill-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 14px;
-        border-radius: 999px;
-        font-size: 12px;
-        background: rgba(34, 211, 238, 0.1);
-        border: 1px solid var(--border);
-        color: var(--cyan);
-        margin-bottom: 18px;
-      }
-
-      .pulse-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #22c55e;
-        box-shadow: 0 0 8px #22c55e;
-        flex-shrink: 0;
-      }
-
-      h1 {
-        font-size: clamp(32px, 5vw, 54px);
-        font-weight: 800;
-        color: #ffffff;
-      }
-
-      .gradient-text {
-        color: #22d3ee;
-        background: linear-gradient(90deg, #22d3ee, #60a5fa, #a78bfa);
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-
-      .hero-sub {
-        max-width: 680px;
-        margin: 14px auto 26px;
-        color: var(--muted);
-        font-size: 16px;
-      }
-
-      .hero-cta {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
+        padding: 0 16px;
         gap: 12px;
-        margin-bottom: 36px;
+        flex-shrink: 0;
+      }
+      .brand-wrap { display: flex; align-items: center; gap: 10px; }
+      .arc-ring {
+        width: 26px; height: 26px; border-radius: 50%;
+        border: 2px solid var(--cyan);
+        display: grid; place-items: center;
+        box-shadow: 0 0 12px rgba(34, 211, 238, 0.5);
+      }
+      .arc-ring span {
+        width: 10px; height: 10px; border-radius: 50%; background: var(--cyan);
+      }
+      .brand-title { font-weight: 800; letter-spacing: 0.08em; font-size: 16px; color: #fff; }
+      .online-pill {
+        font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+        background: rgba(34, 197, 94, 0.16); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.4);
+      }
+      .top-mid {
+        font-size: 11px; color: #64748b; letter-spacing: 0.14em; display: flex; gap: 16px;
+      }
+      .top-actions { display: flex; align-items: center; gap: 8px; }
+      .engine-select {
+        background: #06142b; color: #fff; border: 1px solid var(--border);
+        padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+      }
+      .top-btn {
+        padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700;
+        border: 1px solid var(--border); background: rgba(15, 23, 42, 0.85); color: #e2e8f0; cursor: pointer;
+      }
+      .top-btn.pro-glow {
+        background: linear-gradient(135deg, #f59e0b, #ea580c); color: #020813; border: none;
       }
 
-      /* Workspace Iframe */
-      .workspace-frame {
+      /* MAIN 3-COLUMN HUD WORKSPACE */
+      .hud-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 270px 1fr 290px;
+        gap: 12px;
+        padding: 12px;
+        overflow: hidden;
+      }
+
+      .panel {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 18px;
+        border-radius: 14px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
+      }
+      .panel-head {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--cyan);
+        margin-bottom: 10px;
+      }
+
+      /* LEFT COLUMN: RADIAL COMMAND WHEEL & SYSTEM STATUS */
+      .wheel-box {
+        position: relative;
+        width: 210px;
+        height: 210px;
+        margin: 6px auto 12px;
+        border-radius: 50%;
+        border: 1px dashed rgba(34, 211, 238, 0.35);
+        display: grid;
+        place-items: center;
+      }
+      .wheel-core {
+        width: 68px; height: 68px; border-radius: 50%;
+        background: radial-gradient(circle, #0e3a66, #041226);
+        border: 2px solid var(--cyan);
+        box-shadow: 0 0 20px rgba(34, 211, 238, 0.4);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        cursor: pointer; z-index: 2;
+      }
+      .wheel-core strong { font-size: 11px; letter-spacing: 0.08em; color: #fff; }
+      .wheel-core span { font-size: 9px; color: var(--cyan); }
+      .w-node {
+        position: absolute;
+        width: 52px; height: 52px; border-radius: 50%;
+        background: rgba(6, 20, 44, 0.95);
+        border: 1px solid rgba(34, 211, 238, 0.45);
+        color: #e2e8f0; font-size: 9px; font-weight: 600;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        cursor: pointer; transition: 0.2s;
+      }
+      .w-node:hover { border-color: #fff; box-shadow: 0 0 12px rgba(34, 211, 238, 0.5); transform: scale(1.06); }
+      .wn1 { top: -8px; left: 79px; }
+      .wn2 { top: 24px; right: 6px; }
+      .wn3 { bottom: 24px; right: 6px; }
+      .wn4 { bottom: -8px; left: 79px; }
+      .wn5 { bottom: 24px; left: 6px; }
+      .wn6 { top: 24px; left: 6px; }
+
+      .status-card {
+        margin-top: auto;
+        background: rgba(2, 10, 24, 0.85);
+        border: 1px solid rgba(34, 211, 238, 0.2);
+        border-radius: 12px;
+        padding: 10px;
+      }
+      .gauges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; margin-top: 8px; }
+      .gauge-circle {
+        width: 44px; height: 44px; border-radius: 50%; margin: 0 auto 4px;
+        border: 3px solid var(--cyan); display: grid; place-items: center;
+        font-size: 10px; font-weight: 700; color: #fff;
+      }
+      .gauge-label { font-size: 9px; color: #94a3b8; }
+
+      /* CENTER COLUMN: CORE HUD & CHAT */
+      .center-panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        position: relative;
+      }
+      .center-top-bar {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 14px; border-bottom: 1px solid rgba(34, 211, 238, 0.15);
+        font-size: 11px; color: #94a3b8;
+      }
+      .mini-pill {
+        background: rgba(15, 23, 42, 0.9); border: 1px solid var(--border);
+        color: #cbd5e1; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer;
+      }
+
+      .welcome-stage {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        text-align: center;
+      }
+      .jarvis-orb {
+        width: 210px; height: 210px; border-radius: 50%;
+        border: 2px solid rgba(34, 211, 238, 0.55);
+        box-shadow: 0 0 45px rgba(34, 211, 238, 0.2), inset 0 0 30px rgba(34, 211, 238, 0.18);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        margin-bottom: 24px;
+        position: relative;
+      }
+      .jarvis-orb::before {
+        content: ""; position: absolute; inset: 10px; border-radius: 50%;
+        border: 1px dashed rgba(34, 211, 238, 0.5);
+      }
+      .jarvis-orb h1 { font-size: 30px; letter-spacing: 0.22em; color: #fff; font-weight: 800; }
+      .jarvis-orb p { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+      .domain-tag {
+        margin-top: 10px; font-size: 10px; padding: 3px 10px; border-radius: 999px;
+        background: rgba(34, 211, 238, 0.14); color: var(--cyan); border: 1px solid var(--border);
+      }
+
+      .chip-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 620px; }
+      .chip {
+        background: rgba(8, 24, 48, 0.9); border: 1px solid rgba(34, 211, 238, 0.3);
+        color: #cbd5e1; padding: 7px 14px; border-radius: 999px; font-size: 12px; cursor: pointer;
+      }
+      .chip:hover { border-color: var(--cyan); color: #fff; }
+
+      .chat-stream {
+        flex: 1;
+        overflow-y: auto;
+        padding: 18px;
+        display: none;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .msg {
+        max-width: 82%;
+        padding: 12px 16px;
+        border-radius: 14px;
+        font-size: 14px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+      .msg.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, #0284c7, #1d4ed8);
+        color: #fff;
+      }
+      .msg.ai {
+        align-self: flex-start;
+        background: rgba(8, 22, 46, 0.95);
+        border: 1px solid rgba(34, 211, 238, 0.3);
+        color: #f1f5f9;
+      }
+      .msg-role {
+        font-size: 10px; font-weight: 800; letter-spacing: 0.1em; color: var(--cyan); margin-bottom: 4px;
+      }
+      .msg img {
+        max-width: 260px; border-radius: 10px; margin-top: 8px; display: block; border: 1px solid var(--border);
+      }
+
+      /* BOTTOM INPUT DOCK */
+      .input-dock {
+        padding: 12px 16px;
+        background: rgba(3, 12, 28, 0.95);
+        border-top: 1px solid var(--border);
+      }
+      .input-shell {
+        background: rgba(7, 20, 42, 0.95);
+        border: 1px solid rgba(34, 211, 238, 0.38);
+        border-radius: 14px;
+        padding: 10px 12px;
+      }
+      .input-top { display: flex; align-items: center; gap: 8px; }
+      .prompt-input {
+        flex: 1; background: transparent; border: none; color: #fff; font-size: 14px; outline: none;
+      }
+      .send-btn {
+        width: 34px; height: 34px; border-radius: 50%; border: none;
+        background: var(--cyan); color: #020813; font-weight: 800; cursor: pointer;
+      }
+      .input-tools {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(148, 163, 184, 0.12);
+        flex-wrap: wrap; gap: 6px;
+      }
+      .tool-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      .tool-btn {
+        background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(148, 163, 184, 0.25);
+        color: #cbd5e1; padding: 4px 10px; border-radius: 8px; font-size: 11px; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 5px;
+      }
+      .tool-btn.active {
+        background: rgba(34, 211, 238, 0.18); border-color: var(--cyan); color: var(--cyan); font-weight: 700;
+      }
+      .tool-btn.locked {
+        border-color: rgba(245, 158, 11, 0.45); color: #fbbf24;
+      }
+
+      /* RIGHT COLUMN: JARVIS FEATURES */
+      .feat-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+      .feat-card {
+        background: rgba(7, 20, 42, 0.85);
+        border: 1px solid rgba(34, 211, 238, 0.22);
+        border-radius: 10px;
+        padding: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
         text-align: left;
       }
-
-      .frame-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
-        background: rgba(4, 12, 26, 0.98);
-        border-bottom: 1px solid var(--border);
+      .feat-card:hover { border-color: var(--cyan); }
+      .feat-card strong { display: block; font-size: 12px; color: #f1f5f9; }
+      .feat-card span { font-size: 10px; color: #94a3b8; }
+      .tag-badge {
+        font-size: 9px; font-weight: 800; padding: 3px 7px; border-radius: 6px;
+        background: rgba(34, 211, 238, 0.15); color: var(--cyan);
       }
+      .tag-badge.pro { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
 
-      .frame-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-        color: #cbd5e1;
+      /* PRO / VIP MODAL */
+      .modal-backdrop {
+        display: none; position: fixed; inset: 0; z-index: 99999;
+        background: rgba(2, 8, 19, 0.88); backdrop-filter: blur(10px);
+        align-items: center; justify-content: center; padding: 16px;
       }
-
-      .iframe-wrap {
+      .modal-box {
+        width: 100%; max-width: 480px; background: #061224;
+        border: 1px solid rgba(34, 211, 238, 0.45); border-radius: 18px;
+        padding: 24px; color: #f1f5f9; box-shadow: 0 24px 60px rgba(0,0,0,0.8);
         position: relative;
-        width: 100%;
-        height: 640px;
-        background: #020813;
       }
-
-      .iframe-wrap iframe {
-        position: relative;
-        z-index: 2;
-        width: 100%;
-        height: 100%;
-        border: 0;
-        display: block;
-        background: transparent;
+      .modal-close {
+        position: absolute; top: 14px; right: 16px; background: none; border: none;
+        color: #94a3b8; font-size: 20px; cursor: pointer;
       }
-
-      .iframe-fallback {
-        position: absolute;
-        inset: 0;
-        z-index: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        padding: 24px;
-        color: var(--muted);
-        gap: 14px;
+      .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
+      .plan-btn {
+        display: block; text-align: center; padding: 12px 8px; border-radius: 12px;
+        text-decoration: none; font-weight: 800; font-size: 12px; border: none; cursor: pointer;
       }
+      .plan-monthly { background: linear-gradient(135deg, #06b6d4, #2563eb); color: #fff; }
+      .plan-life { background: linear-gradient(135deg, #f59e0b, #ea580c); color: #020813; }
+      .plan-vip { background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; }
 
-      /* Sections & Cards */
-      .section {
-        padding: 56px 0;
-      }
-
-      .section-head {
-        text-align: center;
-        max-width: 640px;
-        margin: 0 auto 36px;
-      }
-
-      .eyebrow {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.16em;
-        color: var(--cyan);
-      }
-
-      .section-head h2 {
-        font-size: 30px;
-        margin: 6px 0 10px;
-        color: #ffffff;
-      }
-
-      .section-head p {
-        color: var(--muted);
-        font-size: 15px;
-      }
-
-      .tiers-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 18px;
-      }
-
-      .pricing-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-        gap: 18px;
-      }
-
-      .card {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 24px;
-      }
-
-      .card.featured {
-        border-color: var(--cyan);
-        box-shadow: 0 0 28px rgba(34, 211, 238, 0.14);
-      }
-
-      .card.vip {
-        border-color: rgba(168, 85, 247, 0.55);
-        box-shadow: 0 0 28px rgba(168, 85, 247, 0.14);
-      }
-
-      .card h3 {
-        margin: 10px 0 8px;
-        font-size: 19px;
-        color: #ffffff;
-      }
-
-      .card p {
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .tier-badge {
-        display: inline-block;
-        font-size: 11px;
-        font-weight: 700;
-        padding: 3px 10px;
-        border-radius: 999px;
-        background: rgba(148, 163, 184, 0.15);
-        color: #cbd5e1;
-      }
-
-      .tier-badge.cyan {
-        background: rgba(34, 211, 238, 0.16);
-        color: var(--cyan);
-      }
-
-      .tier-badge.purple {
-        background: rgba(168, 85, 247, 0.18);
-        color: #d8b4fe;
-      }
-
-      .price-tag {
-        font-size: 32px;
-        font-weight: 800;
-        color: #ffffff;
-        margin: 10px 0 14px;
-      }
-
-      .price-tag span {
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--muted);
-      }
-
-      .plan-list {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        font-size: 13px;
-        color: #cbd5e1;
-        margin-bottom: 20px;
-        width: 100%;
-      }
-
-      /* Footer */
-      .footer {
-        border-top: 1px solid var(--border);
-        padding: 28px 0;
-        margin-top: 30px;
-      }
-
-      .footer-inner {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        align-items: center;
-        gap: 14px;
-      }
-
-      .footer-links {
-        display: flex;
-        gap: 18px;
-        font-size: 13px;
-      }
-
-      @media (max-width: 860px) {
-        .tiers-grid {
-          grid-template-columns: 1fr;
-        }
-        .nav-links {
-          display: none;
-        }
-        .iframe-wrap {
-          height: 500px;
-        }
+      @media (max-width: 980px) {
+        .hud-grid { grid-template-columns: 1fr; }
+        .left-col, .right-col, .top-mid { display: none; }
       }
     </style>
   </head>
   <body>
+    <!-- TOP BAR -->
     <header class="topbar">
-      <div class="container topbar-inner">
-        <a href="#top" class="brand">
-          <span class="arc-dot"></span>
-          <span>JARVIS <strong>AI 3.5</strong></span>
-        </a>
-        <nav class="nav-links">
-          <a href="#workspace">Live Workspace</a>
-          <a href="#features">Features</a>
-          <a href="#pricing">Freemium Pro</a>
-        </nav>
-        <div class="topbar-actions">
-          <a href="#pricing" class="btn btn-pro">⚡ Upgrade Pro</a>
-          <a
-            href="https://jarvis-ai-wine-seven.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="btn btn-primary"
-          >
-            Open App ↗
-          </a>
-        </div>
+      <div class="brand-wrap">
+        <div class="arc-ring"><span></span></div>
+        <span class="brand-title">JARVIS</span>
+        <span class="online-pill">● ONLINE</span>
+      </div>
+      <div class="top-mid">
+        <span>CONNECTED • ANYTIME ANYWHERE</span>
+        <span id="liveClock"></span>
+      </div>
+      <div class="top-actions">
+        <select id="engineSelector" class="engine-select">
+          <option value="turbo">JARVIS Turbo (Free)</option>
+          <option value="dual">⚡ Dual Engine (Pro / VIP)</option>
+        </select>
+        <button type="button" id="openUpgradeTopBtn" class="top-btn pro-glow">⚡ Pro / VIP</button>
       </div>
     </header>
 
-    <main id="top">
-      <section class="hero">
-        <div class="container">
-          <div class="pill-badge">
-            <span class="pulse-dot"></span>
-            <span>Powered by JARVIS Turbo (Free) & Dual Engine Pro</span>
+    <!-- MAIN 3-COLUMN WORKSPACE -->
+    <main class="hud-grid">
+      <!-- LEFT: COMMAND WHEEL -->
+      <aside class="panel left-col">
+        <div class="panel-head">
+          <span>JARVIS COMMAND WHEEL</span>
+          <span>6 MODULES</span>
+        </div>
+
+        <div class="wheel-box">
+          <div class="wheel-core" id="resetHudBtn">
+            <strong>JARVIS</strong>
+            <span>CORE</span>
+          </div>
+          <button type="button" class="w-node wn1" data-prompt="Activate Two-Way Voice Conversation">🎙<br>Voice AI</button>
+          <button type="button" class="w-node wn2" id="wheelSpecialistsBtn">🧠<br>Specialists</button>
+          <button type="button" class="w-node wn3" data-prompt="Create futuristic holographic supercar image">🎨<br>Image</button>
+          <button type="button" class="w-node wn4" data-prompt="Give me today's top world and technology news.">🌐<br>Live News</button>
+          <button type="button" class="w-node wn5" data-prompt="Solve 2x + 5 = 19 step by step">⚗️<br>Eng & Med</button>
+          <button type="button" class="w-node wn6" id="wheelScanBtn">📄<br>Doc OCR</button>
+        </div>
+
+        <div class="status-card">
+          <div class="panel-head" style="margin-bottom:4px;">
+            <span>SYSTEM STATUS</span>
+            <span>v3.5</span>
+          </div>
+          <div class="gauges">
+            <div><div class="gauge-circle">82%</div><div class="gauge-label">CPU</div></div>
+            <div><div class="gauge-circle">74%</div><div class="gauge-label">MEMORY</div></div>
+            <div><div class="gauge-circle">96%</div><div class="gauge-label">VISION</div></div>
+            <div><div class="gauge-circle" id="tierGauge">FREE</div><div class="gauge-label">TIER</div></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER: CORE HUD & CHAT -->
+      <section class="center-panel">
+        <div class="center-top-bar">
+          <span id="statusModeLabel">MODE: JARVIS TURBO (GUEST)</span>
+          <div style="display:flex; gap:6px;">
+            <button type="button" id="clearChatBtn" class="mini-pill">Core HUD</button>
+            <button type="button" id="exportChatBtn" class="mini-pill">Export TXT</button>
+          </div>
+        </div>
+
+        <!-- WELCOME ORB -->
+        <div id="welcomeStage" class="welcome-stage">
+          <div class="jarvis-orb">
+            <h1>JARVIS</h1>
+            <p>Your Personal AI Assistant</p>
+            <span class="domain-tag" id="orbTierBadge">All-Domain Turbo Core</span>
           </div>
 
-          <h1>Meet <span class="gradient-text">JARVIS AI 3.5</span></h1>
-          <p class="hero-sub">
-            Your personal AI workspace with a 3D radial command wheel, two-way voice waveform,
-            16 specialist domains, neural art studio, and real-time Google news.
-          </p>
+          <div class="chip-row">
+            <button type="button" class="chip" data-prompt="Give me today's top world and technology news.">Today's Top News</button>
+            <button type="button" class="chip" data-prompt="Full form of DHA">Full form of DHA</button>
+            <button type="button" class="chip" data-prompt="Solve 2x + 5 = 19">Solve 2x + 5 = 19</button>
+            <button type="button" class="chip" data-prompt="Create futuristic car image">Create futuristic car image</button>
+          </div>
+        </div>
 
-          <div class="hero-cta">
-            <a
-              href="https://jarvis-ai-wine-seven.vercel.app/"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="btn btn-primary btn-lg"
-            >
-              Launch Free Workspace ↗
-            </a>
-            <a href="#pricing" class="btn btn-pro btn-lg">
-              Get JARVIS Pro ($7/mo)
-            </a>
+        <!-- CHAT STREAM -->
+        <div id="chatStream" class="chat-stream"></div>
+
+        <!-- BOTTOM INPUT DOCK -->
+        <div class="input-dock">
+          <div id="imagePreviewBar" style="display:none; font-size:11px; color:#22d3ee; margin-bottom:6px;">
+            📎 Image attached and ready for HD Vision OCR & AI Reconstruction
+            <button type="button" id="removeImgBtn" style="margin-left:8px; background:none; border:none; color:#f87171; cursor:pointer;">✕ Remove</button>
           </div>
 
-          <div id="workspace" class="workspace-frame">
-            <div class="frame-header">
-              <div class="frame-title">
-                <span class="pulse-dot"></span>
-                <span>JARVIS AI 3.5 — Live Interactive Workspace</span>
-              </div>
-              <a
-                href="https://jarvis-ai-wine-seven.vercel.app/"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-secondary"
-              >
-                Full Screen ↗
-              </a>
+          <form id="chatForm" class="input-shell">
+            <div class="input-top">
+              <input
+                type="text"
+                id="promptInput"
+                class="prompt-input"
+                placeholder="Write your question to JARVIS or attach a document photo..."
+                autocomplete="off"
+              />
+              <button type="button" id="voiceBtn" class="tool-btn">🎙 Voice</button>
+              <button type="submit" class="send-btn">↑</button>
             </div>
 
-            <div class="iframe-wrap">
-              <div class="iframe-fallback">
-                <p>Loading JARVIS AI 3.5 Workspace...</p>
-                <a
-                  href="https://jarvis-ai-wine-seven.vercel.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="btn btn-primary"
-                >
-                  Open Workspace Directly ↗
-                </a>
+            <div class="input-tools">
+              <div class="tool-group">
+                <input type="file" id="imageFileInput" accept="image/*" style="display:none;" />
+                <button type="button" id="attachImgBtn" class="tool-btn">📎 Attach Image</button>
+                <button type="button" id="webToggleBtn" class="tool-btn active">🌐 Web</button>
+                <button type="button" id="dualEngineBtn" class="tool-btn locked">🔒 Dual Engine</button>
               </div>
-              <iframe
-                src="https://jarvis-ai-wine-seven.vercel.app/"
-                title="JARVIS AI 3.5 Live Workspace"
-                allow="microphone; camera; display-capture; clipboard-write"
-              ></iframe>
+              <span style="font-size:10px; color:#64748b;">Speak. Plan. Create. Achieve.</span>
             </div>
-          </div>
+          </form>
         </div>
       </section>
 
-      <section id="features" class="section">
-        <div class="container">
-          <div class="section-head">
-            <span class="eyebrow">CAPABILITIES</span>
-            <h2>Everything you expect from a modern AI workspace</h2>
-            <p>Engineered for speed, accuracy, and seamless creativity across desktop and mobile.</p>
-          </div>
-
-          <div class="tiers-grid">
-            <article class="card">
-              <h3>🌐 Live Web Knowledge</h3>
-              <p>Connects directly to real-time Google news and web search with verified source links.</p>
-            </article>
-            <article class="card">
-              <h3>⚡ Dual Engine Pro</h3>
-              <p>Switch between fast JARVIS Turbo responses and deep reasoning across 16 specialist domains.</p>
-            </article>
-            <article class="card">
-              <h3>🎨 Neural Art & Voice</h3>
-              <p>Generate high-resolution artwork and talk hands-free with two-way voice conversation.</p>
-            </article>
-          </div>
+      <!-- RIGHT: JARVIS FEATURES -->
+      <aside class="panel right-col">
+        <div class="panel-head">
+          <span>JARVIS FEATURES</span>
+          <span>ALL ACTIVE</span>
         </div>
-      </section>
 
-      <section id="pricing" class="section">
-        <div class="container">
-          <div class="section-head">
-            <span class="eyebrow">FREEMIUM & PRO ACCESS</span>
-            <h2>Start Free Forever — Upgrade for Pro Power</h2>
-            <p>Use JARVIS Turbo for free in Guest Mode, or unlock Dual Engine Pro with a Gumroad License Key or VIP Code.</p>
-          </div>
+        <div class="feat-list">
+          <button type="button" class="feat-card" id="rightVoiceBtn">
+            <div>
+              <strong>Two-Way Voice Conversation</strong>
+              <span>Click to speak hands-free</span>
+            </div>
+            <span class="tag-badge">VOICE</span>
+          </button>
 
-          <div class="pricing-grid">
-            <article class="card">
-              <span class="tier-badge">Free Forever</span>
-              <h3>JARVIS Starter</h3>
-              <div class="price-tag">$0 <span>/ month</span></div>
-              <ul class="plan-list">
-                <li>✓ Unlimited JARVIS Turbo chat</li>
-                <li>✓ Real-time Google News</li>
-                <li>✓ Standard Image Studio</li>
-                <li>✓ Export chats to TXT & JSON</li>
-              </ul>
-              <a
-                href="https://jarvis-ai-wine-seven.vercel.app/"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-secondary full-w"
-              >
-                Use Free Now ↗
-              </a>
-            </article>
+          <button type="button" class="feat-card" id="rightSpecialistsBtn">
+            <div>
+              <strong>Specialist Matrix (16 Domains)</strong>
+              <span>Medical, Law, Code, Finance & Engineering</span>
+            </div>
+            <span class="tag-badge pro" id="specBadge">PRO / VIP</span>
+          </button>
 
-            <article class="card featured">
-              <span class="tier-badge cyan">Most Popular • Pro</span>
-              <h3>JARVIS Dual Engine Pro</h3>
-              <div class="price-tag">$7 <span>/ month</span></div>
-              <ul class="plan-list">
-                <li>✓ All 16 Specialist Domains</li>
-                <li>✓ Engineering & Medical Lab</li>
-                <li>✓ HD Image Studio (No watermark)</li>
-                <li>✓ Unlimited Voice & Vision</li>
-              </ul>
-              <a
-                href="https://paragonista3.gumroad.com/l/"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-primary full-w"
-              >
-                Unlock Pro ($7/mo) ↗
-              </a>
-            </article>
+          <button type="button" class="feat-card" data-prompt="Create futuristic cybernetic city image">
+            <div>
+              <strong>Neural Image Studio</strong>
+              <span>Generate HD artwork from text</span>
+            </div>
+            <span class="tag-badge">FREE</span>
+          </button>
 
-            <article class="card">
-              <span class="tier-badge purple">One-Time Pass</span>
-              <h3>JARVIS Lifetime Founder</h3>
-              <div class="price-tag">$29 <span>one-time</span></div>
-              <ul class="plan-list">
-                <li>✓ Dual Engine Pro forever</li>
-                <li>✓ Early JARVIS 4.0 beta access</li>
-                <li>✓ Commercial usage rights</li>
-                <li>✓ Priority developer support</li>
-              </ul>
-              <a
-                href="https://paragonista3.gumroad.com/l/"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-pro full-w"
-              >
-                Get Lifetime ($29) ↗
-              </a>
-            </article>
+          <button type="button" class="feat-card" data-prompt="Give me today's top world and technology news.">
+            <div>
+              <strong>Real-Time World News</strong>
+              <span>Live briefings & tech updates</span>
+            </div>
+            <span class="tag-badge">LIVE</span>
+          </button>
 
-            <article class="card vip">
-              <span class="tier-badge purple">🔑 Exclusive Access</span>
-              <h3>JARVIS VIP Pass</h3>
-              <div class="price-tag">VIP <span>Password</span></div>
-              <ul class="plan-list">
-                <li>✓ Instant Dual Engine unlock</li>
-                <li>✓ Full access for VIP members</li>
-                <li>✓ No checkout required with code</li>
-                <li>✓ Enter password inside app</li>
-              </ul>
-              <a
-                href="https://jarvis-ai-wine-seven.vercel.app/"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-vip full-w"
-              >
-                Enter VIP Code in App ↗
-              </a>
-            </article>
-          </div>
+          <button type="button" class="feat-card" data-prompt="Explain Ohm's Law with an example calculation">
+            <div>
+              <strong>Engineering & Medical Lab</strong>
+              <span>Scientific math, formulas & study lab</span>
+            </div>
+            <span class="tag-badge">LAB</span>
+          </button>
+
+          <button type="button" class="feat-card" id="rightVisionBtn">
+            <div>
+              <strong>HD Document & Photo Vision</strong>
+              <span>Auto-enhances & rewrites book pages</span>
+            </div>
+            <span class="tag-badge">OCR+AI</span>
+          </button>
         </div>
-      </section>
+      </aside>
     </main>
 
-    <footer class="footer">
-      <div class="container footer-inner">
-        <div class="brand">
-          <span class="arc-dot"></span>
-          <span>JARVIS <strong>AI 3.5</strong></span>
+    <!-- PRO ($7 / $29) & VIP PASS MODAL -->
+    <div id="jarvisProModal" class="modal-backdrop">
+      <div class="modal-box">
+        <button type="button" id="closeProModalBtn" class="modal-close">✕</button>
+        <div style="display:inline-block; font-size:11px; font-weight:700; letter-spacing:0.12em; padding:4px 10px; border-radius:999px; background:rgba(245,158,11,0.18); color:#fbbf24; margin-bottom:10px;">
+          ⚡ JARVIS DUAL ENGINE PRO & VIP
         </div>
-        <div class="footer-links">
-          <a href="#workspace">Live Workspace</a>
-          <a href="#features">Features</a>
-          <a href="#pricing">Freemium Pro</a>
-          <a
-            href="https://jarvis-ai-wine-seven.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Live App ↗
+        <h2 style="font-size:21px; font-weight:800; color:#fff; margin-bottom:6px;">
+          Unlock Dual Engine & 16 Specialists
+        </h2>
+        <p style="font-size:13px; color:#94a3b8; line-height:1.5;">
+          JARVIS Turbo is free forever. Upgrade via Gumroad or enter your <strong>VIP Pass Password</strong> below to unlock Dual Engine immediately.
+        </p>
+
+        <div class="plan-grid">
+          <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" class="plan-btn plan-monthly">
+            Pro Monthly<br><span style="font-size:16px;">$7 / mo ↗</span>
           </a>
+          <a href="https://paragonista3.gumroad.com/l/" target="_blank" rel="noopener noreferrer" class="plan-btn plan-life">
+            Lifetime Pass<br><span style="font-size:16px;">$29 once ↗</span>
+          </a>
+          <button type="button" id="focusVipBtn" class="plan-btn plan-vip">
+            VIP Pass<br><span style="font-size:14px;">🔑 VIP Code</span>
+          </button>
+        </div>
+
+        <div style="border-top:1px solid rgba(148,163,184,0.2); padding-top:14px;">
+          <label for="jarvisLicenseInput" style="display:block; font-size:12px; color:#cbd5e1; margin-bottom:6px;">
+            Enter Gumroad License Key or VIP Password:
+          </label>
+          <div style="display:flex; gap:8px;">
+            <input
+              id="jarvisLicenseInput"
+              type="password"
+              placeholder="License Key or VIP Password..."
+              style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid rgba(34,211,238,0.35); background:#020813; color:#fff; font-size:13px; outline:none;"
+            />
+            <button
+              type="button"
+              id="activateProKeyBtn"
+              style="padding:10px 16px; border-radius:10px; border:none; background:#22d3ee; color:#020813; font-weight:700; font-size:13px; cursor:pointer;"
+            >
+              Unlock
+            </button>
+          </div>
+          <div id="proKeyStatus" style="font-size:12px; margin-top:8px; color:#22d3ee;"></div>
         </div>
       </div>
-    </footer>
+    </div>
+
+    <script>
+      (function () {
+        /* ===============================================================
+           1. LIVE CLOCK & PRO / VIP LICENSE STATE
+           =============================================================== */
+        const STORAGE_KEY = 'jarvis_pro_license_key';
+        const VIP_PASSWORD = 'Jarvis.987abc';
+        let dualEngineEnabled = false;
+        let attachedImageDataUrl = null;
+
+        function updateClock() {
+          const el = document.getElementById('liveClock');
+          if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        updateClock();
+        setInterval(updateClock, 15000);
+
+        function isUnlocked() {
+          return Boolean(localStorage.getItem(STORAGE_KEY));
+        }
+
+        function syncUnlockUI() {
+          const unlocked = isUnlocked();
+          const dualBtn = document.getElementById('dualEngineBtn');
+          const tierGauge = document.getElementById('tierGauge');
+          const orbBadge = document.getElementById('orbTierBadge');
+          const specBadge = document.getElementById('specBadge');
+          const modeLabel = document.getElementById('statusModeLabel');
+          const selector = document.getElementById('engineSelector');
+
+          if (unlocked) {
+            dualEngineEnabled = true;
+            dualBtn.classList.remove('locked');
+            dualBtn.classList.add('active');
+            dualBtn.textContent = '⚡ Dual Engine ON';
+            tierGauge.textContent = 'VIP';
+            orbBadge.textContent = 'Dual Engine Pro • 16 Specialists Active';
+            specBadge.textContent = 'ACTIVE';
+            modeLabel.textContent = 'MODE: DUAL ENGINE PRO / VIP UNLOCKED';
+            selector.value = 'dual';
+          }
+        }
+        syncUnlockUI();
+
+        /* ===============================================================
+           2. PRO / VIP MODAL CONTROLS
+           =============================================================== */
+        const modal = document.getElementById('jarvisProModal');
+        const keyInput = document.getElementById('jarvisLicenseInput');
+        const statusEl = document.getElementById('proKeyStatus');
+
+        function openModal() {
+          modal.style.display = 'flex';
+        }
+        function closeModal() {
+          modal.style.display = 'none';
+        }
+
+        document.getElementById('closeProModalBtn').addEventListener('click', closeModal);
+        document.getElementById('openUpgradeTopBtn').addEventListener('click', openModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+        document.getElementById('focusVipBtn').addEventListener('click', () => {
+          keyInput.focus();
+          statusEl.style.color = '#c084fc';
+          statusEl.textContent = 'Enter your VIP Pass password above and click Unlock.';
+        });
+
+        function handleUnlock() {
+          const code = keyInput.value.trim();
+          if (code === VIP_PASSWORD) {
+            localStorage.setItem(STORAGE_KEY, 'VIP_ACCESS_GRANTED');
+            statusEl.style.color = '#a855f7';
+            statusEl.textContent = '👑 VIP Pass accepted! Dual Engine & all 16 Specialists unlocked.';
+            syncUnlockUI();
+            setTimeout(closeModal, 750);
+          } else if (code.length >= 24) {
+            localStorage.setItem(STORAGE_KEY, code);
+            statusEl.style.color = '#22c55e';
+            statusEl.textContent = '✓ Gumroad Pro License activated! Dual Engine unlocked.';
+            syncUnlockUI();
+            setTimeout(closeModal, 750);
+          } else {
+            statusEl.style.color = '#f87171';
+            statusEl.textContent = 'Invalid VIP password or Gumroad License Key.';
+          }
+        }
+
+        document.getElementById('activateProKeyBtn').addEventListener('click', handleUnlock);
+        keyInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); handleUnlock(); }
+        });
+
+        document.getElementById('dualEngineBtn').addEventListener('click', () => {
+          if (!isUnlocked()) { openModal(); return; }
+          dualEngineEnabled = !dualEngineEnabled;
+          const btn = document.getElementById('dualEngineBtn');
+          btn.classList.toggle('active', dualEngineEnabled);
+          btn.textContent = dualEngineEnabled ? '⚡ Dual Engine ON' : '⚡ Dual Engine';
+        });
+
+        document.getElementById('engineSelector').addEventListener('change', function () {
+          if (this.value === 'dual' && !isUnlocked()) {
+            this.value = 'turbo';
+            openModal();
+          } else {
+            dualEngineEnabled = this.value === 'dual';
+          }
+        });
+
+        ['wheelSpecialistsBtn', 'rightSpecialistsBtn'].forEach((id) => {
+          document.getElementById(id).addEventListener('click', () => {
+            if (!isUnlocked()) { openModal(); return; }
+            sendUserMessage('Activate Specialist Matrix (16 Domains: Engineering, Medical, Law, Coding, Finance, Research)');
+          });
+        });
+
+        /* ===============================================================
+           3. HIGH-ACCURACY IMAGE PREPROCESSING + OCR + AI RECONSTRUCTION
+           =============================================================== */
+        const fileInput = document.getElementById('imageFileInput');
+        const previewBar = document.getElementById('imagePreviewBar');
+
+        function triggerImagePicker() {
+          fileInput.click();
+        }
+        document.getElementById('attachImgBtn').addEventListener('click', triggerImagePicker);
+        document.getElementById('wheelScanBtn').addEventListener('click', triggerImagePicker);
+        document.getElementById('rightVisionBtn').addEventListener('click', triggerImagePicker);
+
+        fileInput.addEventListener('change', function () {
+          const file = this.files && this.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = function (ev) {
+            attachedImageDataUrl = ev.target.result;
+            previewBar.style.display = 'block';
+          };
+          reader.readAsDataURL(file);
+        });
+
+        document.getElementById('removeImgBtn').addEventListener('click', () => {
+          attachedImageDataUrl = null;
+          fileInput.value = '';
+          previewBar.style.display = 'none';
+        });
+
+        function preprocessImageForOCR(dataUrl) {
+          return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = function () {
+              const minWidth = 1800;
+              const scale = img.width < minWidth ? minWidth / img.width : 1;
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.round(img.width * scale);
+              canvas.height = Math.round(img.height * scale);
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.filter = 'grayscale(100%) contrast(180%) brightness(108%)';
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = reject;
+            img.src = dataUrl;
+          });
+        }
+
+        async function readAndReconstructImage(dataUrl, userInstruction) {
+          const cleanCanvasUrl = await preprocessImageForOCR(dataUrl);
+          const worker = await Tesseract.createWorker('eng', 1);
+          let rawText = '';
+          try {
+            const { data } = await worker.recognize(cleanCanvasUrl, { rotateAuto: true });
+            rawText = (data.text || '').trim();
+          } finally {
+            await worker.terminate();
+          }
+
+          if (!rawText || rawText.length < 5) {
+            return 'I could not detect clear readable text in this image. Please hold the camera closer, flatten the page under bright light, and crop out background edges.';
+          }
+
+          const task = userInstruction || 'Reconstruct, fix spelling/cut-off margins, and rewrite this clearly';
+          const prompt = [
+            'You are JARVIS AI Vision & Document Specialist.',
+            'The text below was extracted via OCR from a camera photo of a printed page and may have broken left margins or typos (e.g., "Britush" -> "British", "Govemor" -> "Governor").',
+            '1. Reconstruct the complete, accurate original text by fixing all OCR typos and restoring cut-off words from context.',
+            '2. Fulfill this user instruction: "' + task + '".',
+            '3. Output clean, well-formatted plain text only without markdown asterisks or hash symbols.',
+            '\n--- EXTRACTED OCR TEXT ---\n' + rawText
+          ].join('\n');
+
+          const res = await fetch('https://text.pollinations.ai/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: prompt }],
+              model: 'openai'
+            })
+          });
+          if (res.ok) {
+            const cleaned = (await res.text()).replace(/[*#`]/g, '').trim();
+            if (cleaned) return cleaned;
+          }
+          return rawText;
+        }
+
+        /* ===============================================================
+           4. CHAT ENGINE, IMAGE GENERATION & TWO-WAY VOICE
+           =============================================================== */
+        const welcomeStage = document.getElementById('welcomeStage');
+        const chatStream = document.getElementById('chatStream');
+        const promptInput = document.getElementById('promptInput');
+
+        function appendMessage(role, text, imgSrc) {
+          welcomeStage.style.display = 'none';
+          chatStream.style.display = 'flex';
+
+          const div = document.createElement('div');
+          div.className = 'msg ' + role;
+
+          const label = document.createElement('div');
+          label.className = 'msg-role';
+          label.textContent = role === 'user' ? 'YOU' : (dualEngineEnabled ? 'JARVIS DUAL ENGINE PRO' : 'JARVIS TURBO');
+          div.appendChild(label);
+
+          const body = document.createElement('div');
+          body.textContent = text;
+          div.appendChild(body);
+
+          if (imgSrc) {
+            const img = document.createElement('img');
+            img.src = imgSrc;
+            div.appendChild(img);
+          }
+
+          chatStream.appendChild(div);
+          chatStream.scrollTop = chatStream.scrollHeight;
+          return body;
+        }
+
+        async function sendUserMessage(customText) {
+          const text = (customText !== undefined ? customText : promptInput.value).trim();
+          const currentImg = attachedImageDataUrl;
+          if (!text && !currentImg) return;
+
+          promptInput.value = '';
+          attachedImageDataUrl = null;
+          fileInput.value = '';
+          previewBar.style.display = 'none';
+
+          appendMessage('user', text || 'Analyze and rewrite this document image', currentImg);
+          const aiBodyEl = appendMessage(
+            'ai',
+            currentImg
+              ? 'JARVIS Vision: Enhancing image contrast, auto-aligning margins & reconstructing text...'
+              : 'Processing...'
+          );
+
+          try {
+            // 1. Document / Photo Vision Mode
+            if (currentImg) {
+              const reconstructed = await readAndReconstructImage(currentImg, text);
+              aiBodyEl.textContent = reconstructed;
+              return;
+            }
+
+            // 2. Neural Image Generation Mode
+            if (/^(create|generate|draw|make)\b.*\b(image|picture|photo|art|car|logo|render)\b/i.test(text)) {
+              const url =
+                'https://image.pollinations.ai/prompt/' +
+                encodeURIComponent(text) +
+                '?width=896&height=512&nologo=true';
+              aiBodyEl.textContent = 'Neural Image Studio render complete:';
+              const img = document.createElement('img');
+              img.src = url;
+              aiBodyEl.parentElement.appendChild(img);
+              return;
+            }
+
+            // 3. Standard / Dual Engine Text Reasoning
+            const sysInstruction = dualEngineEnabled
+              ? 'You are JARVIS Dual Engine Pro with deep multi-step reasoning across all 16 specialist domains. Give a thorough, accurate, structured answer in clean plain text without markdown asterisks or hashes.'
+              : 'You are JARVIS AI 3.5. Give a clear, helpful answer in clean plain text without markdown asterisks or hashes.';
+
+            const res = await fetch('https://text.pollinations.ai/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [
+                  { role: 'system', content: sysInstruction },
+                  { role: 'user', content: text }
+                ],
+                model: 'openai'
+              })
+            });
+
+            if (res.ok) {
+              const reply = (await res.text()).replace(/[*#`]/g, '').trim();
+              aiBodyEl.textContent = reply || 'JARVIS is ready.';
+            } else {
+              aiBodyEl.textContent = 'Connection busy—please try again in a moment.';
+            }
+          } catch (err) {
+            aiBodyEl.textContent = 'Network error while reaching JARVIS core. Please check your internet connection.';
+          }
+        }
+
+        document.getElementById('chatForm').addEventListener('submit', (e) => {
+          e.preventDefault();
+          sendUserMessage();
+        });
+
+        document.querySelectorAll('[data-prompt]').forEach((el) => {
+          el.addEventListener('click', () => sendUserMessage(el.getAttribute('data-prompt')));
+        });
+
+        function resetToCoreHud() {
+          chatStream.innerHTML = '';
+          chatStream.style.display = 'none';
+          welcomeStage.style.display = 'flex';
+        }
+        document.getElementById('clearChatBtn').addEventListener('click', resetToCoreHud);
+        document.getElementById('resetHudBtn').addEventListener('click', resetToCoreHud);
+
+        document.getElementById('exportChatBtn').addEventListener('click', () => {
+          const content = chatStream.innerText || 'JARVIS AI 3.5 Session';
+          const blob = new Blob([content], { type: 'text/plain' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'jarvis-chat-export.txt';
+          a.click();
+        });
+
+        // Two-Way Voice Recognition
+        function startVoiceInput() {
+          const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRec) {
+            alert('Voice recognition is supported in Chrome, Edge, and Android browsers.');
+            return;
+          }
+          const rec = new SpeechRec();
+          rec.lang = 'en-US';
+          const vBtn = document.getElementById('voiceBtn');
+          vBtn.textContent = '🔴 Listening...';
+          rec.onresult = (ev) => {
+            const spoken = ev.results[0][0].transcript;
+            sendUserMessage(spoken);
+          };
+          rec.onend = () => { vBtn.textContent = '🎙 Voice'; };
+          rec.start();
+        }
+        document.getElementById('voiceBtn').addEventListener('click', startVoiceInput);
+        document.getElementById('rightVoiceBtn').addEventListener('click', startVoiceInput);
+      })();
+    </script>
   </body>
 </html>
