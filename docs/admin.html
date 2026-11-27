@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JARVIS AI 3.5 — Owner Command Center</title>
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <style>
+      :root {
+        --bg: #020813;
+        --panel: rgba(6, 18, 38, 0.92);
+        --border: rgba(34, 211, 238, 0.28);
+        --cyan: #22d3ee;
+        --purple: #a855f7;
+        --green: #22c55e;
+        --amber: #f59e0b;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: radial-gradient(circle at top, #081c3d 0%, var(--bg) 65%);
+        color: var(--text);
+        min-height: 100vh;
+        padding: 24px 16px;
+      }
+      .container { max-width: 1080px; margin: 0 auto; }
+
+      /* Login Lock Screen */
+      #ownerLockScreen {
+        max-width: 400px; margin: 90px auto; background: var(--panel);
+        border: 1px solid var(--border); border-radius: 18px; padding: 28px;
+        text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.7);
+      }
+      #ownerLockScreen h1 { font-size: 22px; margin-bottom: 8px; }
+      #ownerLockScreen p { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+      .input-box {
+        width: 100%; padding: 12px 14px; border-radius: 10px;
+        border: 1px solid var(--border); background: #020813; color: #fff;
+        font-size: 14px; margin-bottom: 12px; outline: none;
+      }
+      .btn {
+        width: 100%; padding: 12px; border-radius: 10px; border: none;
+        background: linear-gradient(135deg, #06b6d4, #2563eb);
+        color: #fff; font-weight: 700; font-size: 14px; cursor: pointer;
+      }
+
+      /* Dashboard */
+      .hidden { display: none !important; }
+      .topbar {
+        display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+        gap: 12px; padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 24px;
+      }
+      .badge {
+        display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px;
+        border-radius: 999px; font-size: 12px; background: rgba(34, 197, 94, 0.14);
+        color: var(--green); border: 1px solid rgba(34, 197, 94, 0.35);
+      }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+      /* Daily Secret Key Banner */
+      .secret-card {
+        background: linear-gradient(135deg, rgba(124, 58, 237, 0.22), rgba(6, 182, 212, 0.16));
+        border: 1px solid rgba(168, 85, 247, 0.5);
+        border-radius: 18px; padding: 24px; margin-bottom: 24px;
+        display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px;
+      }
+      .key-display {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 26px; font-weight: 800; letter-spacing: 0.06em;
+        color: #fff; background: rgba(2, 8, 19, 0.85);
+        padding: 12px 18px; border-radius: 12px; border: 1px solid var(--purple);
+      }
+      .copy-btn {
+        padding: 10px 16px; border-radius: 10px; border: none;
+        background: var(--purple); color: #fff; font-weight: 700; cursor: pointer;
+      }
+
+      /* Stats Grid */
+      .stats-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 16px; margin-bottom: 24px;
+      }
+      .stat-card {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 16px; padding: 20px;
+      }
+      .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+      .stat-val { font-size: 34px; font-weight: 800; color: var(--cyan); margin: 6px 0; }
+      .stat-sub { font-size: 12px; color: var(--muted); }
+
+      /* Feature Telemetry & Activity Log */
+      .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+      .panel-box {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 16px; padding: 20px;
+      }
+      .panel-box h3 { font-size: 16px; margin-bottom: 14px; color: #fff; }
+      .feat-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 10px 0; border-bottom: 1px solid rgba(148, 163, 184, 0.12); font-size: 13px;
+      }
+      .feat-pill {
+        background: rgba(34, 211, 238, 0.15); color: var(--cyan);
+        padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 12px;
+      }
+      .log-list {
+        max-height: 290px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+      }
+      .log-item {
+        background: rgba(2, 8, 19, 0.75); border: 1px solid rgba(148, 163, 184, 0.15);
+        padding: 9px 12px; border-radius: 10px; font-size: 12px; color: #cbd5e1;
+      }
+      @media (max-width: 780px) { .two-col { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <!-- OWNER MASTER LOGIN -->
+    <div id="ownerLockScreen">
+      <div style="font-size:28px; margin-bottom:8px;">🛡️</div>
+      <h1>JARVIS Owner Command Center</h1>
+      <p>Enter your Master Admin Password to view today's rotating VIP key and live app analytics.</p>
+      <input type="password" id="ownerPassInput" class="input-box" placeholder="Master Admin Password..." />
+      <button type="button" id="ownerLoginBtn" class="btn">Access Command Center</button>
+      <div id="ownerLoginErr" style="color:#f87171; font-size:12px; margin-top:10px;"></div>
+    </div>
+
+    <!-- MAIN COMMAND CENTER DASHBOARD -->
+    <div id="adminDashboard" class="container hidden">
+      <div class="topbar">
+        <div>
+          <h1 style="font-size:24px;">JARVIS AI 3.5 — Live Command Center</h1>
+          <p style="font-size:13px; color:var(--muted);">Connected to <strong>jarvis-ai-wine-seven.vercel.app</strong></p>
+        </div>
+        <div class="badge"><span class="dot"></span> LIVE TELEMETRY SYNCED</div>
+      </div>
+
+      <!-- TODAY'S AUTOMATICALLY ROTATING SECRET KEY -->
+      <div class="secret-card">
+        <div>
+          <div style="font-size:12px; font-weight:700; color:#d8b4fe; letter-spacing:0.1em; margin-bottom:4px;">
+            🔑 TODAY'S AUTO-ROTATING VIP SECRET KEY (<span id="todayDateLabel"></span>)
+          </div>
+          <p style="font-size:13px; color:#cbd5e1; max-width:520px;">
+            This key changes automatically every 24 hours at midnight. Share it only with today's VIP users to unlock Dual Engine on your main app.
+          </p>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div id="dailySecretKeyBox" class="key-display">LOADING...</div>
+          <button type="button" id="copyKeyBtn" class="copy-btn">Copy Key</button>
+        </div>
+      </div>
+
+      <!-- CORE METRICS -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total App Visits</div>
+          <div id="statVisits" class="stat-val">0</div>
+          <div class="stat-sub">All sessions opened</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Users Signed In</div>
+          <div id="statSignIns" class="stat-val" style="color:var(--green);">0</div>
+          <div class="stat-sub">Google / Account sign-ins</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Dual Engine Unlocks</div>
+          <div id="statProUnlocks" class="stat-val" style="color:var(--purple);">0</div>
+          <div class="stat-sub">VIP + Gumroad Pro activations</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total AI Prompts Sent</div>
+          <div id="statPrompts" class="stat-val" style="color:var(--amber);">0</div>
+          <div class="stat-sub">Chats, Voice & Vision queries</div>
+        </div>
+      </div>
+
+      <!-- FEATURE USAGE & LIVE ACTIVITY FEED -->
+      <div class="two-col">
+        <div class="panel-box">
+          <h3>⚡ JARVIS Feature Usage Breakdown</h3>
+          <div class="feat-row"><span>Dual Engine Pro Queries</span><span id="featDual" class="feat-pill">0 uses</span></div>
+          <div class="feat-row"><span>Two-Way Voice Conversation</span><span id="featVoice" class="feat-pill">0 uses</span></div>
+          <div class="feat-row"><span>Neural Image Studio</span><span id="featImage" class="feat-pill">0 uses</span></div>
+          <div class="feat-row"><span>Vision & Document OCR Scan</span><span id="featVision" class="feat-pill">0 uses</span></div>
+          <div class="feat-row"><span>Real-Time World News</span><span id="featNews" class="feat-pill">0 uses</span></div>
+          <div class="feat-row" style="border-bottom:none;"><span>Engineering & Medical Lab</span><span id="featLab" class="feat-pill">0 uses</span></div>
+        </div>
+
+        <div class="panel-box">
+          <h3>📡 Live Visitor & Event Feed</h3>
+          <div id="liveEventLog" class="log-list">
+            <div class="log-item">Waiting for live events from JARVIS AI 3.5...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const MASTER_OWNER_PASS = 'Jarvis.987abc';
+
+        // Deterministic Daily Secret Key Generator (matches Main App exact formula)
+        function getTodaysRotatingKey() {
+          const now = new Date();
+          const yyyy = now.getUTCFullYear();
+          const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+          const dd = String(now.getUTCDate()).padStart(2, '0');
+          const dateStr = yyyy + '-' + mm + '-' + dd;
+          const seed = 'JARVIS_SALT_987ABC_' + dateStr;
+          let hash = 2166136261;
+          for (let i = 0; i < seed.length; i++) {
+            hash ^= seed.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+          }
+          const hex = (hash >>> 0).toString(16).toUpperCase().padStart(8, '0');
+          return 'JVS-' + mm + dd + '-' + hex;
+        }
+
+        function unlockAdmin() {
+          const val = document.getElementById('ownerPassInput').value.trim();
+          if (val === MASTER_OWNER_PASS) {
+            sessionStorage.setItem('jarvis_owner_authed', '1');
+            document.getElementById('ownerLockScreen').classList.add('hidden');
+            document.getElementById('adminDashboard').classList.remove('hidden');
+            initDashboard();
+          } else {
+            document.getElementById('ownerLoginErr').textContent = 'Incorrect Master Admin Password.';
+          }
+        }
+
+        document.getElementById('ownerLoginBtn').addEventListener('click', unlockAdmin);
+        document.getElementById('ownerPassInput').addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') unlockAdmin();
+        });
+
+        if (sessionStorage.getItem('jarvis_owner_authed') === '1') {
+          document.getElementById('ownerLockScreen').classList.add('hidden');
+          document.getElementById('adminDashboard').classList.remove('hidden');
+          initDashboard();
+        }
+
+        function initDashboard() {
+          const todayKey = getTodaysRotatingKey();
+          document.getElementById('todayDateLabel').textContent = new Date().toDateString();
+          document.getElementById('dailySecretKeyBox').textContent = todayKey;
+
+          document.getElementById('copyKeyBtn').addEventListener('click', function () {
+            navigator.clipboard.writeText(todayKey);
+            this.textContent = 'Copied!';
+            setTimeout(() => (this.textContent = 'Copy Key'), 1500);
+          });
+
+          // Connect to shared live GunDB peer relay
+          const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+          const appNode = gun.get('jarvis_ai_35_telemetry_abdullah_v1');
+
+          const counters = {
+            visits: 0, signins: 0, unlocks: 0, prompts: 0,
+            dual: 0, voice: 0, image: 0, vision: 0, news: 0, lab: 0
+          };
+
+          const seenIds = new Set();
+          const logBox = document.getElementById('liveEventLog');
+
+          appNode.get('events').map().on(function (data, id) {
+            if (!data || !data.type || seenIds.has(id)) return;
+            seenIds.add(id);
+
+            if (counters[data.type] !== undefined) {
+              counters[data.type]++;
+            }
+
+            document.getElementById('statVisits').textContent = counters.visits;
+            document.getElementById('statSignIns').textContent = counters.signins;
+            document.getElementById('statProUnlocks').textContent = counters.unlocks;
+            document.getElementById('statPrompts').textContent = counters.prompts;
+
+            document.getElementById('featDual').textContent = counters.dual + ' uses';
+            document.getElementById('featVoice').textContent = counters.voice + ' uses';
+            document.getElementById('featImage').textContent = counters.image + ' uses';
+            document.getElementById('featVision').textContent = counters.vision + ' uses';
+            document.getElementById('featNews').textContent = counters.news + ' uses';
+            document.getElementById('featLab').textContent = counters.lab + ' uses';
+
+            if (logBox.firstElementChild && logBox.firstElementChild.textContent.includes('Waiting for live')) {
+              logBox.innerHTML = '';
+            }
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            const time = data.time || new Date().toLocaleTimeString();
+            item.textContent = '[' + time + '] ' + (data.label || data.type.toUpperCase());
+            logBox.prepend(item);
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
