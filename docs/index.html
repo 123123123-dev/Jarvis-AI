@@ -67,7 +67,11 @@
         background: linear-gradient(135deg, #f59e0b, #ea580c);
         color: #020813; font-weight: 700;
       }
-      .full-w { width: 100%; margin-top: 16px; }
+      .btn-vip {
+        background: linear-gradient(135deg, #7c3aed, #a855f7);
+        color: #fff;
+      }
+      .full-w { width: 100%; margin-top: auto; padding-top: 10px; padding-bottom: 10px; }
 
       .hero { padding: 56px 0 36px; text-align: center; }
       .pill-badge {
@@ -106,11 +110,14 @@
       .section-head h2 { font-size: 30px; margin: 6px 0 10px; }
       .section-head p { color: var(--muted); font-size: 15px; }
       .tiers-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+      .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; }
       .card {
+        display: flex; flex-direction: column; align-items: flex-start;
         background: var(--panel); border: 1px solid var(--border);
         border-radius: 16px; padding: 24px;
       }
       .card.featured { border-color: var(--cyan); box-shadow: 0 0 28px rgba(34, 211, 238, 0.14); }
+      .card.vip { border-color: rgba(168, 85, 247, 0.55); box-shadow: 0 0 28px rgba(168, 85, 247, 0.14); }
       .card h3 { margin: 10px 0 8px; font-size: 19px; }
       .card p { color: var(--muted); font-size: 14px; }
       .tier-badge {
@@ -121,7 +128,10 @@
       .tier-badge.purple { background: rgba(168, 85, 247, 0.18); color: #d8b4fe; }
       .price-tag { font-size: 32px; font-weight: 800; color: #fff; margin: 10px 0 14px; }
       .price-tag span { font-size: 13px; font-weight: 500; color: var(--muted); }
-      .plan-list { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #cbd5e1; }
+      .plan-list {
+        list-style: none; display: flex; flex-direction: column; gap: 8px;
+        font-size: 13px; color: #cbd5e1; margin-bottom: 20px; width: 100%;
+      }
 
       .footer { border-top: 1px solid var(--border); padding: 28px 0; margin-top: 30px; }
       .footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; }
@@ -245,19 +255,19 @@
           <div class="section-head">
             <span class="eyebrow">FREEMIUM & PRO ACCESS</span>
             <h2>Start Free Forever — Upgrade for Pro Power</h2>
-            <p>Use JARVIS Turbo for free in Guest Mode, or unlock Dual Engine Pro with a Gumroad License Key.</p>
+            <p>Use JARVIS Turbo for free in Guest Mode, or unlock Dual Engine Pro with a Gumroad License Key or VIP Code.</p>
           </div>
 
-          <div class="tiers-grid">
+          <div class="pricing-grid">
             <article class="card">
               <span class="tier-badge">Free Forever</span>
               <h3>JARVIS Starter</h3>
               <div class="price-tag">$0 <span>/ month</span></div>
               <ul class="plan-list">
-                <li>✓ Unlimited JARVIS Turbo everyday chat</li>
-                <li>✓ Real-time Google News & web lookup</li>
-                <li>✓ Standard Neural Art Studio generation</li>
-                <li>✓ Export chats to TXT, Markdown & JSON</li>
+                <li>✓ Unlimited JARVIS Turbo chat</li>
+                <li>✓ Real-time Google News</li>
+                <li>✓ Standard Image Studio</li>
+                <li>✓ Export chats to TXT & JSON</li>
               </ul>
               <a
                 href="https://jarvis-ai-wine-seven.vercel.app/"
@@ -274,10 +284,10 @@
               <h3>JARVIS Dual Engine Pro</h3>
               <div class="price-tag">$7 <span>/ month</span></div>
               <ul class="plan-list">
-                <li>✓ Full access to 16 Specialist Domains</li>
-                <li>✓ Engineering & Medical Clinical Lab</li>
-                <li>✓ Priority HD Image Studio (No watermarks)</li>
-                <li>✓ Unlimited Two-Way Voice & Screen Vision</li>
+                <li>✓ All 16 Specialist Domains</li>
+                <li>✓ Engineering & Medical Lab</li>
+                <li>✓ HD Image Studio (No watermark)</li>
+                <li>✓ Unlimited Voice & Vision</li>
               </ul>
               <a
                 href="https://paragonista3.gumroad.com/l/"
@@ -285,7 +295,7 @@
                 rel="noopener noreferrer"
                 class="btn btn-primary full-w"
               >
-                Unlock Pro License ($7/mo) ↗
+                Unlock Pro ($7/mo) ↗
               </a>
             </article>
 
@@ -294,10 +304,10 @@
               <h3>JARVIS Lifetime Founder</h3>
               <div class="price-tag">$29 <span>one-time</span></div>
               <ul class="plan-list">
-                <li>✓ Everything in Dual Engine Pro forever</li>
-                <li>✓ Early access to JARVIS 4.0 beta engines</li>
-                <li>✓ Commercial usage rights for client work</li>
-                <li>✓ Direct developer priority support</li>
+                <li>✓ Dual Engine Pro forever</li>
+                <li>✓ Early JARVIS 4.0 beta access</li>
+                <li>✓ Commercial usage rights</li>
+                <li>✓ Priority developer support</li>
               </ul>
               <a
                 href="https://paragonista3.gumroad.com/l/"
@@ -305,7 +315,27 @@
                 rel="noopener noreferrer"
                 class="btn btn-pro full-w"
               >
-                Get Lifetime Access ($29) ↗
+                Get Lifetime ($29) ↗
+              </a>
+            </article>
+
+            <article class="card vip">
+              <span class="tier-badge purple">🔑 Exclusive Access</span>
+              <h3>JARVIS VIP Pass</h3>
+              <div class="price-tag">VIP <span>Password</span></div>
+              <ul class="plan-list">
+                <li>✓ Instant Dual Engine unlock</li>
+                <li>✓ Full access for VIP members</li>
+                <li>✓ No checkout required with code</li>
+                <li>✓ Enter password inside app</li>
+              </ul>
+              <a
+                href="https://jarvis-ai-wine-seven.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-vip full-w"
+              >
+                Enter VIP Code in App ↗
               </a>
             </article>
           </div>
